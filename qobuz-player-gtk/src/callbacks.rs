@@ -44,7 +44,6 @@ pub fn build_callbacks(
     let main_ctx = glib::MainContext::default();
 
     let callbacks: Rc<Callbacks> = Rc::new_cyclic(|weak_callbacks: &Weak<Callbacks>| {
-        // ---------- open_album ----------
         let weak_for_album = weak_callbacks.clone();
         let open_album: OpenAlbumCb = Rc::new({
             let main_ctx = main_ctx.clone();
@@ -56,7 +55,6 @@ pub fn build_callbacks(
             let sender = sender.clone();
 
             move |info: AlbumHeaderInfo| {
-                // Ensure all GTK work happens on the main thread
                 let weak_for_album = weak_for_album.clone();
                 let app_nav = app_nav.clone();
                 let controls = controls.clone();
@@ -65,10 +63,8 @@ pub fn build_callbacks(
                 let tracklist_receiver = tracklist_receiver.clone();
                 let sender = sender.clone();
 
-                // Move `info` into the main-thread closure
                 main_ctx.invoke_local(move || {
                     let Some(callbacks) = weak_for_album.upgrade() else {
-                        // Likely during shutdown; do not panic.
                         return;
                     };
 
@@ -97,7 +93,6 @@ pub fn build_callbacks(
             }
         });
 
-        // ---------- open_artist ----------
         let weak_for_artist = weak_callbacks.clone();
         let open_artist: OpenArtistCb = Rc::new({
             let main_ctx = main_ctx.clone();
@@ -131,7 +126,7 @@ pub fn build_callbacks(
                     }
 
                     let open_album = callbacks.open_album.clone();
-                    let open_artist = callbacks.open_artist.clone(); // pass self
+                    let open_artist = callbacks.open_artist.clone();
 
                     let detail = ArtistDetailPage::new(
                         info.id,
@@ -149,7 +144,6 @@ pub fn build_callbacks(
             }
         });
 
-        // ---------- open_playlist ----------
         let open_playlist: OpenPlaylistCb = Rc::new({
             let main_ctx = main_ctx.clone();
             let app_nav = app_nav.clone();
@@ -201,6 +195,6 @@ pub fn build_callbacks(
         open_album: callbacks.open_album.clone(),
         open_artist: callbacks.open_artist.clone(),
         open_playlist: callbacks.open_playlist.clone(),
-        _keepalive: callbacks, // <-- CRITICAL: keeps callbacks alive
+        _keepalive: callbacks,
     }
 }

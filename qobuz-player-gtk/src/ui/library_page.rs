@@ -56,7 +56,7 @@ impl LibraryPage {
             .build();
 
         let search_entry = gtk4::SearchEntry::builder()
-            .placeholder_text("Search…")
+            .placeholder_text("Filter…")
             .build();
 
         {
