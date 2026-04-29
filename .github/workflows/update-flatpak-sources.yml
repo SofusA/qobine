@@ -1,0 +1,49 @@
+name: Update Flatpak cargo sources
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-cargo-sources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install tomlkit aiohttp
+
+      - name: Download flatpak-cargo-generator
+        run: |
+          mkdir -p qobuz-player-gtk/flatpak
+          curl -L \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py \
+            -o flatpak-cargo-generator.py
+          chmod +x flatpak-cargo-generator.py
+
+      - name: Generate cargo sources
+        run: python3 flatpak-cargo-generator.py Cargo.lock -o qobuz-player-gtk/cargo-sources.json
+
+      - name: Clean up
+        run: rm flatpak-cargo-generator.py 
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Update Flatpak cargo sources"
+          title: "Update Flatpak cargo sources"
+          body: This PR updates `cargo-sources.json` based on changes in `Cargo.lock`.
+          branch: flatpak-cargo-sources
+          delete-branch: true
