@@ -34,7 +34,7 @@ jobs:
           chmod +x flatpak-cargo-generator.py
 
       - name: Generate cargo sources
-        run: python3 flatpak-cargo-generator.py Cargo.lock -o qobuz-player-gtk/cargo-sources.json
+        run: python3 flatpak-cargo-generator.py Cargo.lock -o qobuz-player-gtk/flatpak/cargo-sources.json
 
       - name: Clean up
         run: rm flatpak-cargo-generator.py 
