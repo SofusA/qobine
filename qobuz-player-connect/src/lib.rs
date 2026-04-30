@@ -22,6 +22,7 @@ struct ConnectState {
     volume_receiver: VolumeReceiver,
     audio_quality: i32,
     connected: bool,
+    queue_ids: Vec<u64>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -45,6 +46,7 @@ pub async fn init(
         volume_receiver: volume_receiver.clone(),
         audio_quality,
         connected: false,
+        queue_ids: vec![],
     };
 
     connect_state
@@ -55,25 +57,55 @@ pub async fn init(
     Ok(())
 }
 
+fn get_queue_index(queue_ids: &Vec<u64>, id: u32) -> Option<usize> {
+    queue_ids
+        .into_iter()
+        .enumerate()
+        .find(|(_i, x)| **x == id as u64)
+        .map(|x| x.0)
+}
+
+fn get_queue_item_id(queue_ids: &Vec<u64>, tracklist: &Tracklist, id: u32) -> Option<u64> {
+    let queue_index = get_queue_index(queue_ids, id);
+
+    if let Some(queue_index) = queue_index {
+        return Some(tracklist.queue()[queue_index].queue_id);
+    }
+
+    None
+}
+
 fn current_state(
     status: &Status,
     position: &Duration,
     tracklist: &Tracklist,
+    queue_ids: Vec<u64>,
 ) -> QueueRendererState {
     let mut response_state = msg::QueueRendererState::default();
 
     let current_state = match status {
         Status::Playing => PlayingState::Playing,
         Status::Buffering | Status::Paused => PlayingState::Paused,
+        Status::Stopped => PlayingState::Stopped,
     };
 
     let buffering_state = match status {
-        Status::Playing | Status::Paused => BufferState::Ok,
         Status::Buffering => BufferState::Buffering,
+        _ => BufferState::Ok,
     };
 
-    response_state.current_queue_item_id = tracklist.current_queue_id().map(|x| x as i32);
-    response_state.next_queue_item_id = tracklist.next_track_queue_id().map(|x| x as i32);
+    response_state.current_queue_item_id = get_queue_item_id(
+        &queue_ids,
+        tracklist,
+        tracklist.current_queue_id().unwrap_or(0) as u32,
+    )
+    .map(|x| x as i32);
+    response_state.next_queue_item_id = get_queue_item_id(
+        &queue_ids,
+        tracklist,
+        tracklist.next_track_queue_id().unwrap_or(0) as u32,
+    )
+    .map(|x| x as i32);
 
     response_state.set_playing_state(current_state);
     response_state.set_buffer_state(buffering_state);
@@ -109,6 +141,10 @@ fn convert_volume(volume: f32) -> u32 {
 }
 
 impl ConnectState {
+    pub fn queue_ids(&self) -> Vec<u64> {
+        self.queue_ids.clone()
+    }
+
     async fn handle_position_changed(&mut self, session: &DeviceSession) -> qonductor::Result<()> {
         if !self.connected {
             return Ok(());
@@ -120,7 +156,7 @@ impl ConnectState {
         let status = { *self.status_receiver.borrow() };
         let tracklist = self.tracklist_receiver.borrow().clone();
 
-        let new_state = current_state(&status, &position, &tracklist);
+        let new_state = current_state(&status, &position, &tracklist, self.queue_ids());
 
         session.report_state(new_state).await?;
         Ok(())
@@ -136,9 +172,8 @@ impl ConnectState {
             *position
         };
         let status = { *self.status_receiver.borrow() };
-        let new_state = current_state(&status, &position, &tracklist);
+        let new_state = current_state(&status, &position, &tracklist, self.queue_ids());
 
-        tracing::info!("Updating current state after tracklist change");
         session.report_state(new_state).await?;
         Ok(())
     }
@@ -163,7 +198,8 @@ impl ConnectState {
         };
         let status = { *self.status_receiver.borrow_and_update() };
         let tracklist = self.tracklist_receiver.borrow().clone();
-        let new_state = current_state(&status, &position, &tracklist);
+
+        let new_state = current_state(&status, &position, &tracklist, self.queue_ids());
         session.report_state(new_state).await?;
         Ok(())
     }
@@ -202,8 +238,6 @@ impl ConnectState {
                 Command::SetState { cmd, respond } => {
                     tracing::info!("Set state message received");
                     tracing::info!("{:?}", cmd);
-                    let response = msg::QueueRendererState::default();
-
                     match cmd.playing_state() {
                         PlayingState::Stopped | PlayingState::Paused => {
                             self.controls.pause();
@@ -224,19 +258,29 @@ impl ConnectState {
                         self.controls.seek(position);
                     }
 
-                    let current_position = self.tracklist_receiver.borrow().current_position();
-                    let tracklist_position = cmd
-                        .current_queue_item
-                        .map(|x| x.queue_item_id)
-                        .map(|x| x as usize);
+                    let current_position =
+                        self.tracklist_receiver.borrow().current_position() as usize;
 
-                    if let Some(tracklist_position) = tracklist_position
-                        && current_position != tracklist_position
-                    {
-                        self.controls.skip_to_position(tracklist_position, true);
+                    let tracklist_position = cmd.current_queue_item.map(|x| x.queue_item_id as u32);
+
+                    if let Some(tracklist_position) = tracklist_position {
+                        let queue_position = get_queue_index(&self.queue_ids(), tracklist_position);
+
+                        if let Some(queue_position) = queue_position
+                            && current_position != queue_position
+                        {
+                            self.controls.skip_to_position(queue_position, true);
+                            self.controls.seek(Duration::from_secs(0));
+                        }
                     }
 
-                    respond.send(response);
+                    let queue_ids = self.queue_ids();
+                    respond.send(current_state(
+                        &self.status_receiver.borrow(),
+                        &self.position_receiver.borrow(),
+                        &self.tracklist_receiver.borrow(),
+                        queue_ids,
+                    ));
                 }
                 Command::SetActive { respond, cmd: _cmd } => {
                     tracing::info!("Device activated!");
@@ -245,7 +289,7 @@ impl ConnectState {
                     let status = self.status_receiver.borrow();
                     let position = self.position_receiver.borrow();
                     let tracklist = self.tracklist_receiver.borrow();
-                    let response = current_state(&status, &position, &tracklist);
+                    let response = current_state(&status, &position, &tracklist, self.queue_ids());
 
                     respond.send(ActivationState {
                         muted: false,
@@ -273,10 +317,13 @@ impl ConnectState {
                     let position = self.position_receiver.borrow();
                     let tracklist = self.tracklist_receiver.borrow();
                     let response = match *status {
-                        Status::Playing | Status::Buffering => {
-                            Some(current_state(&status, &position, &tracklist))
-                        }
-                        Status::Paused => None,
+                        Status::Playing | Status::Buffering => Some(current_state(
+                            &status,
+                            &position,
+                            &tracklist,
+                            self.queue_ids(),
+                        )),
+                        Status::Paused | Status::Stopped => None,
                     };
 
                     tracing::info!("Sending heartbeat");
@@ -292,14 +339,16 @@ impl ConnectState {
                     tracing::info!("Ignoring device registered as renderer {}", renderer_id);
                 }
                 Notification::QueueState(queue) => {
-                    let queue_items = queue
-                        .tracks
-                        .into_iter()
-                        .map(|x| NewQueueItem {
-                            track_id: x.track_id(),
-                            queue_id: x.queue_item_id,
-                        })
-                        .collect();
+                    let mut queue_items: Vec<NewQueueItem> = vec![];
+
+                    for track in queue.tracks {
+                        queue_items.push(NewQueueItem {
+                            track_id: track.track_id(),
+                            queue_id: track.queue_item_id,
+                        });
+                        self.queue_ids.push(track.queue_item_id);
+                    }
+
                     self.controls.new_queue(queue_items, false);
                 }
                 Notification::SessionState(session_state) => {
@@ -311,14 +360,17 @@ impl ConnectState {
                 Notification::QueueLoadTracks(queue) => {
                     tracing::info!("Queue load tracks: {:?}", queue);
 
-                    let queue_items = queue
-                        .tracks
-                        .into_iter()
-                        .map(|x| NewQueueItem {
-                            track_id: x.track_id(),
-                            queue_id: x.queue_item_id,
-                        })
-                        .collect();
+                    let mut queue_items: Vec<NewQueueItem> = vec![];
+                    self.queue_ids = vec![];
+
+                    for track in queue.tracks {
+                        queue_items.push(NewQueueItem {
+                            track_id: track.track_id(),
+                            queue_id: track.queue_item_id,
+                        });
+                        self.queue_ids.push(track.queue_item_id);
+                    }
+
                     self.controls.new_queue(queue_items, false);
 
                     let current_position = self.tracklist_receiver.borrow().current_position();
@@ -334,16 +386,100 @@ impl ConnectState {
                 Notification::QueueTracksAdded(queue_tracks_added) => {
                     // Added in end of queue
                     tracing::info!("Queue tracks added: {:?}", queue_tracks_added);
+
+                    self.controls.add_tracks_to_queue(
+                        queue_tracks_added
+                            .tracks
+                            .clone()
+                            .into_iter()
+                            .map(|x| x.track_id())
+                            .collect(),
+                    );
+
+                    queue_tracks_added
+                        .tracks
+                        .into_iter()
+                        .for_each(|x| self.queue_ids.push(x.queue_item_id));
                 }
                 Notification::QueueTracksInserted(queue_tracks_inserted) => {
                     // Next in queue
                     tracing::info!("Queue tracks inserted: {:?}", queue_tracks_inserted);
+
+                    let insert_after = queue_tracks_inserted.insert_after.map(|x| x as usize);
+
+                    let new_tracks = queue_tracks_inserted
+                        .tracks
+                        .clone()
+                        .into_iter()
+                        .map(|x| x.track_id())
+                        .collect();
+
+                    if let Some(insert_after) = insert_after {
+                        self.controls
+                            .insert_tracks_to_queue(new_tracks, insert_after);
+
+                        let insert_after_index = match self
+                            .queue_ids
+                            .clone()
+                            .into_iter()
+                            .find(|x| insert_after as u64 == *x)
+                        {
+                            Some(idx) => idx,
+                            None => 0,
+                        };
+
+                        for (i, track) in queue_tracks_inserted.tracks.into_iter().enumerate() {
+                            self.queue_ids
+                                .insert(insert_after_index as usize + i, track.queue_item_id);
+                        }
+                    }
                 }
                 Notification::QueueTracksRemoved(queue_tracks_removed) => {
                     tracing::info!("Queue tracks removed: {:?}", queue_tracks_removed);
+
+                    for id in queue_tracks_removed.queue_item_ids {
+                        let queue_index = get_queue_index(&self.queue_ids(), id);
+                        if let Some(queue_index) = queue_index {
+                            self.controls.remove_index_from_queue(queue_index);
+                            self.queue_ids.remove(queue_index);
+                        }
+                    }
                 }
                 Notification::QueueTracksReordered(reordered) => {
                     tracing::info!("Queue tracks reordered: {:?}", reordered);
+
+                    if reordered.queue_item_ids.len() == 0 {
+                        return;
+                    }
+
+                    let insert_after =
+                        match get_queue_index(&self.queue_ids(), reordered.insert_after()) {
+                            Some(x) => x + 1,
+                            None => 0,
+                        };
+
+                    let start = get_queue_index(&self.queue_ids(), reordered.queue_item_ids[0]);
+                    let end = match reordered.queue_item_ids.len() {
+                        1 => start,
+                        _ => get_queue_index(
+                            &self.queue_ids(),
+                            reordered.queue_item_ids[reordered.queue_item_ids.len() - 1],
+                        ),
+                    };
+
+                    if let Some(start) = start
+                        && let Some(end) = end
+                    {
+                        let mut indexes: Vec<usize> = (0..self.queue_ids.len()).collect();
+                        let removed: Vec<usize> = indexes.drain(start..end + 1).collect();
+                        indexes.splice(insert_after..insert_after, removed);
+
+                        self.controls.reorder_queue(indexes.clone());
+
+                        let reordered: Vec<_> =
+                            indexes.iter().map(|&i| self.queue_ids[i].clone()).collect();
+                        self.queue_ids = reordered;
+                    }
                 }
                 Notification::VolumeChanged(volume) => {
                     let volume = volume.volume;

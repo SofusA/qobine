@@ -304,6 +304,7 @@ pub fn update_now_playing_button_icon(status: &Status, button: &gtk4::Button) {
         Status::Playing => button.set_icon_name("media-playback-pause-symbolic"),
         Status::Buffering => button.set_icon_name("content-loading-symbolic"),
         Status::Paused => button.set_icon_name("media-playback-start-symbolic"),
+        Status::Stopped => button.set_icon_name("media-playback-stop-symbolic"),
     }
 }
 

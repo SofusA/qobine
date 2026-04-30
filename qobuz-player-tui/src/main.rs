@@ -176,7 +176,7 @@ fn sleep_inhibitor(mut status_receiver: StatusReceiver) {
 
             let status = *status_receiver.borrow_and_update();
             match status {
-                Status::Paused => sleep_inhibitor.restore_sleep(),
+                Status::Paused | Status::Stopped => sleep_inhibitor.restore_sleep(),
                 Status::Playing | Status::Buffering => sleep_inhibitor.block_sleep(),
             }
         }

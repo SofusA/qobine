@@ -42,6 +42,10 @@ pub enum ControlCommand {
     AddTracksToQueue {
         ids: Vec<u32>,
     },
+    InsertTracksToQueue {
+        ids: Vec<u32>,
+        after: usize,
+    },
     RemoveIndexFromQueue {
         index: usize,
     },
@@ -118,6 +122,12 @@ impl Controls {
     pub fn add_tracks_to_queue(&self, ids: Vec<u32>) {
         self.tx
             .send(ControlCommand::AddTracksToQueue { ids })
+            .expect("infallible");
+    }
+
+    pub fn insert_tracks_to_queue(&self, ids: Vec<u32>, after: usize) {
+        self.tx
+            .send(ControlCommand::InsertTracksToQueue { ids, after })
             .expect("infallible");
     }
 
