@@ -2,11 +2,11 @@
 Type=Application
 Version=1.0
 
-Name=Qobuz Player
-Comment=Unofficial Linux client for Qobuz
+Name=Qobine
+Comment=Unofficial client for Qobuz
 
 Exec=qobuz-player-gtk
-Icon=io.github.sofusa.QobuzPlayer
+Icon=io.github.sofusa.qobine
 
 Categories=Audio;Music;Player;
 StartupNotify=true

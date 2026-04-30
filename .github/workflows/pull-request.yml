@@ -101,7 +101,7 @@ jobs:
       matrix:
         variant:
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -109,6 +109,6 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: qobuz-player-${{ matrix.variant.arch }}.flatpak
-          manifest-path: qobuz-player-gtk/flatpak/manifest.json
+          manifest-path: io.github.sofusa.qobine.json
           cache-key: flatpak-builder-${{ matrix.variant.arch }}-${{ github.sha }}
           arch: ${{ matrix.variant.arch }}
