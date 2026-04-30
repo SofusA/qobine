@@ -17,11 +17,12 @@ struct MprisPlayer {
     volume_receiver: VolumeReceiver,
     status_receiver: StatusReceiver,
     exit_sender: ExitSender,
+    mpris_suffix: String,
 }
 
 impl RootInterface for MprisPlayer {
     async fn identity(&self) -> fdo::Result<String> {
-        Ok("qobuz-player".into())
+        Ok(self.mpris_suffix.clone())
     }
     async fn raise(&self) -> fdo::Result<()> {
         Err(fdo::Error::NotSupported("Not supported".into()))
@@ -51,7 +52,7 @@ impl RootInterface for MprisPlayer {
         Ok(false)
     }
     async fn desktop_entry(&self) -> fdo::Result<String> {
-        Ok("qobuz-player".into())
+        Ok(self.mpris_suffix.clone())
     }
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
         Ok(vec![])
@@ -217,11 +218,12 @@ pub async fn init(
     mut status_receiver: StatusReceiver,
     controls: Controls,
     exit_sender: ExitSender,
+    mpris_suffix: String,
 ) -> AppResult<()> {
     let mut exit_receiver = exit_sender.subscribe();
 
     let Ok(server) = Server::new(
-        "qobuz-player",
+        &mpris_suffix.clone(),
         MprisPlayer {
             controls,
             position_receiver,
@@ -229,6 +231,7 @@ pub async fn init(
             volume_receiver: volume_receiver.clone(),
             status_receiver: status_receiver.clone(),
             exit_sender,
+            mpris_suffix,
         },
     )
     .await

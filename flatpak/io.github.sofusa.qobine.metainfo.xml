@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Sofus Addington -->
 <component type="desktop-application">
   <id>io.github.sofusa.qobine</id>
   <name>Qobine</name>
-
   <summary>Unofficial client for Qobuz</summary>
 
   <description>
-    <p>
-      Qobine is a native GTK application for listening to Qobuz music.
-    </p>
+    <p>Listening to your Qobuz music with Qobine: an Adwaita Qobuz client designed for GNOME.</p>
+    <p>Upon first launch, a browser spawns where you will need to login to Qobuz with your active streaming subscription.</p>
+    <p>Qobine is currently very mininal in terms of features, but more will follow.</p>
+    <ul>
+      <li>View and stream your favorite albums, artists and playlists</li>
+      <li>Search the full Qobuz catalogue</li>
+      <li>Add / remove favorites</li>
+    </ul>
   </description>
 
   <metadata_license>CC0-1.0</metadata_license>
@@ -16,7 +21,37 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>file:///app/share/metainfo/qobuz-player-gtk.png</image>
+      <image>https://github.com/SofusA/qobine/blob/main/assets/qobuz-player-gtk.png?raw=true</image>
     </screenshot>
   </screenshots>
+
+  <launchable type="desktop-id">io.github.sofusa.qobine.desktop</launchable>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#E0AE5B</color>
+    <color type="primary" scheme_preference="dark">#6B5A40</color>
+  </branding>
+
+  <content_rating type="oars-1.1" />
+
+  <developer id="io.github.sofusa">
+    <name>Sofus Addington</name>
+  </developer>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+
+  <url type="homepage">https://github.com/SofusA/qobine</url>
+  <url type="contribute">https://github.com/SofusA/qobine</url>
+
+  <releases>
+    <release version="0.10.3" date="2026-04-30">
+      <url type="details">https://github.com/SofusA/qobine/releases/tag/v0.10.3-fix-3</url>
+      <description>
+        <p>Initial release</p>
+      </description>
+    </release>
+  </releases>
 </component>

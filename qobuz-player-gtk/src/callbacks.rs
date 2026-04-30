@@ -70,8 +70,11 @@ pub fn build_callbacks(
 
                     let already_open = {
                         let pages = detail_pages.borrow();
-                        pages.iter().any(|p| p.detail_type().is_album(&info.id))
+                        pages
+                            .last()
+                            .is_some_and(|page| page.detail_type().is_album(&info.id))
                     };
+
                     if already_open {
                         return;
                     }
@@ -119,8 +122,11 @@ pub fn build_callbacks(
 
                     let already_open = {
                         let pages = detail_pages.borrow();
-                        pages.iter().any(|p| p.detail_type().is_artist(info.id))
+                        pages
+                            .last()
+                            .is_some_and(|page| page.detail_type().is_artist(info.id))
                     };
+
                     if already_open {
                         return;
                     }
@@ -164,8 +170,11 @@ pub fn build_callbacks(
                 main_ctx.invoke_local(move || {
                     let already_open = {
                         let pages = detail_pages.borrow();
-                        pages.iter().any(|p| p.detail_type().is_playlist(info.id))
+                        pages
+                            .last()
+                            .is_some_and(|page| page.detail_type().is_playlist(info.id))
                     };
+
                     if already_open {
                         return;
                     }

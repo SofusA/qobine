@@ -16,6 +16,8 @@ qobuz-player-mpris = { version = "*", path = "../qobuz-player-mpris" }
 qobuz-player-connect = { version = "*", path = "../qobuz-player-connect" }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }
 
+# gtk4 = { version = "0.11", features = ["gnome_49"] }
+# libadwaita = {version = "0.9" , features = ["v1_8"] }
 gtk4 = { version = "0.11", features = ["gnome_50"] }
 libadwaita = {version = "0.9" , features = ["v1_9"] }
 glib = "0.22"

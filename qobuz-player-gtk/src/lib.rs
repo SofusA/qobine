@@ -109,6 +109,14 @@ pub fn init(
                 return;
             }
 
+            if !is_logged_in {
+                let oauth_url = format!(
+                    "https://www.qobuz.com/signin/oauth?ext_app_id={app_id_for_window}&redirect_url=http://localhost"
+                );
+
+                oauth_login_window(app, &oauth_url, login_sender.clone());
+            }
+
             build_ui(
                 app,
                 tracklist_receiver.clone(),
@@ -120,14 +128,6 @@ pub fn init(
                 ui_sender.clone(),
                 ui_receiver.clone()
             );
-
-            if !is_logged_in {
-                let oauth_url = format!(
-                    "https://www.qobuz.com/signin/oauth?ext_app_id={app_id_for_window}&redirect_url=http://localhost"
-                );
-
-                oauth_login_window(app, &oauth_url, login_sender.clone());
-            }
         }
     });
 

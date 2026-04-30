@@ -85,6 +85,7 @@ pub async fn run() -> AppResult<()> {
                 status_receiver,
                 controls,
                 exit_sender,
+                "qobuz-player".to_string(),
             )
             .await
             {

@@ -12,10 +12,6 @@
     "--socket=wayland",
     "--socket=fallback-x11",
     "--socket=pulseaudio",
-    "--filesystem=xdg-run/gvfsd",
-    "--filesystem=xdg-run/gvfs",
-    "--own-name=org.mpris.MediaPlayer2.qobuz-player",
-    "--talk-name=org.gtk.vfs.*",
     "--device=dri"
   ],
 
@@ -38,7 +34,6 @@
 
         "install -Dm644 flatpak/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sofusa.qobine.svg",
         "install -Dm644 flatpak/io.github.sofusa.qobine.desktop /app/share/applications/io.github.sofusa.qobine.desktop",
-        "install -Dm644 assets/qobuz-player-gtk.png /app/share/metainfo/qobuz-player-gtk.png",
         "install -Dm644 flatpak/io.github.sofusa.qobine.metainfo.xml /app/share/metainfo/io.github.sofusa.qobine.metainfo.xml"
       ],
 

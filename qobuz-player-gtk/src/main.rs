@@ -1,6 +1,4 @@
-use qobuz_player_cli::{
-    ConnectArgs, SharedArgs, create_player, default_audio_quality, spawn_clean_up,
-};
+use qobuz_player_cli::{SharedArgs, create_player, default_audio_quality, spawn_clean_up};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use qobuz_player_controls::StatusReceiver;
 use std::sync::Arc;
@@ -20,9 +18,6 @@ use qobuz_player_controls::{
 struct Arguments {
     #[clap(flatten)]
     shared: SharedArgs,
-
-    #[clap(flatten)]
-    connect: ConnectArgs,
 }
 
 #[tokio::main]
@@ -79,6 +74,7 @@ pub async fn run() -> AppResult<()> {
                 status_receiver,
                 controls,
                 exit_sender,
+                "io.github.sofusa.qobine".to_string(),
             )
             .await
             {
@@ -94,32 +90,6 @@ pub async fn run() -> AppResult<()> {
     }
 
     let client = client.clone();
-
-    if args.connect.connect {
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let controls = player.controls();
-        let app_id = app_id.clone();
-
-        tokio::spawn(async move {
-            if let Err(e) = qobuz_player_connect::init(
-                &app_id,
-                args.connect.name_args.connect_name,
-                controls,
-                position_receiver,
-                tracklist_receiver,
-                status_receiver,
-                volume_receiver,
-                max_audio_quality,
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
 
     let controls = player.controls();
     let tracklist_receiver = player.tracklist();
