@@ -12,6 +12,7 @@
     "--socket=wayland",
     "--socket=fallback-x11",
     "--socket=pulseaudio",
+    "--talk-name=org.gtk.vfs.*",
     "--device=dri"
   ],
 
@@ -30,8 +31,8 @@
 
       "build-commands": [
         "cargo build --offline --locked --release --manifest-path qobuz-player-gtk/Cargo.toml",
-        "install -Dm755 ./target/release/qobuz-player-gtk /app/bin/qobuz-player-gtk",
 
+        "install -Dm755 ./target/release/qobuz-player-gtk /app/bin/qobuz-player-gtk",
         "install -Dm644 flatpak/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sofusa.qobine.svg",
         "install -Dm644 flatpak/io.github.sofusa.qobine.desktop /app/share/applications/io.github.sofusa.qobine.desktop",
         "install -Dm644 flatpak/io.github.sofusa.qobine.metainfo.xml /app/share/metainfo/io.github.sofusa.qobine.metainfo.xml"
