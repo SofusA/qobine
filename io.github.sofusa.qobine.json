@@ -1,7 +1,7 @@
 {
   "app-id": "io.github.sofusa.qobine",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "49",
+  "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
   "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
   "command": "qobuz-player-gtk",
@@ -15,6 +15,7 @@
     "--filesystem=xdg-run/gvfsd",
     "--filesystem=xdg-run/gvfs",
     "--own-name=org.mpris.MediaPlayer2.qobuz-player",
+    "--talk-name=org.gtk.vfs.*",
     "--device=dri"
   ],
 
