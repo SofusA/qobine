@@ -84,7 +84,7 @@ pub fn init(
     libadwaita::init().unwrap();
 
     let application = libadwaita::Application::builder()
-        .application_id("com.github.sofusa.qobuz-player")
+        .application_id("io.github.sofusa.qobine")
         .build();
 
     let is_logged_in = client.credentials_is_set()?;

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.sofusa.QobuzPlayer</id>
-  <name>Qobuz Player</name>
+  <id>io.github.sofusa.qobine</id>
+  <name>Qobine</name>
 
-  <summary>Unofficial Linux client for Qobuz</summary>
+  <summary>Unofficial client for Qobuz</summary>
 
   <description>
     <p>
-      Qobuz Player is a native GTK application for listening to Qobuz music on Linux.
+      Qobine is a native GTK application for listening to Qobuz music.
     </p>
   </description>
 
