@@ -9,6 +9,7 @@ pub mod album_detail_page;
 pub mod albums_page;
 pub mod artist_detail_page;
 pub mod artists_page;
+pub mod detail_page;
 pub mod favorites_button;
 pub mod grid_page;
 pub mod library_page;

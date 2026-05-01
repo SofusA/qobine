@@ -12,6 +12,7 @@ use crate::{
     UiEvent,
     ui::{
         DetailPage, DetailPageType, build_track_row,
+        detail_page::{build_detail_header, build_detail_scaffold},
         favorites_button::{FavoriteButtonType, new_favorite_button},
         format_time, set_image_from_url,
     },
@@ -52,37 +53,14 @@ impl PlaylistDetailPage {
         library_tx: mpsc::UnboundedSender<UiEvent>,
     ) -> Self {
         let empty_title = gtk4::Box::builder().hexpand(true).build();
-
         let nav_bar = adw::HeaderBar::builder().title_widget(&empty_title).build();
 
-        let spinner = gtk4::Spinner::new();
-        spinner.start();
-        let spinner_box = gtk4::Box::builder()
-            .vexpand(true)
-            .hexpand(true)
-            .halign(gtk4::Align::Center)
-            .valign(gtk4::Align::Center)
-            .build();
-        spinner_box.append(&spinner);
-
-        let cover = gtk4::Image::builder().pixel_size(400).build();
-        let cover_frame = gtk4::Frame::builder().child(&cover).build();
-        cover_frame.add_css_class("card");
-
         let title = gtk4::Label::builder()
-            .xalign(0.0)
             .wrap(true)
             .css_classes(vec!["title-1"])
             .build();
 
-        let artist = gtk4::Label::builder()
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(vec!["title-3"])
-            .build();
-
         let meta = gtk4::Label::builder()
-            .xalign(0.0)
             .wrap(true)
             .css_classes(vec!["dim-label"])
             .build();
@@ -113,78 +91,32 @@ impl PlaylistDetailPage {
             });
         }
 
-        let favorites_button = new_favorite_button(
-            client.clone(),
-            FavoriteButtonType::Playlist(playlist_id),
-            library_tx,
+        let header = build_detail_header(
+            400,
+            vec![title.clone().upcast(), meta.clone().upcast()],
+            vec![
+                play_button.clone().upcast(),
+                shuffle_button.clone().upcast(),
+            ],
+            {
+                let client = client.clone();
+                let library_tx = library_tx.clone();
+                move || {
+                    new_favorite_button(
+                        client,
+                        FavoriteButtonType::Playlist(playlist_id),
+                        library_tx,
+                    )
+                    .upcast()
+                }
+            },
         );
 
-        let button_box = gtk4::Box::builder()
-            .orientation(gtk4::Orientation::Horizontal)
-            .spacing(12)
-            .build();
-        button_box.append(&play_button);
-        button_box.append(&shuffle_button);
-        button_box.append(&favorites_button);
+        let scaffold = build_detail_scaffold(&header.header_section);
 
-        let header_text = gtk4::Box::builder()
-            .orientation(gtk4::Orientation::Vertical)
-            .spacing(12)
-            .hexpand(true)
-            .build();
-        header_text.append(&title);
-        header_text.append(&artist);
-        header_text.append(&meta);
-        header_text.append(&button_box);
-
-        let header_section = gtk4::Box::builder()
-            .orientation(gtk4::Orientation::Horizontal)
-            .spacing(18)
-            .margin_top(18)
-            .margin_bottom(18)
-            .margin_start(18)
-            .margin_end(18)
-            .build();
-
-        header_section.append(&cover_frame);
-        header_section.append(&header_text);
-
-        let tracks_list = gtk4::ListBox::builder()
-            .selection_mode(gtk4::SelectionMode::Single)
-            .activate_on_single_click(true)
-            .css_classes(vec!["boxed-list"])
-            .margin_start(18)
-            .margin_end(18)
-            .margin_bottom(18)
-            .build();
-
-        let content = gtk4::Box::builder()
-            .orientation(gtk4::Orientation::Vertical)
-            .vexpand(true)
-            .hexpand(true)
-            .build();
-
-        content.append(&header_section);
-        content.append(&tracks_list);
-
-        let clamp = adw::Clamp::builder()
-            .maximum_size(900)
-            .tightening_threshold(700)
-            .child(&content)
-            .build();
-
-        let scroller = gtk4::ScrolledWindow::builder()
-            .vexpand(true)
-            .hexpand(true)
-            .child(&clamp)
-            .build();
-
-        let stack = gtk4::Stack::builder()
-            .transition_type(gtk4::StackTransitionType::Crossfade)
-            .build();
-        stack.add_named(&spinner_box, Some("loading"));
-        stack.add_named(&scroller, Some("content"));
-        stack.set_visible_child_name("loading");
+        let cover = header.cover.clone();
+        let stack = scaffold.stack.clone();
+        let tracks_list = scaffold.tracks_list.clone();
 
         let toolbar = adw::ToolbarView::new();
         toolbar.add_top_bar(&nav_bar);
