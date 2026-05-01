@@ -1,12 +1,12 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
-use async_channel::Sender;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
 use qobuz_player_controls::{
     TracklistReceiver, client::Client, controls::Controls, tracklist::PlayingEntity,
 };
+use tokio::sync::mpsc;
 
 use crate::{
     UiEvent,
@@ -49,7 +49,7 @@ impl PlaylistDetailPage {
         controls: Controls,
         client: Arc<Client>,
         tracklist_receiver: TracklistReceiver,
-        library_tx: Sender<UiEvent>,
+        library_tx: mpsc::UnboundedSender<UiEvent>,
     ) -> Self {
         let empty_title = gtk4::Box::builder().hexpand(true).build();
 

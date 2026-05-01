@@ -1,6 +1,5 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
-use async_channel::Sender;
 use glib::WeakRef;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -12,6 +11,7 @@ use qobuz_player_controls::{
     models::{AlbumSimple, Artist},
     tracklist::PlayingEntity,
 };
+use tokio::sync::mpsc;
 
 use crate::{
     UiEvent,
@@ -62,7 +62,7 @@ impl ArtistDetailPage {
         tracklist_receiver: TracklistReceiver,
         on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
         on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
-        library_tx: Sender<UiEvent>,
+        library_tx: mpsc::UnboundedSender<UiEvent>,
     ) -> Self {
         let empty_title = gtk4::Box::builder().hexpand(true).build();
 

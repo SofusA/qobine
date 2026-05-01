@@ -4210,7 +4210,6 @@ dependencies = [
 name = "qobuz-player-gtk"
 version = "0.10.3"
 dependencies = [
- "async-channel",
  "clap",
  "futures",
  "glib",

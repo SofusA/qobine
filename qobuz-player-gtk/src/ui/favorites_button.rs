@@ -1,6 +1,7 @@
 use gtk4::glib;
 use gtk4::prelude::*;
 use std::{cell::Cell, rc::Rc, sync::Arc};
+use tokio::sync::mpsc;
 
 use qobuz_player_controls::client::Client;
 
@@ -16,7 +17,7 @@ pub enum FavoriteButtonType {
 pub fn new_favorite_button(
     client: Arc<Client>,
     button_type: FavoriteButtonType,
-    tx: async_channel::Sender<UiEvent>,
+    tx: mpsc::UnboundedSender<UiEvent>,
 ) -> gtk4::Button {
     let is_favorite = Rc::new(Cell::new(false));
     let button_type = Rc::new(button_type);
@@ -116,7 +117,7 @@ pub fn new_favorite_button(
                         } else {
                             "non-starred-symbolic"
                         });
-                        let _ = tx.send(UiEvent::FavoritesChanged).await;
+                        let _ = tx.send(UiEvent::FavoritesChanged);
                     }
                 }
             ));

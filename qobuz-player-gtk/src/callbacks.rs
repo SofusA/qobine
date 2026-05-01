@@ -5,6 +5,7 @@ use std::{
     rc::{Rc, Weak},
     sync::Arc,
 };
+use tokio::sync::mpsc;
 
 use crate::{
     UiEvent,
@@ -39,7 +40,7 @@ pub fn build_callbacks(
     client: Arc<Client>,
     detail_pages: Rc<std::cell::RefCell<Vec<Rc<dyn DetailPage>>>>,
     tracklist_receiver: TracklistReceiver,
-    sender: async_channel::Sender<UiEvent>,
+    sender: mpsc::UnboundedSender<UiEvent>,
 ) -> CallbackHandles {
     let main_ctx = glib::MainContext::default();
 

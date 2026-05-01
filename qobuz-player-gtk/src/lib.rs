@@ -1,7 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use adw::{Application, prelude::*};
-use async_channel::{Receiver, Sender};
 use libadwaita::{self as adw, ApplicationWindow};
 use qobuz_player_controls::{
     AppResult, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
@@ -11,6 +10,7 @@ use qobuz_player_controls::{
     error::Error,
     tracklist::Tracklist,
 };
+use tokio::sync::mpsc;
 use webkit6::{WebView, prelude::*};
 
 use crate::{
@@ -89,8 +89,9 @@ pub fn init(
 
     let is_logged_in = client.credentials_is_set()?;
 
-    let (login_sender, mut login_receiver) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (ui_sender, ui_receiver) = async_channel::unbounded::<UiEvent>();
+    let (login_sender, mut login_receiver) = mpsc::unbounded_channel::<String>();
+    let (ui_sender, ui_receiver) = mpsc::unbounded_channel::<UiEvent>();
+    let ui_receiver = RefCell::new(Some(ui_receiver));
 
     let app_id_for_window = app_id.clone();
 
@@ -117,6 +118,12 @@ pub fn init(
                 oauth_login_window(app, &oauth_url, login_sender.clone());
             }
 
+            
+            let ui_receiver = ui_receiver
+                .borrow_mut()
+                .take()
+                .expect("activate called more than once");
+
             build_ui(
                 app,
                 tracklist_receiver.clone(),
@@ -126,7 +133,7 @@ pub fn init(
                 client.clone(),
                 exit_sender.clone(),
                 ui_sender.clone(),
-                ui_receiver.clone()
+                ui_receiver
             );
         }
     });
@@ -138,7 +145,7 @@ pub fn init(
 
     glib::MainContext::default().spawn_local(async move {
         if is_logged_in {
-            ui_sender.send(UiEvent::FavoritesChanged).await.unwrap();
+            ui_sender.send(UiEvent::FavoritesChanged).unwrap();
             return;
         }
 
@@ -153,7 +160,7 @@ pub fn init(
             let credentials: Credentials = oauth.into();
             client_clone.set_credentials(credentials.clone())?;
             database_clone.set_credentials(credentials).await?;
-            ui_sender.send(UiEvent::FavoritesChanged).await.unwrap();
+            ui_sender.send(UiEvent::FavoritesChanged).unwrap();
 
             Ok(())
         }
@@ -179,8 +186,8 @@ fn build_ui(
     controls: Controls,
     client: Arc<Client>,
     exit_sender: ExitSender,
-    ui_sender: Sender<UiEvent>,
-    ui_receiver: Receiver<UiEvent>,
+    ui_sender: mpsc::UnboundedSender<UiEvent>,
+    ui_receiver: mpsc::UnboundedReceiver<UiEvent>,
 ) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -295,8 +302,8 @@ fn build_ui(
 
 #[allow(clippy::too_many_arguments)]
 fn setup_tracklist_listener(
-    sender: Sender<UiEvent>,
-    receiver: Receiver<UiEvent>,
+    sender: mpsc::UnboundedSender<UiEvent>,
+    mut receiver: mpsc::UnboundedReceiver<UiEvent>,
     mut tracklist_receiver: TracklistReceiver,
     mut status_receiver: StatusReceiver,
     mut position_receiver: PositionReceiver,
@@ -312,17 +319,17 @@ fn setup_tracklist_listener(
             tokio::select! {
                 Ok(_) = tracklist_receiver.changed() => {
                     let tracklist = tracklist_receiver.borrow_and_update().clone();
-                    sender.send(UiEvent::Tracklist(tracklist)).await.unwrap();
+                    sender.send(UiEvent::Tracklist(tracklist)).unwrap();
                 }
 
                 Ok(_) = status_receiver.changed() => {
                     let status = *status_receiver.borrow_and_update();
-                    sender.send(UiEvent::Status(status)).await.unwrap();
+                    sender.send(UiEvent::Status(status)).unwrap();
                 }
 
                 Ok(_) = position_receiver.changed() => {
                     let position = *position_receiver.borrow_and_update();
-                    sender.send(UiEvent::Position(position)).await.unwrap();
+                    sender.send(UiEvent::Position(position)).unwrap();
                 }
                 Ok(exit) = exit_receiver.recv() => {
                     if exit {
@@ -336,30 +343,26 @@ fn setup_tracklist_listener(
     glib::MainContext::default().spawn_local(async move {
         let _keepalive = callback_handles;
 
-        loop {
-            match receiver.recv().await {
-                Ok(update) => match update {
-                    UiEvent::Tracklist(tracklist) => {
-                        update_now_playing(&now_playing_bar, &tracklist);
+        while let Some(update) = receiver.recv().await
+        {
+            match update {
+                UiEvent::Tracklist(tracklist) => {
+                    update_now_playing(&now_playing_bar, &tracklist);
 
-                        if let Some(entity) = tracklist.current_playing_entity() {
-                            for page in detail_pages.borrow().iter() {
-                                page.update_current_playing(entity.clone());
-                            }
+                    if let Some(entity) = tracklist.current_playing_entity() {
+                        for page in detail_pages.borrow().iter() {
+                            page.update_current_playing(entity.clone());
                         }
                     }
-                    UiEvent::Status(status) => {
-                        update_now_playing_button_icon(&status, &now_playing_bar.play_button);
-                    }
-                    UiEvent::Position(duration) => {
-                        update_progress(&now_playing_bar, &duration);
-                    }
-                    UiEvent::FavoritesChanged => {
-                        library_page.reload();
-                    }
-                },
-                Err(err) => {
-                    tracing::error!("{err}");
+                }
+                UiEvent::Status(status) => {
+                    update_now_playing_button_icon(&status, &now_playing_bar.play_button);
+                }
+                UiEvent::Position(duration) => {
+                    update_progress(&now_playing_bar, &duration);
+                }
+                UiEvent::FavoritesChanged => {
+                    library_page.reload();
                 }
             }
         }
