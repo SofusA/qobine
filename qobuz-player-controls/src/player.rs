@@ -124,6 +124,7 @@ impl Player {
         let target_status = *self.target_status.borrow();
 
         match target_status {
+            Status::Stopped => self.stop(),
             Status::Playing | Status::Buffering => self.pause(),
             Status::Paused => self.play().await?,
         }
@@ -157,6 +158,11 @@ impl Player {
             tracing::info!("Waiting for state change delay");
             sleep(delay).await;
         }
+    }
+
+    fn stop(&mut self) {
+        self.set_target_status(Status::Stopped);
+        self.sink.stop();
     }
 
     fn pause(&mut self) {
@@ -501,6 +507,17 @@ impl Player {
     }
 
     async fn add_tracks_to_queue(&mut self, ids: Vec<u32>) -> AppResult<()> {
+        let tracklist = self.tracklist_rx.borrow().clone();
+        let last_track_id = tracklist
+            .queue()
+            .last()
+            .map(|x| x.track.id as usize)
+            .unwrap_or(0);
+
+        self.insert_tracks_to_queue(ids, last_track_id).await
+    }
+
+    async fn insert_tracks_to_queue(&mut self, ids: Vec<u32>, after: usize) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
         tracklist.set_list_type(TracklistType::Tracks);
 
@@ -510,8 +527,8 @@ impl Player {
 
         let notification = Notification::Info(format!("{} added to queue", track_titles));
 
-        for track in tracks {
-            tracklist.push_track(track);
+        for (index, track) in tracks.into_iter().enumerate() {
+            tracklist.insert_track(after + index, track);
         }
 
         self.update_queue(tracklist).await?;
@@ -637,6 +654,9 @@ impl Player {
                 self.set_volume(volume).await?;
             }
             ControlCommand::AddTracksToQueue { ids } => self.add_tracks_to_queue(ids).await?,
+            ControlCommand::InsertTracksToQueue { ids, after } => {
+                self.insert_tracks_to_queue(ids, after).await?
+            }
             ControlCommand::RemoveIndexFromQueue { index } => {
                 self.remove_index_from_queue(index).await?
             }

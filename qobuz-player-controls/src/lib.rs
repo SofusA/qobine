@@ -29,8 +29,9 @@ pub type TracklistReceiver = watch::Receiver<Tracklist>;
 pub enum Status {
     Playing,
     Buffering,
-    #[default]
     Paused,
+    #[default]
+    Stopped,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

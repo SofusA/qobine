@@ -220,6 +220,7 @@ async fn background_task(
                     Status::Paused => "pause",
                     Status::Playing => "play",
                     Status::Buffering => "buffering",
+                    Status::Stopped => "stopped",
                 };
 
                 let event = ServerSentEvent {

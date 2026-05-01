@@ -106,5 +106,6 @@ fn get_status(state: Status) -> String {
         Status::Playing => "Playing ⏵".to_string(),
         Status::Paused => "Paused ⏸ ".to_string(),
         Status::Buffering => "Buffering".to_string(),
+        Status::Stopped => "Stopped ⏹️".to_string(),
     }
 }

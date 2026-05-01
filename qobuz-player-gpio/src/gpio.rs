@@ -15,7 +15,7 @@ pub async fn init(mut status_receiver: StatusReceiver) -> AppResult<()> {
         if status_receiver.changed().await.is_ok() {
             let status = status_receiver.borrow_and_update();
             match *status {
-                qobuz_player_controls::Status::Paused => {
+                qobuz_player_controls::Status::Paused | qobuz_player_controls::Status::Stopped => {
                     pin.set_low();
                     tracing::info!("Gpio low");
                 }

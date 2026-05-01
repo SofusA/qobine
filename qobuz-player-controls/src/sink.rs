@@ -72,6 +72,12 @@ impl Sink {
         }
     }
 
+    pub fn stop(&self) {
+        if let Some(player) = &self.sink {
+            player.stop();
+        }
+    }
+
     pub fn seek(&self, duration: Duration) -> AppResult<()> {
         if let Some(player) = &self.sink {
             let current_volume = *self.volume.borrow();
