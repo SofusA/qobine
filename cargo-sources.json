@@ -2797,14 +2797,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/gtk4/gtk4-0.11.2.crate",
-        "sha256": "25d47a7ca9ec6f50b5ace32eaaf11fe152c9bbc4f780a35e42c9b7fc5b046f9c",
-        "dest": "cargo/vendor/gtk4-0.11.2"
+        "url": "https://static.crates.io/crates/gtk4/gtk4-0.11.3.crate",
+        "sha256": "7181b837f04cbe93f79441475f7a00560a92cba7a72e38cc1a68b6f8b78eaae2",
+        "dest": "cargo/vendor/gtk4-0.11.3"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"25d47a7ca9ec6f50b5ace32eaaf11fe152c9bbc4f780a35e42c9b7fc5b046f9c\", \"files\": {}}",
-        "dest": "cargo/vendor/gtk4-0.11.2",
+        "contents": "{\"package\": \"7181b837f04cbe93f79441475f7a00560a92cba7a72e38cc1a68b6f8b78eaae2\", \"files\": {}}",
+        "dest": "cargo/vendor/gtk4-0.11.3",
         "dest-filename": ".cargo-checksum.json"
     },
     {
