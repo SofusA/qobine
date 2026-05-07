@@ -23,6 +23,7 @@
 
       "build-options": {
         "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "build-args": ["--share=network"],
 
         "env": {
           "CARGO_HOME": "/run/build/qobuz-player-gtk/cargo"
@@ -30,7 +31,7 @@
       },
 
       "build-commands": [
-        "cargo build --offline --locked --release --manifest-path qobuz-player-gtk/Cargo.toml",
+        "cargo build --locked --release --manifest-path qobuz-player-gtk/Cargo.toml",
 
         "install -Dm755 ./target/release/qobuz-player-gtk /app/bin/qobuz-player-gtk",
         "install -Dm644 flatpak/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sofusa.qobine.svg",
@@ -42,8 +43,7 @@
         {
           "type": "dir",
           "path": "."
-        },
-        "cargo-sources.json"
+        }
       ]
     }
   ]
