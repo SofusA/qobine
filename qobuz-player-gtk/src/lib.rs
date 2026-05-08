@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use adw::{Application, prelude::*};
+use gtk4::{gdk, CssProvider};
 use libadwaita::{self as adw, ApplicationWindow};
 use qobuz_player_controls::{
     AppResult, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
@@ -69,6 +70,29 @@ fn extract_code_from_uri(uri: &str) -> Option<String> {
         .map(|(_, v)| v.to_string())
 }
 
+fn load_app_css() {
+    let provider = CssProvider::new();
+    provider.load_from_string(
+        r#"
+.app-content,
+.app-content stack,
+.app-content overlay,
+.app-content scrolledwindow,
+.app-content viewport,
+.app-content gridview {
+    background-color: @headerbar_bg_color;
+    background-image: none;
+}
+"#,
+    );
+
+    gtk4::style_context_add_provider_for_display(
+        &gdk::Display::default().expect("No display found"),
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn init(
     client: Arc<Client>,
@@ -81,6 +105,7 @@ pub fn init(
     exit_sender: ExitSender,
 ) -> AppResult<()> {
     libadwaita::init().unwrap();
+    load_app_css();
 
     let application = libadwaita::Application::builder()
         .application_id("io.github.sofusa.qobine")

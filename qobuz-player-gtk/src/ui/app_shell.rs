@@ -47,6 +47,7 @@ impl AppShell {
             .vexpand(true)
             .hexpand(true)
             .build();
+        stack.add_css_class("app-content");
         stack.add_named(albums_page.borrow().widget(), Some("albums"));
         stack.add_named(artists_page.borrow().widget(), Some("artists"));
         stack.add_named(playlists_page.borrow().widget(), Some("playlists"));
@@ -191,9 +192,11 @@ impl AppShell {
         sidebar_toolbar.set_content(Some(&sidebar));
 
         let content_toolbar = adw::ToolbarView::new();
+        content_toolbar.add_css_class("app-content");
         content_toolbar.add_top_bar(&content_header);
 
         let content_overlay = gtk4::Overlay::builder().vexpand(true).hexpand(true).build();
+        content_overlay.add_css_class("app-content");
 
         content_overlay.set_child(Some(&stack));
         content_overlay.add_overlay(&spinner_box);
