@@ -63,7 +63,7 @@ impl NowPlayingBar {
 
         let controls_prev = controls.clone();
         let prev_button = gtk4::Button::builder()
-            .icon_name("media-seek-backward-symbolic")
+            .icon_name("media-skip-backward-symbolic")
             .build();
         prev_button.add_css_class("flat");
         prev_button.connect_clicked(move |_| controls_prev.previous());
@@ -77,7 +77,7 @@ impl NowPlayingBar {
 
         let controls_next = controls.clone();
         let next_button = gtk4::Button::builder()
-            .icon_name("media-seek-forward-symbolic")
+            .icon_name("media-skip-forward-symbolic")
             .build();
         next_button.add_css_class("flat");
         next_button.connect_clicked(move |_| controls_next.next());
