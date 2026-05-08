@@ -112,6 +112,12 @@ fn load_app_css() {
 .now-playing-progress-active:hover highlight {
     min-height: 10px;
 }
+
+.now-playing-subtitle-link {
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+}
 "#,
     );
 

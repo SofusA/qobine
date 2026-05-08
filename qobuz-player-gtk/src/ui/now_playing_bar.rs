@@ -36,7 +36,8 @@ impl NowPlayingBar {
         on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
     ) -> Self {
         let title_label = gtk4::Label::builder()
-            .halign(gtk4::Align::Center)
+            .halign(gtk4::Align::Start)
+            .xalign(0.0)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .wrap(false)
             .build();
@@ -44,16 +45,17 @@ impl NowPlayingBar {
 
         let subtitle_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
-            .halign(gtk4::Align::Center)
+            .halign(gtk4::Align::Start)
             .build();
 
-        let text_box = gtk4::Box::builder()
+        let info_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Vertical)
-            .halign(gtk4::Align::Center)
+            .halign(gtk4::Align::Start)
+            .valign(gtk4::Align::Center)
             .hexpand(true)
             .build();
-        text_box.append(&title_label);
-        text_box.append(&subtitle_box);
+        info_box.append(&title_label);
+        info_box.append(&subtitle_box);
 
         let controls_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
@@ -147,8 +149,7 @@ impl NowPlayingBar {
             .valign(gtk4::Align::Center)
             .build();
 
-        left_box.append(&text_box);
-        left_box.append(&controls_box);
+        left_box.append(&info_box);
         let cover = gtk4::Image::builder()
             .pixel_size(96)
             .halign(gtk4::Align::Center)
@@ -159,17 +160,42 @@ impl NowPlayingBar {
         cover_frame.set_size_request(96, 96);
         cover_frame.set_valign(gtk4::Align::Center);
 
-        let content = gtk4::Box::builder()
+        let now_playing_info = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
-            .spacing(16)
+            .spacing(12)
+            .halign(gtk4::Align::Start)
+            .valign(gtk4::Align::Center)
+            .hexpand(true)
+            .build();
+        now_playing_info.append(&cover_frame);
+        now_playing_info.append(&left_box);
+
+        let center_controls = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .halign(gtk4::Align::Center)
+            .valign(gtk4::Align::Center)
+            .hexpand(true)
+            .build();
+        center_controls.append(&controls_box);
+
+        let right_spacer = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .halign(gtk4::Align::End)
+            .hexpand(true)
+            .build();
+
+        let content = gtk4::Grid::builder()
+            .column_homogeneous(true)
+            .column_spacing(12)
             .margin_start(16)
             .margin_end(16)
             .margin_top(12)
             .margin_bottom(12)
             .build();
 
-        content.append(&cover_frame);
-        content.append(&left_box);
+        content.attach(&now_playing_info, 0, 0, 1, 1);
+        content.attach(&center_controls, 1, 0, 1, 1);
+        content.attach(&right_spacer, 2, 0, 1, 1);
 
         let frame_content = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Vertical)
@@ -224,6 +250,8 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
     let make_label = |text: &str| {
         let l = gtk4::Label::builder()
             .label(text)
+            .xalign(0.0)
+            .halign(gtk4::Align::Start)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
         l.add_css_class("dim-label");
@@ -232,6 +260,8 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
 
     let append_sep = || {
         let sep = make_label("·");
+        sep.set_margin_start(4);
+        sep.set_margin_end(4);
         bar.subtitle_box.append(&sep);
     };
 
@@ -256,6 +286,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
             let button = clickable_tile(&label.upcast(), move || {
                 on_open(AlbumHeaderInfo { id: id.clone() })
             });
+            button.add_css_class("now-playing-subtitle-link");
             bar.subtitle_box.append(&button);
 
             if let (Some(name), Some(artist_id)) = (&track.artist_name, track.artist_id) {
@@ -266,6 +297,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
                 let button = clickable_tile(&label.upcast(), move || {
                     on_open(ArtistHeaderInfo { id: artist_id })
                 });
+                button.add_css_class("now-playing-subtitle-link");
                 bar.subtitle_box.append(&button);
             }
         }
@@ -278,6 +310,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
             let button = clickable_tile(&label.upcast(), move || {
                 on_open(PlaylistHeaderInfo { id });
             });
+            button.add_css_class("now-playing-subtitle-link");
             bar.subtitle_box.append(&button);
 
             if let (Some(name), Some(artist_id)) = (&track.artist_name, track.artist_id) {
@@ -288,6 +321,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
                 let button = clickable_tile(&label.upcast(), move || {
                     on_open(ArtistHeaderInfo { id: artist_id });
                 });
+                button.add_css_class("now-playing-subtitle-link");
                 bar.subtitle_box.append(&button);
             }
         }
@@ -299,6 +333,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
             let button = clickable_tile(&label.upcast(), move || {
                 on_open(ArtistHeaderInfo { id });
             });
+            button.add_css_class("now-playing-subtitle-link");
             bar.subtitle_box.append(&button);
         }
 
@@ -310,6 +345,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
                 let button = clickable_tile(&label.upcast(), move || {
                     on_open(AlbumHeaderInfo { id: id.clone() });
                 });
+                button.add_css_class("now-playing-subtitle-link");
                 bar.subtitle_box.append(&button);
             }
 
@@ -320,6 +356,7 @@ pub fn update_now_playing(bar: &NowPlayingBar, tracklist: &Tracklist) {
                 let button = clickable_tile(&label.upcast(), move || {
                     on_open(ArtistHeaderInfo { id: artist_id });
                 });
+                button.add_css_class("now-playing-subtitle-link");
                 bar.subtitle_box.append(&button);
             }
         }
