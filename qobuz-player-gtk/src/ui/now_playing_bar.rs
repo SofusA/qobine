@@ -152,13 +152,13 @@ impl NowPlayingBar {
 
         left_box.append(&info_box);
         let cover = gtk4::Image::builder()
-            .pixel_size(96)
+            .pixel_size(84)
             .halign(gtk4::Align::Center)
             .valign(gtk4::Align::Center)
             .build();
         let cover_frame = gtk4::Frame::builder().child(&cover).build();
         cover_frame.add_css_class("card");
-        cover_frame.set_size_request(96, 96);
+        cover_frame.set_size_request(84, 84);
         cover_frame.set_valign(gtk4::Align::Center);
 
         let now_playing_info = gtk4::Box::builder()
@@ -190,8 +190,8 @@ impl NowPlayingBar {
             .column_spacing(12)
             .margin_start(16)
             .margin_end(16)
-            .margin_top(12)
-            .margin_bottom(12)
+            .margin_top(10)
+            .margin_bottom(10)
             .build();
 
         content.attach(&now_playing_info, 0, 0, 1, 1);
