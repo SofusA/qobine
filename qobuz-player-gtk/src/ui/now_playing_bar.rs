@@ -74,7 +74,8 @@ impl NowPlayingBar {
         let play_button = gtk4::Button::builder()
             .icon_name("media-playback-start-symbolic")
             .build();
-        play_button.add_css_class("flat");
+        play_button.add_css_class("circular");
+        play_button.add_css_class("now-playing-main-play");
         play_button.connect_clicked(move |_| controls_play_pause.play_pause());
 
         let controls_next = controls.clone();

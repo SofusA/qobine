@@ -118,6 +118,11 @@ fn load_app_css() {
     margin: 0;
     min-height: 0;
 }
+
+.now-playing-main-play {
+    min-width: 40px;
+    min-height: 40px;
+}
 "#,
     );
 
