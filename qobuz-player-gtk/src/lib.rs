@@ -69,6 +69,58 @@ fn extract_code_from_uri(uri: &str) -> Option<String> {
         .map(|(_, v)| v.to_string())
 }
 
+fn load_app_css() {
+    let provider = CssProvider::new();
+    provider.load_from_string(
+        r#"
+.app-content,
+.app-content stack,
+.app-content overlay,
+.app-content scrolledwindow,
+.app-content viewport,
+.app-content gridview {
+    background-color: @headerbar_bg_color;
+    background-image: none;
+}
+
+.now-playing-bar {
+    border-radius: 0;
+}
+
+.now-playing-progress {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    background-image: none;
+}
+
+.now-playing-progress trough,
+.now-playing-progress highlight {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    min-height: 1px;
+    transition: min-height 100ms ease;
+}
+
+.now-playing-progress-active trough,
+.now-playing-progress-active highlight {
+    min-height: 5px;
+}
+
+.now-playing-progress-active:hover trough,
+.now-playing-progress-active:hover highlight {
+    min-height: 10px;
+}
+"#,
+    );
+
+    gtk4::style_context_add_provider_for_display(
+        &gdk::Display::default().expect("No display found"),
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
 #[allow(clippy::too_many_arguments)]
 pub fn init(
     client: Arc<Client>,
@@ -81,6 +133,7 @@ pub fn init(
     exit_sender: ExitSender,
 ) -> AppResult<()> {
     libadwaita::init().unwrap();
+    load_app_css();
 
     let application = libadwaita::Application::builder()
         .application_id("io.github.sofusa.qobine")

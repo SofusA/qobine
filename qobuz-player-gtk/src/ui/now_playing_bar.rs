@@ -91,12 +91,14 @@ impl NowPlayingBar {
             .width_chars(6)
             .xalign(0.0)
             .build();
+        progress_current_label.add_css_class("dim-label");
 
         let progress_total_label = gtk4::Label::builder()
             .label("0:00")
             .width_chars(6)
             .xalign(1.0)
             .build();
+        progress_total_label.add_css_class("dim-label");
 
         let progress_scale = gtk4::Scale::builder()
             .orientation(gtk4::Orientation::Horizontal)
@@ -104,6 +106,9 @@ impl NowPlayingBar {
             .draw_value(false)
             .focusable(false)
             .build();
+        progress_scale.set_valign(gtk4::Align::Start);
+        progress_scale.add_css_class("now-playing-progress");
+        progress_scale.add_css_class("now-playing-progress-active");
 
         let controls_seek = controls.clone();
         progress_scale.connect_change_value(move |_, _, value| {
@@ -114,11 +119,27 @@ impl NowPlayingBar {
         let progress_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
             .hexpand(true)
+            .margin_top(0)
+            .margin_bottom(0)
+            .margin_start(0)
+            .margin_end(0)
             .build();
 
-        progress_box.append(&progress_current_label);
+        let progress_time_box = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Horizontal)
+            .hexpand(true)
+            .spacing(8)
+            .margin_top(10)
+            .margin_start(8)
+            .margin_end(8)
+            .build();
+
+        let progress_spacer = gtk4::Box::builder().hexpand(true).build();
+
         progress_box.append(&progress_scale);
-        progress_box.append(&progress_total_label);
+        progress_time_box.append(&progress_current_label);
+        progress_time_box.append(&progress_spacer);
+        progress_time_box.append(&progress_total_label);
 
         let left_box = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Vertical)
@@ -128,30 +149,54 @@ impl NowPlayingBar {
 
         left_box.append(&text_box);
         left_box.append(&controls_box);
-        left_box.append(&progress_box);
-
-        let cover = gtk4::Image::builder().pixel_size(130).build();
+        let cover = gtk4::Image::builder()
+            .pixel_size(96)
+            .halign(gtk4::Align::Center)
+            .valign(gtk4::Align::Center)
+            .build();
         let cover_frame = gtk4::Frame::builder().child(&cover).build();
         cover_frame.add_css_class("card");
+        cover_frame.set_size_request(96, 96);
+        cover_frame.set_valign(gtk4::Align::Center);
 
         let content = gtk4::Box::builder()
             .orientation(gtk4::Orientation::Horizontal)
-            .spacing(24)
-            .margin_start(24)
-            .margin_end(24)
-            .margin_top(24)
-            .margin_bottom(24)
+            .spacing(16)
+            .margin_start(16)
+            .margin_end(16)
+            .margin_top(12)
+            .margin_bottom(12)
             .build();
 
         content.append(&cover_frame);
         content.append(&left_box);
 
-        let frame = gtk4::Frame::builder().child(&content).build();
+        let frame_content = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Vertical)
+            .spacing(0)
+            .build();
+        frame_content.append(&progress_time_box);
+        frame_content.append(&content);
+
+        let frame = gtk4::Frame::builder().child(&frame_content).build();
         frame.add_css_class("card");
+        frame.add_css_class("now-playing-bar");
+        frame.set_margin_top(1);
+
+        let overlay = gtk4::Overlay::new();
+        overlay.set_child(Some(&frame));
+        progress_box.set_valign(gtk4::Align::Start);
+        overlay.add_overlay(&progress_box);
+
+        let root = gtk4::Box::builder()
+            .orientation(gtk4::Orientation::Vertical)
+            .spacing(0)
+            .build();
+        root.append(&overlay);
 
         let revealer = gtk4::Revealer::builder()
             .transition_type(gtk4::RevealerTransitionType::SlideUp)
-            .child(&frame)
+            .child(&root)
             .reveal_child(false)
             .build();
 
