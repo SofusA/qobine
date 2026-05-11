@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "select cache_directory, cache_ttl_hours, volume, max_audio_quality from configuration where rowid = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "cache_directory",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "cache_ttl_hours",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "volume",
+        "ordinal": 2,
+        "type_info": "Float"
+      },
+      {
+        "name": "max_audio_quality",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "56d80da3a6c1776ac9673d36885cd01a0b40c935c91691e5aef1a7cd6fee234e"
+}

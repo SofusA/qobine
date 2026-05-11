@@ -191,7 +191,7 @@ impl Database {
     pub async fn get_configuration(&self) -> AppResult<Configuration> {
         let configuration = sqlx::query_as!(
             DatabaseConfiguration,
-            "select * from configuration where rowid = 1"
+            "select cache_directory, cache_ttl_hours, volume, max_audio_quality from configuration where rowid = 1"
         )
         .fetch_one(&self.pool)
         .await?;

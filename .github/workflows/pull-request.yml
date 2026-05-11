@@ -10,6 +10,7 @@ on:
       - "**/Cargo.lock"
       - "**/Cargo.toml"
       - ".github/**"
+      - ".sqlx/**"
   push:
     branches:
       - main
