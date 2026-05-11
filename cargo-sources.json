@@ -5631,14 +5631,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/ratatui-image/ratatui-image-10.0.6.crate",
-        "sha256": "c57add959ab80c9a92be620fa6f8e4a64f7c014829250ba78862e8d81a903cb5",
-        "dest": "cargo/vendor/ratatui-image-10.0.6"
+        "url": "https://static.crates.io/crates/ratatui-image/ratatui-image-10.0.8.crate",
+        "sha256": "a10dbbf11c4f3cf810ec227010d1ba0a4ce515f0d3b319920e30dd4cbc99d211",
+        "dest": "cargo/vendor/ratatui-image-10.0.8"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"c57add959ab80c9a92be620fa6f8e4a64f7c014829250ba78862e8d81a903cb5\", \"files\": {}}",
-        "dest": "cargo/vendor/ratatui-image-10.0.6",
+        "contents": "{\"package\": \"a10dbbf11c4f3cf810ec227010d1ba0a4ce515f0d3b319920e30dd4cbc99d211\", \"files\": {}}",
+        "dest": "cargo/vendor/ratatui-image-10.0.8",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -6788,14 +6788,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/stream-download/stream-download-0.24.0.crate",
-        "sha256": "b85218bb1bf22ffe9da95da88236eda9c20531701b5a24ebd0a1871db50556af",
-        "dest": "cargo/vendor/stream-download-0.24.0"
+        "url": "https://static.crates.io/crates/stream-download/stream-download-0.24.1.crate",
+        "sha256": "45067938077d0ef5f48c490527742eb0c9cb5e26e1b80e3bcf57d3a83ef50554",
+        "dest": "cargo/vendor/stream-download-0.24.1"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"b85218bb1bf22ffe9da95da88236eda9c20531701b5a24ebd0a1871db50556af\", \"files\": {}}",
-        "dest": "cargo/vendor/stream-download-0.24.0",
+        "contents": "{\"package\": \"45067938077d0ef5f48c490527742eb0c9cb5e26e1b80e3bcf57d3a83ef50554\", \"files\": {}}",
+        "dest": "cargo/vendor/stream-download-0.24.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
