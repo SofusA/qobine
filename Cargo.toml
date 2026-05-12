@@ -50,7 +50,7 @@ ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 tokio_schedule = "0.3"
 rppal = "0.22"
-ratatui-image = { version = "10", default-features = false, features = ["image-defaults", "crossterm"] }
+ratatui-image = { version = "11", default-features = false, features = ["image-defaults", "crossterm"] }
 tui-input = "0.15"
 image = "0.25"
 skabelon = "0.2.0"
