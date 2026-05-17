@@ -28,6 +28,7 @@ struct ConnectState {
 pub async fn init(
     app_id: &str,
     connect_name: String,
+    connect_port: u16,
     controls: Controls,
     position_receiver: PositionReceiver,
     tracklist_receiver: TracklistReceiver,
@@ -48,7 +49,7 @@ pub async fn init(
     };
 
     connect_state
-        .run(app_id, connect_name)
+        .run(app_id, connect_name, connect_port)
         .await
         .map_err(map_err)?;
 
@@ -168,8 +169,13 @@ impl ConnectState {
         Ok(())
     }
 
-    async fn run(&mut self, app_id: &str, connect_name: String) -> qonductor::Result<()> {
-        let mut manager = SessionManager::start(0, app_id).await?;
+    async fn run(
+        &mut self,
+        app_id: &str,
+        connect_name: String,
+        connect_port: u16,
+    ) -> qonductor::Result<()> {
+        let mut manager = SessionManager::start(connect_port, app_id).await?;
 
         let mut session = manager.add_device(DeviceConfig::new(connect_name)).await?;
 

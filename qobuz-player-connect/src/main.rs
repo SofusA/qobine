@@ -94,6 +94,7 @@ pub async fn run() -> AppResult<()> {
             if let Err(e) = qobuz_player_connect::init(
                 &app_id,
                 args.connect.connect_name,
+                args.connect.connect_port,
                 controls,
                 position_receiver,
                 tracklist_receiver,

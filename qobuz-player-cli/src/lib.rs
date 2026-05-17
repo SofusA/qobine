@@ -49,6 +49,10 @@ pub struct RfidArgs {
 pub struct ConnectNameArgs {
     #[clap(long, default_value = "qobuz-player")]
     pub connect_name: String,
+
+    #[clap(long, default_value_t = 0)]
+    /// Port for the Qobuz Connect session manager. Defaults to 0 (random port).
+    pub connect_port: u16,
 }
 
 #[derive(Args, Debug)]

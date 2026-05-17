@@ -32,7 +32,7 @@ Read more [in the wiki](https://github.com/SofusA/qobuz-player/wiki/RFID-player)
 - High resolution audio: Supports up to 24bit/192Khz (max quality Qobuz offers)
 - MPRIS support (control via [playerctl](https://github.com/altdesktop/playerctl) or other D-Bus client)
 - Gap-less playback
-- Experimental Qobuz Connect. Enabled with `--connect` flag
+- Experimental Qobuz Connect. Enabled with `--connect` flag. Optionally set the session manager port with `--connect-port` (defaults to a random port).
 
 ### Build from source
 
