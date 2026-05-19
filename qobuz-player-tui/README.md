@@ -12,12 +12,12 @@ Download the tar.gz file for your supported OS from the releases page, extract t
 ### Installation with cargo
 Terminal app:
 ```
-cargo install --git https://github.com/SofusA/qobuz-player --bin qobuz-player-tui
+cargo install --git https://github.com/SofusA/qobine qobuz-player-tui
 ```
 
 Web server app:
 ```
-cargo install --git https://github.com/SofusA/qobuz-player --bin qobuz-player-web
+cargo install --git https://github.com/SofusA/qobine qobuz-player-web
 ```
 
 ### Installation from the aur (unofficial)
