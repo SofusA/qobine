@@ -15,6 +15,7 @@ async fn get_client() -> Option<Client> {
         &credentials.user_auth_token,
         credentials.user_id,
         qobuz_player_client::client::AudioQuality::Mp3,
+        false,
     )
     .await
     .ok()

@@ -49,6 +49,7 @@ pub struct Client {
     user_token: String,
     user_id: i64,
     max_audio_quality: AudioQuality,
+    active_secret: Option<String>,
 }
 
 #[derive(Default, Clone, Copy, Debug, clap::ValueEnum)]
@@ -186,6 +187,7 @@ enum Endpoint {
     UserPlaylist,
     Track,
     TrackURL,
+    TrackURLLegacy,
     Playlist,
     PlaylistCreate,
     PlaylistDelete,
@@ -225,6 +227,7 @@ impl Display for Endpoint {
             Endpoint::SessionStart => "session/start",
             Endpoint::Track => "track/get",
             Endpoint::TrackURL => "file/url",
+            Endpoint::TrackURLLegacy => "track/getFileUrl",
             Endpoint::UserPlaylist => "playlist/getUserPlaylists",
             Endpoint::Favorites => "favorite/getUserFavorites",
             Endpoint::FavoriteAdd => "favorite/create",
@@ -365,18 +368,30 @@ impl Client {
         user_auth_token: &str,
         user_id: i64,
         max_audio_quality: AudioQuality,
+        legacy_streaming: bool,
     ) -> Result<Client> {
         let http_client = reqwest::Client::builder()
             .cookie_store(true)
             .build()
             .expect("infallible");
 
-        let Secrets { app_id } = get_secrets(&http_client).await?;
-
-        tracing::debug!("Got login secrets, app_id: {}", app_id);
-
         let base_url = "https://www.qobuz.com/api.json/0.2/".to_string();
 
+        let (app_id, active_secret) = if legacy_streaming {
+            let LegacySecrets {
+                app_id,
+                active_secret,
+            } = get_legacy_secrets(&http_client, &base_url, user_auth_token, max_audio_quality)
+                .await?;
+            tracing::debug!("Got login secrets + active secret, app_id: {}", app_id);
+            (app_id, Some(active_secret))
+        } else {
+            let Secrets { app_id } = get_secrets(&http_client).await?;
+            tracing::debug!("Got login secrets, app_id: {}", app_id);
+            (app_id, None)
+        };
+
+        let _ = legacy_streaming; //ugly, consumed above to decide the discovery path
         let client = Client {
             http_client,
             session: None,
@@ -385,6 +400,7 @@ impl Client {
             app_id,
             base_url,
             max_audio_quality,
+            active_secret,
         };
 
         Ok(client)
@@ -763,6 +779,23 @@ impl Client {
                 message: error.to_string(),
             }),
         }
+    }
+
+    pub async fn track_url_legacy(
+        &self,
+        track_id: u32,
+    ) -> Result<crate::qobuz_models::LegacyTrackUrl> {
+        let secret = self.active_secret.as_deref().ok_or(Error::ActiveSecret)?;
+        track_url_legacy(
+            track_id,
+            secret,
+            &self.base_url,
+            &self.http_client,
+            &self.app_id,
+            &self.user_token,
+            self.max_audio_quality,
+        )
+        .await
     }
 
     pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
@@ -1215,6 +1248,205 @@ async fn get_secrets(client: &reqwest::Client) -> Result<Secrets> {
         .to_owned();
 
     Ok(Secrets { app_id })
+}
+
+struct LegacySecrets {
+    app_id: String,
+    active_secret: String,
+}
+
+/// extract the app_id, per-timezone secrets, and probe for an active one
+/// tried to mirror 8cd4d7a
+async fn get_legacy_secrets(
+    client: &reqwest::Client,
+    base_url: &str,
+    user_token: &str,
+    max_audio_quality: AudioQuality,
+) -> Result<LegacySecrets> {
+    use base64::{Engine, engine::general_purpose};
+
+    let play_url = "https://play.qobuz.com";
+
+    let login_html = client
+        .get(format!("{play_url}/login"))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
+        .map_err(|_| Error::Login)?;
+
+    let bundle_regex = Regex::new(
+        r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z0-9]\d{3}/bundle\.js)"></script>"#,
+    )
+    .map_err(|_| Error::Login)?;
+
+    let app_id_regex = Regex::new(
+        r#"production:\{api:\{appId:"(?P<app_id>\d{9})",appSecret:"(?P<app_secret>\w{32})""#,
+    )
+    .map_err(|_| Error::AppID)?;
+
+    let seed_regex = Regex::new(
+        r#"[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.utimezone\.(?P<timezone>[a-z]+)\)"#,
+    )
+    .map_err(|_| Error::Login)?;
+
+    let bundle_path = bundle_regex
+        .captures(&login_html)
+        .and_then(|c| c.get(1))
+        .ok_or(Error::AppID)?
+        .as_str();
+
+    let bundle_html = client
+        .get(format!("{play_url}{bundle_path}"))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
+        .map_err(|_| Error::AppID)?;
+
+    let app_captures = app_id_regex.captures(&bundle_html).ok_or(Error::AppID)?;
+    let app_id = app_captures
+        .name("app_id")
+        .ok_or(Error::AppID)?
+        .as_str()
+        .to_owned();
+
+    let mut secrets = HashMap::new();
+
+    for seed_cap in seed_regex.captures_iter(&bundle_html) {
+        let seed = seed_cap.name("seed").ok_or(Error::Login)?.as_str();
+        let mut timezone = seed_cap
+            .name("timezone")
+            .ok_or(Error::Login)?
+            .as_str()
+            .to_owned();
+
+        capitalize(timezone.as_mut_str());
+
+        let info_re_str = format!(
+            r#"name:"\w+/(?P<timezone>{}([a-z]?))",info:"(?P<info>[\w=]+)",extras:"(?P<extras>[\w=]+)""#,
+            timezone
+        );
+        let info_re = Regex::new(&info_re_str).map_err(|_| Error::Login)?;
+
+        for c in info_re.captures_iter(&bundle_html) {
+            let tz_full = c.name("timezone").ok_or(Error::Login)?.as_str().to_owned();
+            let info = c.name("info").ok_or(Error::Login)?.as_str();
+            let extras = c.name("extras").ok_or(Error::Login)?.as_str();
+
+            let chars = format!("{seed}{info}{extras}");
+
+            if chars.len() <= 44 {
+                continue;
+            }
+
+            let encoded_secret = &chars[..chars.len() - 44];
+
+            let decoded = general_purpose::URL_SAFE
+                .decode(encoded_secret)
+                .map_err(|_| Error::Login)?;
+            let secret = std::str::from_utf8(&decoded)
+                .map_err(|_| Error::Login)?
+                .to_owned();
+
+            secrets.insert(tz_full, secret);
+        }
+    }
+
+    let active_secret = find_active_secret(
+        secrets,
+        base_url,
+        client,
+        &app_id,
+        user_token,
+        max_audio_quality,
+    )
+    .await?;
+
+    Ok(LegacySecrets {
+        app_id,
+        active_secret,
+    })
+}
+
+/// Probe each per-timezone secret with a known-good track id; the first one
+/// that returns a valid response is the active secret for our request region
+async fn find_active_secret(
+    secrets: HashMap<String, String>,
+    base_url: &str,
+    client: &reqwest::Client,
+    app_id: &str,
+    user_token: &str,
+    max_audio_quality: AudioQuality,
+) -> Result<String> {
+    tracing::debug!("probing {} timezone secrets", secrets.len());
+
+    for (timezone, secret) in secrets.into_iter() {
+        let response = track_url_legacy(
+            64868955,
+            &secret,
+            base_url,
+            client,
+            app_id,
+            user_token,
+            max_audio_quality,
+        )
+        .await;
+
+        if response.is_ok() {
+            tracing::debug!("found active secret for timezone: {}", timezone);
+            return Ok(secret);
+        }
+    }
+
+    Err(Error::ActiveSecret)
+}
+
+/// MD5 signature endpoint + sorted(param k+v concatenated) + ts + secret
+async fn track_url_legacy(
+    track_id: u32,
+    secret: &str,
+    base_url: &str,
+    client: &reqwest::Client,
+    app_id: &str,
+    user_token: &str,
+    max_audio_quality: AudioQuality,
+) -> Result<crate::qobuz_models::LegacyTrackUrl> {
+    let endpoint = format!("{}{}", base_url, Endpoint::TrackURLLegacy);
+    let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
+    let quality = max_audio_quality.to_string();
+    let track_id_str = track_id.to_string();
+
+    let sig =
+        format!("trackgetFileUrlformat_id{quality}intentstreamtrack_id{track_id_str}{now}{secret}");
+    let request_sig = format!("{:x}", md5::compute(sig.as_str()));
+
+    let params = vec![
+        ("request_ts", now.as_str()),
+        ("request_sig", request_sig.as_str()),
+        ("track_id", track_id_str.as_str()),
+        ("format_id", quality.as_str()),
+        ("intent", "stream"),
+    ];
+
+    let response = make_get_call(
+        &endpoint,
+        Some(&params),
+        client,
+        app_id,
+        Some(user_token),
+        None,
+    )
+    .await?;
+    serde_json::from_str(&response).map_err(|_| Error::DeserializeJSON { message: response })
+}
+
+fn capitalize(s: &mut str) {
+    if let Some(r) = s.get_mut(0..1) {
+        r.make_ascii_uppercase();
+    }
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

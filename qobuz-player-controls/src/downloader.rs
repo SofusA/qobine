@@ -5,7 +5,7 @@ use std::{
 
 use qobuz_player_client::stream::flac_source_stream::SeekableStreamReader;
 
-use crate::{AppResult, client::Client, database::Database, models::Track};
+use crate::{AppResult, client::Client, database::Database, error::Error, models::Track};
 
 pub enum DownloadResult {
     Cached(PathBuf),
@@ -32,6 +32,10 @@ impl Downloader {
     }
 
     pub async fn ensure_track_is_downloaded(&mut self, track: &Track) -> AppResult<DownloadResult> {
+        if self.client.is_legacy_streaming() {
+            return self.ensure_track_is_downloaded_legacy(track).await;
+        }
+
         let track_info = self.client.track_url(track.id).await?;
 
         let cache_path = cache_path(
@@ -50,6 +54,32 @@ impl Downloader {
         let stream = self.client.stream_track(cache_path, track_info).await?;
 
         Ok(DownloadResult::Streaming(stream))
+    }
+
+    /// Legacy path: cheap cpu as no crypto ops
+    /// cons have to wait for full download
+    async fn ensure_track_is_downloaded_legacy(
+        &mut self,
+        track: &Track,
+    ) -> AppResult<DownloadResult> {
+        let track_url = self.client.track_url_legacy(track.id).await?;
+
+        let cache_path = cache_path(
+            track,
+            &track_url.mime_type,
+            Some(track_url.sampling_rate as u32),
+            &self.audio_cache_directory,
+        );
+        self.database.set_cache_entry(cache_path.as_path()).await;
+
+        if cache_path.exists() {
+            tracing::info!("Playing from cache: {}", cache_path.display());
+            return Ok(DownloadResult::Cached(cache_path));
+        }
+
+        tracing::info!("Downloading (legacy): {}", track.title);
+        download_to_file(&track_url.url, &cache_path).await?;
+        Ok(DownloadResult::Cached(cache_path))
     }
 
     pub fn set_audio_cache_dir(&mut self, new_directory: PathBuf) {
@@ -142,4 +172,18 @@ fn guess_extension(mime: &str) -> String {
         m if m.contains("mp3") => "mp3".to_string(),
         _ => "unknown".to_string(),
     }
+}
+
+async fn download_to_file(url: &str, cache_path: &Path) -> AppResult<()> {
+    let bytes = reqwest::get(url).await?.bytes().await?;
+    let io_err = |e: std::io::Error| Error::StreamError {
+        message: format!("legacy download write failed: {e}"),
+    };
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent).map_err(io_err)?;
+    }
+    let tmp = cache_path.with_extension("partial");
+    std::fs::write(&tmp, &bytes).map_err(io_err)?;
+    std::fs::rename(&tmp, cache_path).map_err(io_err)?;
+    Ok(())
 }

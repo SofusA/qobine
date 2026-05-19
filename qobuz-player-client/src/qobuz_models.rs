@@ -45,6 +45,15 @@ pub struct TrackInfo {
     pub n_samples: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct LegacyTrackUrl {
+    pub url: String,
+    pub format_id: i32,
+    pub mime_type: String,
+    pub sampling_rate: f64,
+    pub bit_depth: i32,
+}
+
 pub enum UrlType {
     Album { id: String },
     Playlist { id: i64 },

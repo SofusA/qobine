@@ -18,7 +18,7 @@ use qobuz_player_client::{
         AudioQuality, FeaturedAlbumType, FeaturedGenreAlbumType, FeaturedPlaylistType, OAuthResult,
         ReleaseType, browser_oauth_login,
     },
-    qobuz_models::TrackInfo,
+    qobuz_models::{LegacyTrackUrl, TrackInfo},
     stream::flac_source_stream::SeekableStreamReader,
 };
 use time::Duration;
@@ -39,6 +39,7 @@ pub struct Client {
     qobuz_client: OnceCell<RwLock<QobuzClient>>,
     credentials: Mutex<Option<Credentials>>,
     max_audio_quality: RwLock<AudioQuality>,
+    legacy_streaming: bool,
     favorites_cache: SimpleCache<Favorites>,
     featured_albums_cache: SimpleCache<Vec<(String, Vec<AlbumSimple>)>>,
     featured_playlists_cache: SimpleCache<Vec<(String, Vec<Playlist>)>>,
@@ -70,6 +71,7 @@ impl Client {
 
     pub async fn new_with_oauth_login(
         max_audio_quality: AudioQuality,
+        legacy_streaming: bool,
         headless: bool,
     ) -> Result<(Self, OAuthResult)> {
         let app_id = get_app_id().await?;
@@ -80,12 +82,21 @@ impl Client {
                 user_id: oauth_result.user_id,
             }),
             max_audio_quality,
+            legacy_streaming,
         );
 
         Ok((client, oauth_result))
     }
 
-    pub fn new(credentials: Option<Credentials>, max_audio_quality: AudioQuality) -> Self {
+    pub fn is_legacy_streaming(&self) -> bool {
+        self.legacy_streaming
+    }
+
+    pub fn new(
+        credentials: Option<Credentials>,
+        max_audio_quality: AudioQuality,
+        legacy_streaming: bool,
+    ) -> Self {
         let album_cache = moka::future::CacheBuilder::new(1000)
             .time_to_live(std::time::Duration::from_secs(60 * 60 * 24 * 7))
             .build();
@@ -121,6 +132,7 @@ impl Client {
             qobuz_client: Default::default(),
             credentials,
             max_audio_quality,
+            legacy_streaming,
             favorites_cache: SimpleCache::new(Duration::days(1)),
             featured_albums_cache: SimpleCache::new(Duration::days(1)),
             featured_playlists_cache: SimpleCache::new(Duration::days(1)),
@@ -150,6 +162,7 @@ impl Client {
             &credentials.user_auth_token,
             credentials.user_id,
             *max_audio_quality,
+            self.legacy_streaming,
         )
         .await?;
 
@@ -188,6 +201,12 @@ impl Client {
     pub async fn track_url(&self, track_id: u32) -> Result<TrackInfo> {
         let mut client = self.get_client_mut().await?;
         let info = client.track_url(track_id).await?;
+        Ok(info)
+    }
+
+    pub async fn track_url_legacy(&self, track_id: u32) -> Result<LegacyTrackUrl> {
+        let client = self.get_client().await?;
+        let info = client.track_url_legacy(track_id).await?;
         Ok(info)
     }
 

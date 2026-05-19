@@ -23,6 +23,11 @@ pub struct SharedArgs {
     /// Use provided device for audio output, instead of default.
     /// Use qobuz-player list-devices for output device list
     pub output_device_id: Option<String>,
+
+    /// Use the legacy track endpoint instead of CMAF streaming
+    /// because of cpus like pi4 on which crypto ops are not accelerated
+    #[clap(long, default_value_t = false)]
+    pub legacy_streaming: bool,
 }
 
 #[derive(Args, Debug)]
@@ -96,7 +101,7 @@ pub async fn handle_shared_commands(
     match command {
         SharedCommands::Login => {
             let (_client, oauth_result) =
-                Client::new_with_oauth_login(AudioQuality::Mp3, headless).await?;
+                Client::new_with_oauth_login(AudioQuality::Mp3, false, headless).await?;
 
             database.set_credentials(oauth_result.into()).await?;
             println!("Login successful! You can now run qobuz-player.");
@@ -119,15 +124,16 @@ pub async fn handle_shared_commands(
 pub async fn get_client(
     database: &Database,
     max_audio_quality: AudioQuality,
+    legacy_streaming: bool,
     headless: bool,
 ) -> AppResult<Client> {
     let database_credentials = database.get_credentials().await?;
 
     let client = match database_credentials {
-        Some(credentials) => Client::new(Some(credentials), max_audio_quality),
+        Some(credentials) => Client::new(Some(credentials), max_audio_quality, legacy_streaming),
         None => {
             let (client, oauth_result) =
-                Client::new_with_oauth_login(max_audio_quality, headless).await?;
+                Client::new_with_oauth_login(max_audio_quality, legacy_streaming, headless).await?;
 
             database.set_credentials(oauth_result.into()).await?;
 

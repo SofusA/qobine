@@ -73,7 +73,13 @@ pub async fn run() -> AppResult<()> {
     let (_, exit_receiver) = broadcast::channel(5);
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
-    let client = get_client(&database, max_audio_quality, headless).await?;
+    let client = get_client(
+        &database,
+        max_audio_quality,
+        args.shared.legacy_streaming,
+        headless,
+    )
+    .await?;
     let client = Arc::new(client);
 
     let broadcast = Arc::new(NotificationBroadcast::new());
