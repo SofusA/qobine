@@ -53,7 +53,7 @@ rppal = "0.22"
 ratatui-image = { version = "11", default-features = false, features = ["image-defaults", "crossterm"] }
 tui-input = "0.15"
 image = "0.25"
-skabelon = "0.2.0"
+skabelon = "0.2.1"
 parking_lot = "0.12.5"
 qonductor = "0.1.0-alpha.5"
 keepawake = "0.6.0"
