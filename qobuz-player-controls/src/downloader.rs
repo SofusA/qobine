@@ -5,7 +5,7 @@ use std::{
 
 use qobuz_player_client::stream::flac_source_stream::SeekableStreamReader;
 
-use crate::{AppResult, client::Client, database::Database, error::Error, models::Track};
+use crate::{AppResult, client::Client, database::Database, models::Track};
 
 pub enum DownloadResult {
     Cached(PathBuf),
@@ -57,7 +57,7 @@ impl Downloader {
     }
 
     /// Legacy path: cheap cpu as no crypto ops
-    /// cons have to wait for full download
+    /// Cache hits from prior runs still work; cache writeback during streaming is not yet implemented
     async fn ensure_track_is_downloaded_legacy(
         &mut self,
         track: &Track,
@@ -77,9 +77,9 @@ impl Downloader {
             return Ok(DownloadResult::Cached(cache_path));
         }
 
-        tracing::info!("Downloading (legacy): {}", track.title);
-        download_to_file(&track_url.url, &cache_path).await?;
-        Ok(DownloadResult::Cached(cache_path))
+        tracing::info!("Streaming (legacy): {}", track.title);
+        let stream = self.client.stream_track_legacy(&track_url.url).await?;
+        Ok(DownloadResult::Streaming(stream))
     }
 
     pub fn set_audio_cache_dir(&mut self, new_directory: PathBuf) {
@@ -172,18 +172,4 @@ fn guess_extension(mime: &str) -> String {
         m if m.contains("mp3") => "mp3".to_string(),
         _ => "unknown".to_string(),
     }
-}
-
-async fn download_to_file(url: &str, cache_path: &Path) -> AppResult<()> {
-    let bytes = reqwest::get(url).await?.bytes().await?;
-    let io_err = |e: std::io::Error| Error::StreamError {
-        message: format!("legacy download write failed: {e}"),
-    };
-    if let Some(parent) = cache_path.parent() {
-        std::fs::create_dir_all(parent).map_err(io_err)?;
-    }
-    let tmp = cache_path.with_extension("partial");
-    std::fs::write(&tmp, &bytes).map_err(io_err)?;
-    std::fs::rename(&tmp, cache_path).map_err(io_err)?;
-    Ok(())
 }

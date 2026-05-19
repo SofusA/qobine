@@ -210,6 +210,12 @@ impl Client {
         Ok(info)
     }
 
+    pub async fn stream_track_legacy(&self, url: &str) -> Result<SeekableStreamReader> {
+        let client = self.get_client().await?;
+        let stream = client.stream_track_legacy(url).await?;
+        Ok(stream)
+    }
+
     pub async fn stream_track(
         &self,
         cache_path: PathBuf,

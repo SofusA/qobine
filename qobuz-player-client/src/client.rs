@@ -798,6 +798,40 @@ impl Client {
         .await
     }
 
+    /// Stream a plaintext FLAC/MP3 from a legacy signed URL
+    /// Uses stream-download re-exported reqwest (0.13, diff from workspace reqwest 0.12)
+    pub async fn stream_track_legacy(&self, url: &str) -> Result<SeekableStreamReader> {
+        use stream_download::http::HttpStream;
+        use stream_download::http::reqwest::{Client as SdClient, Url as SdUrl};
+        use stream_download::source::SourceStream;
+
+        let url_parsed: SdUrl = url
+            .parse()
+            .map_err(|e: url::ParseError| Error::StreamError {
+                message: format!("invalid legacy track URL: {e}"),
+            })?;
+
+        let stream = HttpStream::new(SdClient::new(), url_parsed)
+            .await
+            .map_err(|e| Error::StreamError {
+                message: format!("failed to open HTTP stream: {e}"),
+            })?;
+
+        let content_length = stream.content_length().unwrap_or(0);
+
+        let reader = StreamDownload::from_stream(
+            stream,
+            TempStorageProvider::default(),
+            Settings::default().prefetch_bytes(64 * 1024),
+        )
+        .await
+        .map_err(|e| Error::StreamError {
+            message: format!("failed to create stream-download: {e}"),
+        })?;
+
+        Ok(SeekableStreamReader::new(reader, content_length))
+    }
+
     pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::Favorites);
 
