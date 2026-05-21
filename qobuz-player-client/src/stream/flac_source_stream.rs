@@ -13,11 +13,7 @@ use std::{
 use bytes::Bytes;
 use futures::Stream;
 use parking_lot::Mutex;
-use stream_download::{
-    StreamDownload,
-    source::{DecodeError, SourceStream, StreamOutcome},
-    storage::temp::TempStorageProvider,
-};
+use stream_download::source::{DecodeError, SourceStream, StreamOutcome};
 use tokio::task::JoinHandle;
 
 use crate::stream::{cmaf, crypto};
@@ -164,16 +160,18 @@ impl Stream for FlacSourceStream {
     }
 }
 
-/// Wraps `StreamDownload` with `SeekFrom::End` support using known content length.
 pub struct SeekableStreamReader {
-    inner: StreamDownload<TempStorageProvider>,
+    inner: Box<dyn ReadSeekSend>,
     content_length: u64,
 }
 
+pub trait ReadSeekSend: Read + Seek + Send + Sync {}
+impl<T: Read + Seek + Send + Sync + 'static> ReadSeekSend for T {}
+
 impl SeekableStreamReader {
-    pub fn new(inner: StreamDownload<TempStorageProvider>, content_length: u64) -> Self {
+    pub fn new<R: Read + Seek + Send + Sync + 'static>(inner: R, content_length: u64) -> Self {
         Self {
-            inner,
+            inner: Box::new(inner),
             content_length,
         }
     }

@@ -798,12 +798,16 @@ impl Client {
         .await
     }
 
-    /// Stream a plaintext FLAC/MP3 from a legacy signed URL
-    /// Uses stream-download re-exported reqwest (0.13, diff from workspace reqwest 0.12)
-    pub async fn stream_track_legacy(&self, url: &str) -> Result<SeekableStreamReader> {
+    pub async fn stream_track_legacy(
+        &self,
+        url: &str,
+        cache_path: &std::path::Path,
+    ) -> Result<SeekableStreamReader> {
         use stream_download::http::HttpStream;
         use stream_download::http::reqwest::{Client as SdClient, Url as SdUrl};
         use stream_download::source::SourceStream;
+
+        use crate::stream::passthrough_storage::PassthroughStorageProvider;
 
         let url_parsed: SdUrl = url
             .parse()
@@ -819,9 +823,14 @@ impl Client {
 
         let content_length = stream.content_length().unwrap_or(0);
 
-        let reader = StreamDownload::from_stream(
+        let partial_path = cache_path.with_extension("partial");
+        let provider = PassthroughStorageProvider {
+            partial_path: partial_path.clone(),
+        };
+
+        let download = StreamDownload::from_stream(
             stream,
-            TempStorageProvider::default(),
+            provider,
             Settings::default().prefetch_bytes(64 * 1024),
         )
         .await
@@ -829,7 +838,16 @@ impl Client {
             message: format!("failed to create stream-download: {e}"),
         })?;
 
-        Ok(SeekableStreamReader::new(reader, content_length))
+        if content_length > 0 {
+            let handle = download.handle();
+            let final_path = cache_path.to_path_buf();
+            tokio::spawn(async move {
+                handle.wait_for_completion().await;
+                finalize_legacy_cache(partial_path, final_path, content_length);
+            });
+        }
+
+        Ok(SeekableStreamReader::new(download, content_length))
     }
 
     pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
@@ -1486,4 +1504,30 @@ fn capitalize(s: &mut str) {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessfulResponse {
     status: String,
+}
+
+fn finalize_legacy_cache(partial: PathBuf, final_path: PathBuf, expected: u64) {
+    match std::fs::metadata(&partial) {
+        Ok(meta) if meta.len() == expected => {
+            if let Err(e) = std::fs::rename(&partial, &final_path) {
+                tracing::warn!("Failed to finalize legacy cache: {e}");
+                let _ = std::fs::remove_file(&partial);
+            } else {
+                tracing::info!(
+                    "Cached (legacy): {} ({} bytes)",
+                    final_path.display(),
+                    expected
+                );
+            }
+        }
+        Ok(meta) => {
+            tracing::debug!(
+                "Legacy stream incomplete ({} of {} bytes), discarding partial",
+                meta.len(),
+                expected
+            );
+            let _ = std::fs::remove_file(&partial);
+        }
+        Err(_) => {}
+    }
 }

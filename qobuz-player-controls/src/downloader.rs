@@ -78,7 +78,10 @@ impl Downloader {
         }
 
         tracing::info!("Streaming (legacy): {}", track.title);
-        let stream = self.client.stream_track_legacy(&track_url.url).await?;
+        let stream = self
+            .client
+            .stream_track_legacy(&track_url.url, &cache_path)
+            .await?;
         Ok(DownloadResult::Streaming(stream))
     }
 

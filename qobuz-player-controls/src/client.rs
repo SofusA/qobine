@@ -210,9 +210,13 @@ impl Client {
         Ok(info)
     }
 
-    pub async fn stream_track_legacy(&self, url: &str) -> Result<SeekableStreamReader> {
+    pub async fn stream_track_legacy(
+        &self,
+        url: &str,
+        cache_path: &std::path::Path,
+    ) -> Result<SeekableStreamReader> {
         let client = self.get_client().await?;
-        let stream = client.stream_track_legacy(url).await?;
+        let stream = client.stream_track_legacy(url, cache_path).await?;
         Ok(stream)
     }
 
