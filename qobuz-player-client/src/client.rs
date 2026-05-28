@@ -3,12 +3,11 @@ use crate::{
     qobuz_models::{
         TrackInfo,
         album::Album,
-        album_suggestion::{AlbumOfTheWeekQuery, AlbumSuggestionResponse, ReleaseQuery},
+        album_suggestion::{AlbumSuggestionResponse, ReleaseQuery},
         artist::{Artist, ArtistsResponse},
         artist_page::ArtistPage,
         discover::Discover,
         favorites::Favorites,
-        featured::{FeaturedAlbumsResponse, FeaturedPlaylistsResponse},
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
         search_results::SearchAllResults,
@@ -129,28 +128,8 @@ pub enum FeaturedAlbumType {
     IdealDiscography,
 }
 
-impl FeaturedAlbumType {
-    fn as_str(&self) -> &'static str {
-        match self {
-            FeaturedAlbumType::PressAwards => "press-awards",
-            FeaturedAlbumType::MostStreamed => "most-streamed",
-            FeaturedAlbumType::NewReleases => "new-releases-full",
-            FeaturedAlbumType::Qobuzissims => "qobuzissims",
-            FeaturedAlbumType::IdealDiscography => "ideal-discography",
-        }
-    }
-}
-
 pub enum FeaturedPlaylistType {
     EditorsPick,
-}
-
-impl FeaturedPlaylistType {
-    fn as_str(&self) -> &'static str {
-        match self {
-            FeaturedPlaylistType::EditorsPick => "editor-picks",
-        }
-    }
 }
 
 pub enum FeaturedGenreAlbumType {
@@ -159,18 +138,6 @@ pub enum FeaturedGenreAlbumType {
     NewReleases,
     Qobuzissims,
     BestSellers,
-}
-
-impl FeaturedGenreAlbumType {
-    fn as_str(&self) -> &'static str {
-        match self {
-            FeaturedGenreAlbumType::PressAwards => "press-awards",
-            FeaturedGenreAlbumType::MostStreamed => "most-streamed",
-            FeaturedGenreAlbumType::NewReleases => "new-releases-full",
-            FeaturedGenreAlbumType::Qobuzissims => "qobuzissims",
-            FeaturedGenreAlbumType::BestSellers => "best-sellers",
-        }
-    }
 }
 
 pub struct FavoriteCollection {
@@ -203,11 +170,7 @@ enum Endpoint {
     FavoritePlaylistAdd,
     FavoritePlaylistRemove,
     AlbumSuggest,
-    AlbumFeatured,
-    AlbumOfTheWeek,
-    PlaylistFeatured,
     GenreList,
-    GenreFeatured,
     GenrePlaylists,
     DiscoverIndex,
 }
@@ -237,11 +200,7 @@ impl Display for Endpoint {
             Endpoint::FavoritePlaylistAdd => "playlist/subscribe",
             Endpoint::FavoritePlaylistRemove => "playlist/unsubscribe",
             Endpoint::AlbumSuggest => "album/suggest",
-            Endpoint::AlbumFeatured => "album/getFeatured",
-            Endpoint::AlbumOfTheWeek => "discover/albumOfTheWeek",
-            Endpoint::PlaylistFeatured => "playlist/getFeatured",
             Endpoint::GenreList => "genre/list",
-            Endpoint::GenreFeatured => "album/getFeatured",
             Endpoint::GenrePlaylists => "discover/playlists",
             Endpoint::DiscoverIndex => "discover/index",
         };
@@ -421,58 +380,9 @@ impl Client {
         self.user_id
     }
 
-    // TODO: To be removed
-    pub async fn featured_albums(
-        &self,
-        featured_type: FeaturedAlbumType,
-    ) -> Result<FeaturedAlbumsResponse> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::AlbumFeatured);
-        let type_string = featured_type.as_str();
-        let params = vec![("type", type_string), ("offset", "0"), ("limit", "20")];
-        self.get(&endpoint, Some(&params)).await
-    }
-
-    pub async fn album_of_the_week(&self) -> Result<AlbumOfTheWeekQuery> {
-        self.get(
-            &format!("{}{}", self.base_url, Endpoint::AlbumOfTheWeek),
-            None,
-        )
-        .await
-    }
-
-    // TODO: To be removed
-    pub async fn featured_playlists(
-        &self,
-        featured_type: FeaturedPlaylistType,
-    ) -> Result<FeaturedPlaylistsResponse> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::PlaylistFeatured);
-        let type_string = featured_type.as_str();
-        let params = vec![("type", type_string), ("offset", "0"), ("limit", "20")];
-        self.get(&endpoint, Some(&params)).await
-    }
-
     pub async fn genres(&self) -> Result<GenreResponse> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::GenreList);
         self.get(&endpoint, None).await
-    }
-
-    // TODO: To be removed
-    pub async fn genre_albums(
-        &self,
-        genre_id: u32,
-        featured_type: FeaturedGenreAlbumType,
-    ) -> Result<FeaturedAlbumsResponse> {
-        let endpoint = format!("{}{}", self.base_url, Endpoint::GenreFeatured);
-        let genre_id_str = genre_id.to_string();
-        let type_string = featured_type.as_str();
-
-        let params = vec![
-            ("type", type_string),
-            ("genre_id", genre_id_str.as_str()),
-            ("offset", "0"),
-            ("limit", "20"),
-        ];
-        self.get(&endpoint, Some(&params)).await
     }
 
     pub async fn genre_playlists(

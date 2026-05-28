@@ -1,10 +1,11 @@
-use qobuz_player_controls::client::Client;
+use futures::future::try_join_all;
+use qobuz_player_controls::client::{Client, GenrePlaylistTag};
+use qobuz_player_controls::error::Error;
 use qobuz_player_controls::{AppResult, controls::Controls};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
 };
-use tokio::try_join;
 
 use crate::{
     app::{NotificationList, Output},
@@ -20,23 +21,46 @@ pub struct DiscoverState {
 
 impl DiscoverState {
     pub async fn new(client: &Client) -> AppResult<Self> {
-        let (featured_albums, featured_playlists) =
-            try_join!(client.featured_albums(), client.featured_playlists(),)?;
+        let discover = client.discover_page(None).await?;
+        let featured_albums = vec![
+            (
+                "New releases".to_string(),
+                AlbumList::new(discover.new_releases),
+            ),
+            (
+                "Qobuzissime".to_string(),
+                AlbumList::new(discover.qobuzissims),
+            ),
+            (
+                "Essential Discography".to_string(),
+                AlbumList::new(discover.ideal_discography),
+            ),
+            (
+                "Album of the week".to_string(),
+                AlbumList::new(discover.album_of_the_week),
+            ),
+            (
+                "Press Accolades".to_string(),
+                AlbumList::new(discover.press_awards),
+            ),
+            (
+                "Most streamed".to_string(),
+                AlbumList::new(discover.most_streamed),
+            ),
+        ];
 
-        let featured_albums = featured_albums
-            .into_iter()
-            .map(|x| (x.0, AlbumList::new(x.1)))
-            .collect();
+        let featured_playlists =
+            try_join_all(discover.playlists_tags.into_iter().map(|tag| async {
+                let playlists = client
+                    .genre_playlists(GenrePlaylistTag {
+                        genre_id: None,
+                        playlist_tag: Some(tag.clone()),
+                    })
+                    .await?;
 
-        let featured_playlists = featured_playlists
-            .into_iter()
-            .map(|x| {
-                (
-                    x.0,
-                    PlaylistList::new(x.1.into_iter().map(|x| x.into()).collect()),
-                )
-            })
-            .collect();
+                Ok::<_, Error>((tag.name, PlaylistList::new(playlists)))
+            }))
+            .await?;
 
         Ok(Self {
             featured_albums,
@@ -44,9 +68,7 @@ impl DiscoverState {
             selected_sub_tab: 0,
         })
     }
-}
 
-impl DiscoverState {
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let block = block(None);
         frame.render_widget(block, area);
@@ -58,35 +80,25 @@ impl DiscoverState {
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(tab_content_area);
 
-        let album_labels: Vec<_> = self
+        let labels = self
             .featured_albums
             .iter()
-            .map(|fa| fa.0.as_str())
-            .collect();
-        let playlist_labels: Vec<_> = self
-            .featured_playlists
-            .iter()
-            .map(|fp| fp.0.as_str())
-            .collect();
-        let labels = [album_labels, playlist_labels].concat();
+            .map(|(label, _)| label.as_str())
+            .chain(
+                self.featured_playlists
+                    .iter()
+                    .map(|(label, _)| label.as_str()),
+            )
+            .collect::<Vec<_>>();
 
         let tabs = tab_bar(labels, self.selected_sub_tab);
         frame.render_widget(tabs, chunks[0]);
 
-        let is_album = self.album_selected();
-
-        match is_album {
-            true => {
-                let list_state = &mut self.featured_albums[self.selected_sub_tab];
-                list_state.1.render(chunks[1], frame.buffer_mut());
-            }
-            false => {
-                let list_state = &mut self.featured_playlists
-                    [self.selected_sub_tab - self.featured_albums.len()];
-
-                list_state.1.render(chunks[1], frame.buffer_mut());
-            }
-        };
+        if let Some((_, list)) = self.selected_album_mut() {
+            list.render(chunks[1], frame.buffer_mut());
+        } else if let Some((_, list)) = self.selected_playlist_mut() {
+            list.render(chunks[1], frame.buffer_mut());
+        }
     }
 
     pub async fn handle_events(
@@ -108,23 +120,19 @@ impl DiscoverState {
                         Ok(Output::Consumed)
                     }
                     _ => {
-                        let is_album = self.album_selected();
-
-                        match is_album {
-                            true => {
-                                return self.featured_albums[self.selected_sub_tab]
-                                    .1
-                                    .handle_events(key_event.code, client, controls, notifications)
-                                    .await;
-                            }
-                            false => {
-                                return self.featured_playlists
-                                    [self.selected_sub_tab - self.featured_albums.len()]
-                                .1
+                        if let Some((_, list)) = self.selected_album_mut() {
+                            return list
                                 .handle_events(key_event.code, client, controls, notifications)
                                 .await;
-                            }
                         }
+
+                        if let Some((_, list)) = self.selected_playlist_mut() {
+                            return list
+                                .handle_events(key_event.code, client, controls, notifications)
+                                .await;
+                        }
+
+                        Ok(Output::NotConsumed)
                     }
                 }
             }
@@ -132,17 +140,35 @@ impl DiscoverState {
         }
     }
 
-    fn album_selected(&self) -> bool {
-        self.selected_sub_tab < self.featured_albums.len()
+    fn selected_album_mut(&mut self) -> Option<&mut (String, AlbumList)> {
+        self.featured_albums.get_mut(self.selected_sub_tab)
+    }
+
+    fn selected_playlist_mut(&mut self) -> Option<&mut (String, PlaylistList)> {
+        let index = self
+            .selected_sub_tab
+            .checked_sub(self.featured_albums.len())?;
+
+        self.featured_playlists.get_mut(index)
     }
 
     fn cycle_subtab_backwards(&mut self) {
         let count = self.featured_albums.len() + self.featured_playlists.len();
+
+        if count == 0 {
+            return;
+        }
+
         self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
     }
 
     fn cycle_subtab(&mut self) {
         let count = self.featured_albums.len() + self.featured_playlists.len();
-        self.selected_sub_tab = (self.selected_sub_tab + count + 1) % count;
+
+        if count == 0 {
+            return;
+        }
+
+        self.selected_sub_tab = (self.selected_sub_tab + 1) % count;
     }
 }

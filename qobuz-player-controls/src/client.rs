@@ -7,18 +7,14 @@ use crate::{
         PlaylistTag, SearchResults, Track,
         mapper::{
             parse_album, parse_album_simple, parse_artist, parse_artist_page, parse_discover,
-            parse_featured_album, parse_genre, parse_playlist, parse_playlist_simple,
-            parse_search_results, parse_track,
+            parse_genre, parse_playlist, parse_playlist_simple, parse_search_results, parse_track,
         },
     },
 };
 use futures::future::join_all;
 use moka::future::Cache;
 use qobuz_player_client::{
-    client::{
-        AudioQuality, FeaturedAlbumType, FeaturedGenreAlbumType, FeaturedPlaylistType, OAuthResult,
-        ReleaseType, browser_oauth_login,
-    },
+    client::{AudioQuality, OAuthResult, ReleaseType, browser_oauth_login},
     qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
 };
@@ -42,10 +38,7 @@ pub struct Client {
     max_audio_quality: RwLock<AudioQuality>,
     file_based_streaming: RwLock<bool>,
     favorites_cache: SimpleCache<Favorites>,
-    featured_albums_cache: SimpleCache<Vec<(String, Vec<AlbumSimple>)>>,
-    featured_playlists_cache: SimpleCache<Vec<(String, Vec<Playlist>)>>,
     genres_cache: SimpleCache<Vec<Genre>>,
-    genre_albums_cache: Cache<u32, Vec<(String, Vec<AlbumSimple>)>>,
     genre_playlists_cache: Cache<GenrePlaylistTag, Vec<PlaylistSimple>>,
     album_cache: Cache<String, Album>,
     artist_cache: Cache<u32, ArtistPage>,
@@ -119,10 +112,6 @@ impl Client {
             .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
             .build();
 
-        let genre_albums_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
-            .build();
-
         let genre_playlists_cache = moka::future::CacheBuilder::new(1000)
             .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
             .build();
@@ -141,10 +130,7 @@ impl Client {
             max_audio_quality,
             file_based_streaming,
             favorites_cache: SimpleCache::new(Duration::days(1)),
-            featured_albums_cache: SimpleCache::new(Duration::days(1)),
-            featured_playlists_cache: SimpleCache::new(Duration::days(1)),
             genres_cache: SimpleCache::new(Duration::days(7)),
-            genre_albums_cache,
             genre_playlists_cache,
             album_cache,
             artist_cache,
@@ -357,105 +343,6 @@ impl Client {
             .await;
 
         Ok(suggested_albums)
-    }
-
-    // TODO: To be removed
-    pub async fn featured_albums(&self) -> Result<Vec<(String, Vec<AlbumSimple>)>> {
-        if let Some(cache) = self.featured_albums_cache.get().await {
-            return Ok(cache);
-        }
-
-        let client = self.get_client().await?;
-
-        let (press_awards, most_streamed, new_releases, qobuzissims, ideal_discography) = tokio::try_join!(
-            async {
-                Ok::<_, Error>(
-                    client
-                        .featured_albums(FeaturedAlbumType::PressAwards)
-                        .await?
-                        .albums
-                        .items
-                        .into_iter()
-                        .map(parse_featured_album)
-                        .collect(),
-                )
-            },
-            async {
-                Ok(client
-                    .featured_albums(FeaturedAlbumType::MostStreamed)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .featured_albums(FeaturedAlbumType::NewReleases)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .featured_albums(FeaturedAlbumType::Qobuzissims)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .featured_albums(FeaturedAlbumType::IdealDiscography)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-        )?;
-
-        let albums = vec![
-            ("Press awards".to_string(), press_awards),
-            ("Most streamed".to_string(), most_streamed),
-            ("New releases".to_string(), new_releases),
-            ("Qobuzissims".to_string(), qobuzissims),
-            ("Ideal discography".to_string(), ideal_discography),
-        ];
-
-        self.featured_albums_cache.set(albums.clone()).await;
-
-        Ok(albums)
-    }
-
-    pub async fn featured_playlists(&self) -> Result<Vec<(String, Vec<Playlist>)>> {
-        if let Some(cache) = self.featured_playlists_cache.get().await {
-            return Ok(cache);
-        }
-
-        let client = self.get_client().await?;
-        let audio_quality = self.max_audio_quality.read().await;
-        let editor_picks = client
-            .featured_playlists(FeaturedPlaylistType::EditorsPick)
-            .await?
-            .playlists
-            .items
-            .into_iter()
-            .map(|x| parse_playlist(x, client.user_id(), &audio_quality))
-            .collect();
-
-        let playlists = vec![("Editor picks".to_string(), editor_picks)];
-
-        self.featured_playlists_cache.set(playlists.clone()).await;
-
-        Ok(playlists)
     }
 
     pub async fn playlist(&self, id: u32) -> Result<Playlist> {
@@ -686,84 +573,6 @@ impl Client {
 
         self.genres_cache.set(genres.clone()).await;
         Ok(genres)
-    }
-
-    // TODO: To be removed
-    pub async fn genre_albums(&self, genre_id: u32) -> Result<Vec<(String, Vec<AlbumSimple>)>> {
-        if let Some(cache) = self.genre_albums_cache.get(&genre_id).await {
-            return Ok(cache);
-        }
-
-        let client = self.get_client().await?;
-
-        let (press_awards, most_streamed, new_releases, qobuzissims, best_sellers) = tokio::try_join!(
-            async {
-                Ok::<_, Error>(
-                    client
-                        .genre_albums(genre_id, FeaturedGenreAlbumType::PressAwards)
-                        .await?
-                        .albums
-                        .items
-                        .into_iter()
-                        .map(parse_featured_album)
-                        .collect(),
-                )
-            },
-            async {
-                Ok(client
-                    .genre_albums(genre_id, FeaturedGenreAlbumType::MostStreamed)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .genre_albums(genre_id, FeaturedGenreAlbumType::NewReleases)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .genre_albums(genre_id, FeaturedGenreAlbumType::Qobuzissims)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-            async {
-                Ok(client
-                    .genre_albums(genre_id, FeaturedGenreAlbumType::BestSellers)
-                    .await?
-                    .albums
-                    .items
-                    .into_iter()
-                    .map(parse_featured_album)
-                    .collect())
-            },
-        )?;
-
-        let albums = vec![
-            ("Press awards".to_string(), press_awards),
-            ("Most streamed".to_string(), most_streamed),
-            ("New releases".to_string(), new_releases),
-            ("Qobuzissims".to_string(), qobuzissims),
-            ("Best sellers".to_string(), best_sellers),
-        ];
-
-        self.genre_albums_cache
-            .insert(genre_id, albums.clone())
-            .await;
-
-        Ok(albums)
     }
 
     pub async fn genre_playlists(&self, tag: GenrePlaylistTag) -> Result<Vec<PlaylistSimple>> {

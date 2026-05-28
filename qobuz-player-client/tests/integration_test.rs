@@ -55,16 +55,6 @@ async fn discover_page() {
 }
 
 #[tokio::test]
-async fn featured_playlists() {
-    let client = get_client().await.unwrap();
-
-    client
-        .featured_playlists(FeaturedPlaylistType::EditorsPick)
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
 async fn user_playlists() {
     let client = get_client().await.unwrap();
     client.user_playlists().await.unwrap();
