@@ -1,0 +1,27 @@
+<div id="discover-playlists" class="flex flex-col gap-3">
+  <div class="flex items-center justify-between">
+    <h3 class="text-xl font-semibold text-white">Qobuz playlists</h3>
+
+    <select
+      id="tag-select"
+      hx-preserve
+      class="btn btn-secondary"
+      hx-get="/discover/playlist?genre_id={{ selected_genre }}"
+      hx-trigger="change"
+      hx-target="#discover-playlists"
+      hx-swap="outerHTML"
+      hx-include="this"
+      name="playlist_tag_slug"
+    >
+      <option value="">All playlists</option>
+
+      @for (tag in tags) {
+        <option value="{{ tag.slug }}">
+          {{ tag.name }}
+        </option>
+      }
+    </select>
+  </div>
+
+  @defer (list-playlists-vertical.html; playlists=playlists) {}
+</div>

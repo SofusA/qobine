@@ -177,7 +177,7 @@ pub struct DiscoverPage {
     pub album_of_the_week: Vec<AlbumSimple>,
     pub most_streamed: Vec<AlbumSimple>,
     pub press_awards: Vec<AlbumSimple>,
-    // pub playlists: Vec<PlaylistSimple>,
+    pub playlists: Vec<PlaylistSimple>,
     pub playlists_tags: Vec<PlaylistTag>,
 }
 

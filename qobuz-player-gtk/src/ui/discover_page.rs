@@ -4,7 +4,7 @@ use gtk::{gio, glib, prelude::*};
 use gtk4 as gtk;
 
 use qobuz_player_controls::{
-    client::{Client, GenrePlaylistTag},
+    client::{Client, GenrePlaylistSlug},
     models::{AlbumSimple, Genre, PlaylistSimple, PlaylistTag},
 };
 
@@ -93,7 +93,13 @@ impl DiscoverPage {
                 }
             };
 
-            let playlists = match client.genre_playlists(selected).await {
+            let playlists = match client
+                .genre_playlists(GenrePlaylistSlug {
+                    genre_id: selected.genre_id,
+                    playlist_slug: selected.playlist_tag.map(|x| x.slug),
+                })
+                .await
+            {
                 Ok(playlists) => playlists,
                 Err(err) => {
                     tracing::error!("{err}");
@@ -416,7 +422,13 @@ impl DiscoverPage {
         let selected = self.selected.borrow().clone();
 
         glib::MainContext::default().spawn_local(async move {
-            let playlists = match client.genre_playlists(selected).await {
+            let playlists = match client
+                .genre_playlists(GenrePlaylistSlug {
+                    genre_id: selected.genre_id,
+                    playlist_slug: selected.playlist_tag.map(|x| x.slug),
+                })
+                .await
+            {
                 Ok(playlists) => playlists,
                 Err(err) => {
                     tracing::error!("{err}");
@@ -458,4 +470,10 @@ fn add_album_section(
     section.append(&album_scroller(albums, on_open_album));
 
     root.append(&section);
+}
+
+#[derive(Debug, Clone)]
+struct GenrePlaylistTag {
+    pub genre_id: Option<u32>,
+    pub playlist_tag: Option<PlaylistTag>,
 }

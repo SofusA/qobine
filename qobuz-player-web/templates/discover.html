@@ -1,77 +1,77 @@
 @defer (base.html; active_page="Discover"; playing_info=playing_info) {
-  <div class="flex flex-col gap-6 px-4">
+  <div id="discover-page" class="flex flex-col gap-6 px-4">
     <div
-      class="pt-safe-or-4 sticky top-0 z-10 flex flex-col gap-4 bg-black/80 pb-4 backdrop-blur-md"
+      class="pt-safe-or-4 sticky top-0 z-10 flex justify-between gap-4 bg-black/80 pb-4 backdrop-blur-md"
     >
       <h1 class="text-3xl font-bold tracking-tight">Discover</h1>
 
-      <div class="flex w-full max-w-md rounded-lg bg-gray-900 p-1">
-        <a
-          href="/discover"
-          class="@if (active_tab == 'discover') {bg-gray-800 shadow-sm} @else {text-gray-400 hover:text-gray-200} flex-1 rounded-md py-1.5 text-center text-sm font-medium text-white transition-all"
-          hx-boost="true"
-        >
-          Featured
-        </a>
-        <a
-          href="/discover/genres"
-          class="@if (active_tab == 'genres') {bg-gray-800 shadow-sm} @else {text-gray-400 hover:text-gray-200} flex-1 rounded-md py-1.5 text-center text-sm font-medium text-white transition-all"
-          hx-boost="true"
-        >
-          Genres
-        </a>
-      </div>
+      <select
+        id="genre-select"
+        hx-preserve
+        class="btn btn-primary"
+        name="genre_id"
+        hx-get="/discover"
+        hx-trigger="change"
+        hx-target="#discover-page"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+      >
+        <option value="">All genres</option>
+
+        @for (genre in genres) {
+          <option value="{{ genre.id }}">
+            {{ genre.name }}
+          </option>
+        }
+      </select>
     </div>
 
-    @if (active_tab == "discover") {
-      <div
-        class="animate-in fade-in slide-in-from-bottom-4 flex flex-col gap-8 duration-500"
-      >
-        @for (album_feature in discover.albums) {
-          <div class="flex flex-col gap-3">
-            <div class="flex items-center justify-between">
-              <h3 class="text-xl font-semibold text-white">
-                {{ album_feature[0] }}
-              </h3>
-            </div>
-            @defer (list-albums-vertical.html; albums=album_feature[1]) {}
-          </div>
-        }
-        @for (playlist_feature in discover.playlists) {
-          <div class="flex flex-col gap-3">
-            <div class="flex items-center justify-between">
-              <h3 class="text-xl font-semibold text-white">
-                {{ playlist_feature[0] }}
-              </h3>
-            </div>
-            @defer (
-              list-playlists-vertical.html;
-              playlists=playlist_feature[1]
-            ) {}
-          </div>
-        }
-      </div>
-    } @else if (active_tab == "genres") {
-      @if (genres) {
-        <div
-          class="animate-in fade-in slide-in-from-bottom-4 grid grid-cols-2 gap-3 duration-500 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-        >
-          @for (genre in genres) {
-            <a
-              href="/discover/genres/{{ genre.id }}"
-              class="flex aspect-video items-end rounded-xl bg-gray-800 p-4 transition-all duration-200 hover:bg-blue-900 active:scale-95"
-              preload="mousedown"
-              hx-boost="true"
-            >
-              <h3
-                class="truncate text-lg leading-tight font-bold text-gray-100 hover:text-white"
-              >
-                {{ genre.name }}
-              </h3>
-            </a>
-          }
-        </div>
-      }
-    }
+    <div
+      class="animate-in fade-in slide-in-from-bottom-4 flex flex-col gap-24 duration-500"
+    >
+      @defer (
+        discover-album-section.html;
+        title="New releases";
+        albums=discover.new_releases
+      ) {}
+
+      @defer (
+        discover-playlists.html;
+        playlists=playlists;
+        tags=discover.playlists_tags;
+        selected_genre=selected_genre
+      ) {}
+
+      @defer (
+        discover-album-section.html;
+        title="Qobuzissime";
+        albums=discover.qobuzissims
+      ) {}
+
+      @defer (
+        discover-album-section.html;
+        title="Essential Discography";
+        albums=discover.ideal_discography
+      ) {}
+
+      @defer (
+        discover-album-section.html;
+        title="Album of the week";
+        albums=discover.album_of_the_week
+      ) {}
+
+      @defer (
+        discover-album-section.html;
+        title="Press Accolades";
+        albums=discover.press_awards
+      ) {}
+
+      @defer (
+        discover-album-section.html;
+        title="Most streamed";
+        albums=discover.most_streamed;
+        tags=discover.playlist_tags
+      ) {}
+    </div>
   </div>
 }

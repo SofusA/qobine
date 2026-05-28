@@ -283,6 +283,7 @@ pub fn parse_playlist_simple(
 pub fn parse_discover(
     discover: qobuz_models::discover::Discover,
     max_audio_quality: &AudioQuality,
+    user_id: i64,
 ) -> DiscoverPage {
     DiscoverPage {
         new_releases: discover
@@ -332,6 +333,14 @@ pub fn parse_discover(
             .items
             .into_iter()
             .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        playlists: discover
+            .containers
+            .playlists
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_playlist_simple(x, user_id))
             .collect(),
         playlists_tags: discover
             .containers

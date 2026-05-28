@@ -4,7 +4,7 @@ use crate::{
         TrackInfo,
         album::Album,
         album_suggestion::{AlbumSuggestionResponse, ReleaseQuery},
-        artist::{Artist, ArtistsResponse},
+        artist::ArtistsResponse,
         artist_page::ArtistPage,
         discover::Discover,
         favorites::Favorites,
@@ -118,33 +118,6 @@ impl ReleaseType {
             // ReleaseType::Other => "other",
         }
     }
-}
-
-pub enum FeaturedAlbumType {
-    PressAwards,
-    MostStreamed,
-    NewReleases,
-    Qobuzissims,
-    IdealDiscography,
-}
-
-pub enum FeaturedPlaylistType {
-    EditorsPick,
-}
-
-pub enum FeaturedGenreAlbumType {
-    PressAwards,
-    MostStreamed,
-    NewReleases,
-    Qobuzissims,
-    BestSellers,
-}
-
-pub struct FavoriteCollection {
-    pub albums: Vec<Album>,
-    pub artists: Vec<Artist>,
-    pub playlists: Vec<Playlist>,
-    pub tracks: Vec<Track>,
 }
 
 enum Endpoint {

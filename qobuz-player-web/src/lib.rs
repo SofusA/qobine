@@ -13,7 +13,7 @@ use qobuz_player_controls::{
     controls::Controls,
     database::Database,
     error::Error,
-    models::{Album, AlbumSimple, Playlist},
+    models::{Album, AlbumSimple},
     notification::{Notification, NotificationBroadcast},
 };
 use qobuz_player_rfid::RfidState;
@@ -298,12 +298,6 @@ pub struct AlbumData {
 pub struct ServerSentEvent {
     event_name: String,
     event_data: String,
-}
-
-#[derive(Clone, serde::Deserialize, serde::Serialize)]
-pub struct Discover {
-    pub albums: Vec<(String, Vec<AlbumSimple>)>,
-    pub playlists: Vec<(String, Vec<Playlist>)>,
 }
 
 type ResponseResult = Result<axum::response::Response, axum::response::Response>;

@@ -4,7 +4,7 @@ use crate::{
     database::Credentials,
     models::{
         Album, AlbumSimple, ArtistPage, DiscoverPage, Favorites, Genre, Playlist, PlaylistSimple,
-        PlaylistTag, SearchResults, Track,
+        SearchResults, Track,
         mapper::{
             parse_album, parse_album_simple, parse_artist, parse_artist_page, parse_discover,
             parse_genre, parse_playlist, parse_playlist_simple, parse_search_results, parse_track,
@@ -39,7 +39,7 @@ pub struct Client {
     file_based_streaming: RwLock<bool>,
     favorites_cache: SimpleCache<Favorites>,
     genres_cache: SimpleCache<Vec<Genre>>,
-    genre_playlists_cache: Cache<GenrePlaylistTag, Vec<PlaylistSimple>>,
+    genre_playlists_cache: Cache<GenrePlaylistSlug, Vec<PlaylistSimple>>,
     album_cache: Cache<String, Album>,
     artist_cache: Cache<u32, ArtistPage>,
     playlist_cache: Cache<u32, Playlist>,
@@ -575,17 +575,14 @@ impl Client {
         Ok(genres)
     }
 
-    pub async fn genre_playlists(&self, tag: GenrePlaylistTag) -> Result<Vec<PlaylistSimple>> {
+    pub async fn genre_playlists(&self, tag: GenrePlaylistSlug) -> Result<Vec<PlaylistSimple>> {
         if let Some(cache) = self.genre_playlists_cache.get(&tag).await {
             return Ok(cache);
         }
 
         let client = self.get_client().await?;
         let playlists: Vec<_> = client
-            .genre_playlists(
-                tag.genre_id,
-                tag.playlist_tag.as_ref().map(|x| x.slug.as_str()),
-            )
+            .genre_playlists(tag.genre_id, tag.playlist_slug.as_deref())
             .await?
             .items
             .into_iter()
@@ -609,7 +606,7 @@ impl Client {
 
         let audio_quality = &*self.max_audio_quality.read().await;
 
-        let parsed = parse_discover(result, audio_quality);
+        let parsed = parse_discover(result, audio_quality, client.user_id());
         self.discover_cache.insert(genre_id, parsed.clone()).await;
 
         Ok(parsed)
@@ -617,7 +614,7 @@ impl Client {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GenrePlaylistTag {
+pub struct GenrePlaylistSlug {
     pub genre_id: Option<u32>,
-    pub playlist_tag: Option<PlaylistTag>,
+    pub playlist_slug: Option<String>,
 }

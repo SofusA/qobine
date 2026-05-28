@@ -2,95 +2,85 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::{Query, State},
     routing::get,
 };
-use qobuz_player_controls::{client::GenrePlaylistTag, error::Error};
+use qobuz_player_controls::client::GenrePlaylistSlug;
+use serde::Deserialize;
 use serde_json::json;
 use tokio::try_join;
 
-use crate::{AppState, Discover, ResponseResult, ok_or_broadcast, ok_or_error_page};
+use crate::{AppState, ResponseResult, ok_or_error_page};
 
 pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
     Router::new()
-        .route("/discover", get(index))
-        .route("/discover/genres", get(genres_tab))
-        .route("/discover/genres/{id_or_slug}", get(genre_detail))
+        .route("/discover", get(genre_page))
+        .route("/discover/playlist", get(playlist_partial))
 }
 
-async fn index(State(state): State<Arc<AppState>>) -> ResponseResult {
-    let (albums, playlists) = ok_or_error_page(
-        &state,
-        try_join!(
-            state.client.featured_albums(),
-            state.client.featured_playlists(),
-        ),
-    )?;
+#[derive(Debug, Deserialize)]
+struct GenreQuery {
+    genre_id: Option<String>,
+}
 
-    let discover = Discover { albums, playlists };
+async fn genre_page(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<GenreQuery>,
+) -> ResponseResult {
+    let genre_id = query
+        .genre_id
+        .as_deref()
+        .and_then(|s| s.parse::<u32>().ok());
+
+    let (discover, genres) = ok_or_error_page(
+        &state,
+        try_join!(state.client.discover_page(genre_id), state.client.genres(),),
+    )?;
 
     Ok(state.render(
         "discover.html",
         &json! ({
             "discover": discover,
             "active_tab": "discover",
-            "genres": json!(null),
+            "genres": genres,
+            "playlists": discover.playlists
         }),
     ))
 }
 
-async fn genres_tab(State(state): State<Arc<AppState>>) -> ResponseResult {
-    let genres = ok_or_error_page(&state, state.client.genres().await)?;
+#[derive(Deserialize)]
+struct PlaylistQuery {
+    genre_id: Option<String>,
+    playlist_tag_slug: Option<String>,
+}
 
-    let (albums, playlists) = ok_or_error_page(
+async fn playlist_partial(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PlaylistQuery>,
+) -> ResponseResult {
+    let genre_id = query
+        .genre_id
+        .as_deref()
+        .and_then(|s| s.parse::<u32>().ok());
+
+    let (discover, playlists) = ok_or_error_page(
         &state,
         try_join!(
-            state.client.featured_albums(),
-            state.client.featured_playlists(),
+            state.client.discover_page(genre_id),
+            state.client.genre_playlists(GenrePlaylistSlug {
+                genre_id,
+                playlist_slug: query.playlist_tag_slug,
+            })
         ),
     )?;
 
-    let discover = Discover { albums, playlists };
+    let tags = discover.playlists_tags;
 
     Ok(state.render(
-        "discover.html",
+        "discover-playlists.html",
         &json! ({
-            "discover": discover,
-            "active_tab": "genres",
-            "genres": genres,
-        }),
-    ))
-}
-
-async fn genre_detail(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> ResponseResult {
-    let genres = ok_or_error_page(&state, state.client.genres().await)?;
-    let albums = ok_or_error_page(&state, state.client.genre_albums(id).await)?;
-    let playlists = ok_or_error_page(
-        &state,
-        state
-            .client
-            .genre_playlists(GenrePlaylistTag {
-                genre_id: Some(id),
-                playlist_tag: None,
-            })
-            .await,
-    )?;
-
-    let genre = genres
-        .into_iter()
-        .find(|x| x.id == id)
-        .ok_or_else(|| Error::Client {
-            message: "Unable to find genre".into(),
-        });
-
-    let genre = ok_or_broadcast(&state.broadcast, genre)?;
-
-    Ok(state.render(
-        "genre-detail.html",
-        &json!({
-            "genre": genre,
-            "albums": albums,
-            "playlists": playlists
+            "tags": tags,
+            "playlists": playlists,
         }),
     ))
 }

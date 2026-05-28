@@ -1,4 +1,4 @@
-use qobuz_player_client::client::{Client, FeaturedPlaylistType, ReleaseType};
+use qobuz_player_client::client::{Client, ReleaseType};
 use qobuz_player_controls::database::{Credentials, Database};
 
 async fn get_token() -> Option<Credentials> {
