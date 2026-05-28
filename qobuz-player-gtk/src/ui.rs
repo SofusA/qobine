@@ -14,7 +14,10 @@ use qobuz_player_controls::{
 
 use crate::{
     UiEventSender,
-    ui::{album_detail_page::AlbumHeaderInfo, artist_detail_page::ArtistHeaderInfo},
+    ui::{
+        album_detail_page::AlbumHeaderInfo, artist_detail_page::ArtistHeaderInfo,
+        playlist_detail_page::PlaylistHeaderInfo,
+    },
 };
 
 pub mod album_detail_page;
@@ -23,6 +26,7 @@ pub mod app_shell;
 pub mod artist_detail_page;
 pub mod artists_page;
 pub mod detail_page;
+pub mod discover_page;
 pub mod favorite_tracks_page;
 pub mod grid_page;
 pub mod now_playing_bar;
@@ -344,7 +348,7 @@ pub fn build_track_row(
 
         move |_, parameter| {
             let Some(playlist_id) = parameter.and_then(|p| p.get::<u32>()) else {
-                eprintln!("Missing playlist id");
+                tracing::warn!("Missing playlist id");
                 return;
             };
 
@@ -473,7 +477,7 @@ fn album_scroller(
         .build();
 
     for album in albums {
-        let tile = build_album_tile(album).upcast::<gtk4::Widget>();
+        let tile = build_album_tile(album).upcast();
 
         let album_id = album.id.clone();
         let on_open = on_open_album.clone();
@@ -508,7 +512,7 @@ fn artist_scroller(
         .build();
 
     for artist in artists {
-        let tile = build_artist_tile(artist).upcast::<gtk4::Widget>();
+        let tile = build_artist_tile(artist).upcast();
 
         let artist_id = artist.id;
         let on_open = on_open_artist.clone();
@@ -524,6 +528,39 @@ fn artist_scroller(
         .hscrollbar_policy(gtk4::PolicyType::Automatic)
         .vscrollbar_policy(gtk4::PolicyType::Never)
         .child(&box_)
+        .build();
+
+    scroller.upcast()
+}
+
+fn playlist_scroller(
+    playlists: &[PlaylistSimple],
+    on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
+) -> gtk4::Widget {
+    let row = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(12)
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+
+    for playlist in playlists {
+        let tile = build_playlist_tile(playlist).upcast();
+        let id = playlist.id;
+
+        let on_open = on_open_playlist.clone();
+
+        let button = clickable_tile(&tile, move || {
+            on_open(PlaylistHeaderInfo { id });
+        });
+
+        row.append(&button);
+    }
+
+    let scroller = gtk4::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Never)
+        .child(&row)
         .build();
 
     scroller.upcast()

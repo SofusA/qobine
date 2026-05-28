@@ -86,7 +86,7 @@ pub fn build_detail_header(
                             controls.add_tracks_to_queue(tracks);
                         }
                         Err(err) => {
-                            eprintln!("Failed to fetch tracks: {err}");
+                            tracing::error!("Failed to fetch tracks: {err}");
                         }
                     }
                 }
@@ -115,7 +115,7 @@ pub fn build_detail_header(
                             controls.play_tracks_next(tracks);
                         }
                         Err(err) => {
-                            eprintln!("Failed to fetch tracks: {err}");
+                            tracing::error!("Failed to fetch tracks: {err}");
                         }
                     }
                 }
@@ -134,7 +134,7 @@ pub fn build_detail_header(
 
         move |_, parameter| {
             let Some(playlist_id) = parameter.and_then(|p| p.get::<u32>()) else {
-                eprintln!("Missing playlist id");
+                tracing::error!("Missing playlist id");
                 return;
             };
 
@@ -221,7 +221,7 @@ pub fn populate_playlist_menu(playlist_menu: gio::Menu, client: Arc<Client>) {
                 }
             }
             Err(err) => {
-                eprintln!("Failed to fetch playlists: {err}");
+                tracing::warn!("Failed to fetch playlists: {err}");
                 playlist_menu.append(Some("Failed to load playlists"), None);
             }
         }

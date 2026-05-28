@@ -5,7 +5,8 @@ use qobuz_player_client::{
 use time::macros::format_description;
 
 use crate::models::{
-    Album, AlbumSimple, Artist, ArtistPage, Genre, Playlist, PlaylistSimple, SearchResults, Track,
+    Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Genre, Playlist, PlaylistSimple,
+    PlaylistTag, SearchResults, Track,
 };
 
 pub fn parse_featured_album(value: qobuz_models::featured::FeaturedAlbum) -> AlbumSimple {
@@ -276,6 +277,73 @@ pub fn parse_playlist_simple(
         tracks_count: playlist.tracks_count as u32,
         image: Some(playlist.image.rectangle),
         owner: playlist.owner,
+    }
+}
+
+pub fn parse_discover(
+    discover: qobuz_models::discover::Discover,
+    max_audio_quality: &AudioQuality,
+) -> DiscoverPage {
+    DiscoverPage {
+        new_releases: discover
+            .containers
+            .new_releases
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        qobuzissims: discover
+            .containers
+            .qobuzissims
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        ideal_discography: discover
+            .containers
+            .ideal_discography
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        album_of_the_week: discover
+            .containers
+            .album_of_the_week
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        most_streamed: discover
+            .containers
+            .most_streamed
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        press_awards: discover
+            .containers
+            .press_awards
+            .data
+            .items
+            .into_iter()
+            .map(|x| parse_album_simple(x, max_audio_quality))
+            .collect(),
+        playlists_tags: discover
+            .containers
+            .playlists_tags
+            .data
+            .items
+            .into_iter()
+            .map(|x| PlaylistTag {
+                slug: x.slug,
+                name: x.name,
+            })
+            .collect(),
     }
 }
 

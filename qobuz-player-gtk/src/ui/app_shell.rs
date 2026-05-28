@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 
 use crate::ui::albums_page::{AlbumsPage, new_albums_page};
 use crate::ui::artists_page::{ArtistsPage, new_artists_page};
+use crate::ui::discover_page::DiscoverPage;
 use crate::ui::favorite_tracks_page::FavoriteTracksPage;
 use crate::ui::playlists_page::{PlaylistsPage, new_playlists_page};
 use crate::ui::preferences::build_preferences_menu;
@@ -30,10 +31,11 @@ use crate::ui::{
 use crate::{UiEvent, UiEventSender};
 
 const SIDEBAR_QUEUE: u32 = 0;
-const SIDEBAR_ALBUMS: u32 = 1;
-const SIDEBAR_ARTISTS: u32 = 2;
-const SIDEBAR_PLAYLISTS: u32 = 3;
-const SIDEBAR_TRACKS: u32 = 4;
+const SIDEBAR_DISCOVER: u32 = 1;
+const SIDEBAR_ALBUMS: u32 = 2;
+const SIDEBAR_ARTISTS: u32 = 3;
+const SIDEBAR_PLAYLISTS: u32 = 4;
+const SIDEBAR_TRACKS: u32 = 5;
 
 #[derive(Clone)]
 pub struct AppShell {
@@ -69,6 +71,12 @@ impl AppShell {
         let favorite_tracks_page =
             FavoriteTracksPage::new(controls.clone(), client.clone(), ui_event_sender.clone());
         let queue_page = QueuePage::new(controls.clone(), client.clone(), ui_event_sender.clone());
+        let discover_page = DiscoverPage::new(
+            client.clone(),
+            on_open_album.clone(),
+            on_open_playlist.clone(),
+        );
+        discover_page.load();
 
         let search_page = Rc::new(RefCell::new(SearchPage::new(
             client.clone(),
@@ -83,6 +91,7 @@ impl AppShell {
             .build();
 
         stack.add_named(queue_page.widget(), Some("queue"));
+        stack.add_named(discover_page.widget(), Some("discover"));
         stack.add_named(albums_page.borrow().widget(), Some("albums"));
         stack.add_named(artists_page.borrow().widget(), Some("artists"));
         stack.add_named(playlists_page.borrow().widget(), Some("playlists"));
@@ -117,6 +126,13 @@ impl AppShell {
             adw::SidebarItem::builder()
                 .title("Queue")
                 .icon_name("open-menu-symbolic")
+                .build(),
+        );
+
+        queue_section.append(
+            adw::SidebarItem::builder()
+                .title("Discover")
+                .icon_name("org.gnome.Epiphany-symbolic")
                 .build(),
         );
 
@@ -325,6 +341,7 @@ impl AppShell {
 
                 match idx {
                     SIDEBAR_QUEUE => stack.set_visible_child_name("queue"),
+                    SIDEBAR_DISCOVER => stack.set_visible_child_name("discover"),
                     SIDEBAR_ALBUMS => stack.set_visible_child_name("albums"),
                     SIDEBAR_ARTISTS => stack.set_visible_child_name("artists"),
                     SIDEBAR_PLAYLISTS => stack.set_visible_child_name("playlists"),
@@ -361,6 +378,19 @@ impl AppShell {
 
                         if sidebar.selected() != SIDEBAR_QUEUE {
                             sidebar.set_selected(SIDEBAR_QUEUE);
+                        }
+                    }
+                    "discover" => {
+                        filter_button.set_active(false);
+                        filter_button.set_visible(false);
+                        search_button.set_active(false);
+                        create_playlist_button.set_visible(false);
+
+                        content_title.set_title("Discover");
+                        content_header.set_title_widget(Some(&content_title));
+
+                        if sidebar.selected() != SIDEBAR_DISCOVER {
+                            sidebar.set_selected(SIDEBAR_DISCOVER);
                         }
                     }
                     "albums" => {

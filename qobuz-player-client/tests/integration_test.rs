@@ -1,6 +1,4 @@
-use qobuz_player_client::client::{
-    Client, FeaturedAlbumType, FeaturedGenreAlbumType, FeaturedPlaylistType, ReleaseType,
-};
+use qobuz_player_client::client::{Client, FeaturedPlaylistType, ReleaseType};
 use qobuz_player_controls::database::{Credentials, Database};
 
 async fn get_token() -> Option<Credentials> {
@@ -22,31 +20,36 @@ async fn get_client() -> Option<Client> {
 }
 
 #[tokio::test]
-async fn featured_albums() {
+async fn discover_page() {
     let client = get_client().await.unwrap();
 
-    client
-        .featured_albums(FeaturedAlbumType::PressAwards)
+    let page = client.discover_index(None).await.unwrap();
+    let genres = client.genres().await.unwrap().genres.items;
+
+    let jazz = genres.iter().find(|x| x.name == "Jazz").unwrap().id;
+
+    let _jazz_page = client.discover_index(Some(jazz)).await.unwrap();
+
+    let focus_tag = page
+        .containers
+        .playlists_tags
+        .data
+        .items
+        .iter()
+        .find(|x| x.slug == "focus")
+        .unwrap();
+
+    let _discover_playlists = client.genre_playlists(None, None).await.unwrap();
+
+    let _jazz_playlists = client.genre_playlists(Some(jazz), None).await.unwrap();
+
+    let _focus_playlists = client
+        .genre_playlists(None, Some(&focus_tag.slug))
         .await
         .unwrap();
 
-    client
-        .featured_albums(FeaturedAlbumType::MostStreamed)
-        .await
-        .unwrap();
-
-    client
-        .featured_albums(FeaturedAlbumType::NewReleases)
-        .await
-        .unwrap();
-
-    client
-        .featured_albums(FeaturedAlbumType::Qobuzissims)
-        .await
-        .unwrap();
-
-    client
-        .featured_albums(FeaturedAlbumType::IdealDiscography)
+    let _jazz_focus_playlists = client
+        .genre_playlists(Some(jazz), Some(&focus_tag.slug))
         .await
         .unwrap();
 }
@@ -59,37 +62,6 @@ async fn featured_playlists() {
         .featured_playlists(FeaturedPlaylistType::EditorsPick)
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn genres() {
-    let client = get_client().await.unwrap();
-
-    let genres = client.genres().await.unwrap().genres.items;
-
-    for genre in genres {
-        client.genre_playlists(genre.id).await.unwrap();
-        client
-            .genre_albums(genre.id, FeaturedGenreAlbumType::PressAwards)
-            .await
-            .unwrap();
-        client
-            .genre_albums(genre.id, FeaturedGenreAlbumType::MostStreamed)
-            .await
-            .unwrap();
-        client
-            .genre_albums(genre.id, FeaturedGenreAlbumType::NewReleases)
-            .await
-            .unwrap();
-        client
-            .genre_albums(genre.id, FeaturedGenreAlbumType::Qobuzissims)
-            .await
-            .unwrap();
-        client
-            .genre_albums(genre.id, FeaturedGenreAlbumType::BestSellers)
-            .await
-            .unwrap();
-    }
 }
 
 #[tokio::test]

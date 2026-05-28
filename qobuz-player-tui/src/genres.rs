@@ -1,4 +1,4 @@
-use qobuz_player_controls::client::Client;
+use qobuz_player_controls::client::{Client, GenrePlaylistTag};
 use qobuz_player_controls::{AppResult, controls::Controls};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -58,7 +58,12 @@ impl GenresState {
         let genre_id = self.genres[self.selected_genre].id;
 
         let albums = client.genre_albums(genre_id).await?;
-        let playlists = client.genre_playlists(genre_id).await?;
+        let playlists = client
+            .genre_playlists(GenrePlaylistTag {
+                genre_id: Some(genre_id),
+                playlist_tag: None,
+            })
+            .await?;
 
         self.genres[self.selected_genre].albums = albums
             .into_iter()

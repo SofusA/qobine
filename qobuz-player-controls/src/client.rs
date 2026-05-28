@@ -3,11 +3,12 @@ use std::{path::PathBuf, sync::Mutex};
 use crate::{
     database::Credentials,
     models::{
-        Album, AlbumSimple, ArtistPage, Favorites, Genre, Playlist, PlaylistSimple, SearchResults,
-        Track,
+        Album, AlbumSimple, ArtistPage, DiscoverPage, Favorites, Genre, Playlist, PlaylistSimple,
+        PlaylistTag, SearchResults, Track,
         mapper::{
-            parse_album, parse_album_simple, parse_artist, parse_artist_page, parse_featured_album,
-            parse_genre, parse_playlist, parse_playlist_simple, parse_search_results, parse_track,
+            parse_album, parse_album_simple, parse_artist, parse_artist_page, parse_discover,
+            parse_featured_album, parse_genre, parse_playlist, parse_playlist_simple,
+            parse_search_results, parse_track,
         },
     },
 };
@@ -45,12 +46,13 @@ pub struct Client {
     featured_playlists_cache: SimpleCache<Vec<(String, Vec<Playlist>)>>,
     genres_cache: SimpleCache<Vec<Genre>>,
     genre_albums_cache: Cache<u32, Vec<(String, Vec<AlbumSimple>)>>,
-    genre_playlists_cache: Cache<u32, Vec<PlaylistSimple>>,
+    genre_playlists_cache: Cache<GenrePlaylistTag, Vec<PlaylistSimple>>,
     album_cache: Cache<String, Album>,
     artist_cache: Cache<u32, ArtistPage>,
     playlist_cache: Cache<u32, Playlist>,
     suggested_albums_cache: Cache<String, Vec<AlbumSimple>>,
     search_cache: Cache<String, SearchResults>,
+    discover_cache: Cache<Option<u32>, DiscoverPage>,
 }
 
 impl Client {
@@ -125,6 +127,10 @@ impl Client {
             .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
             .build();
 
+        let discover_cache = moka::future::CacheBuilder::new(1000)
+            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .build();
+
         let credentials = Mutex::new(credentials);
         let max_audio_quality = RwLock::new(max_audio_quality);
         let file_based_streaming = RwLock::new(file_based_streaming);
@@ -145,6 +151,7 @@ impl Client {
             playlist_cache,
             suggested_albums_cache,
             search_cache,
+            discover_cache,
         }
     }
 
@@ -352,6 +359,7 @@ impl Client {
         Ok(suggested_albums)
     }
 
+    // TODO: To be removed
     pub async fn featured_albums(&self) -> Result<Vec<(String, Vec<AlbumSimple>)>> {
         if let Some(cache) = self.featured_albums_cache.get().await {
             return Ok(cache);
@@ -666,6 +674,7 @@ impl Client {
         self.playlist(playlist_id).await
     }
 
+    // TODO: To be removed
     pub async fn genres(&self) -> Result<Vec<Genre>> {
         if let Some(cache) = self.genres_cache.get().await {
             return Ok(cache);
@@ -679,6 +688,7 @@ impl Client {
         Ok(genres)
     }
 
+    // TODO: To be removed
     pub async fn genre_albums(&self, genre_id: u32) -> Result<Vec<(String, Vec<AlbumSimple>)>> {
         if let Some(cache) = self.genre_albums_cache.get(&genre_id).await {
             return Ok(cache);
@@ -756,14 +766,17 @@ impl Client {
         Ok(albums)
     }
 
-    pub async fn genre_playlists(&self, genre_id: u32) -> Result<Vec<PlaylistSimple>> {
-        if let Some(cache) = self.genre_playlists_cache.get(&genre_id).await {
+    pub async fn genre_playlists(&self, tag: GenrePlaylistTag) -> Result<Vec<PlaylistSimple>> {
+        if let Some(cache) = self.genre_playlists_cache.get(&tag).await {
             return Ok(cache);
         }
 
         let client = self.get_client().await?;
         let playlists: Vec<_> = client
-            .genre_playlists(genre_id)
+            .genre_playlists(
+                tag.genre_id,
+                tag.playlist_tag.as_ref().map(|x| x.slug.as_str()),
+            )
             .await?
             .items
             .into_iter()
@@ -771,9 +784,31 @@ impl Client {
             .collect();
 
         self.genre_playlists_cache
-            .insert(genre_id, playlists.clone())
+            .insert(tag.clone(), playlists.clone())
             .await;
 
         Ok(playlists)
     }
+
+    pub async fn discover_page(&self, genre_id: Option<u32>) -> Result<DiscoverPage> {
+        if let Some(cache) = self.discover_cache.get(&genre_id).await {
+            return Ok(cache);
+        }
+
+        let client = self.get_client().await?;
+        let result = client.discover_index(genre_id).await?;
+
+        let audio_quality = &*self.max_audio_quality.read().await;
+
+        let parsed = parse_discover(result, audio_quality);
+        self.discover_cache.insert(genre_id, parsed.clone()).await;
+
+        Ok(parsed)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GenrePlaylistTag {
+    pub genre_id: Option<u32>,
+    pub playlist_tag: Option<PlaylistTag>,
 }

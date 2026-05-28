@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     routing::get,
 };
-use qobuz_player_controls::error::Error;
+use qobuz_player_controls::{client::GenrePlaylistTag, error::Error};
 use serde_json::json;
 use tokio::try_join;
 
@@ -65,7 +65,16 @@ async fn genres_tab(State(state): State<Arc<AppState>>) -> ResponseResult {
 async fn genre_detail(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> ResponseResult {
     let genres = ok_or_error_page(&state, state.client.genres().await)?;
     let albums = ok_or_error_page(&state, state.client.genre_albums(id).await)?;
-    let playlists = ok_or_error_page(&state, state.client.genre_playlists(id).await)?;
+    let playlists = ok_or_error_page(
+        &state,
+        state
+            .client
+            .genre_playlists(GenrePlaylistTag {
+                genre_id: Some(id),
+                playlist_tag: None,
+            })
+            .await,
+    )?;
 
     let genre = genres
         .into_iter()

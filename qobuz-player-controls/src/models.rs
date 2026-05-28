@@ -168,3 +168,23 @@ pub struct Genre {
     pub name: String,
     pub id: u32,
 }
+
+#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct DiscoverPage {
+    pub new_releases: Vec<AlbumSimple>,
+    pub qobuzissims: Vec<AlbumSimple>,
+    pub ideal_discography: Vec<AlbumSimple>,
+    pub album_of_the_week: Vec<AlbumSimple>,
+    pub most_streamed: Vec<AlbumSimple>,
+    pub press_awards: Vec<AlbumSimple>,
+    // pub playlists: Vec<PlaylistSimple>,
+    pub playlists_tags: Vec<PlaylistTag>,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub struct PlaylistTag {
+    pub slug: String,
+    pub name: String,
+}

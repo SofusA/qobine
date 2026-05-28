@@ -27,6 +27,7 @@ pub struct FeaturedAlbum {
     pub hires_streamable: bool,
     pub streamable: bool,
     pub duration: u32,
+    pub awards: Vec<Award>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,4 +41,9 @@ pub struct FeaturedPlaylists {
     limit: u32,
     offset: u32,
     pub items: Vec<Playlist>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Award {
+    name: String,
 }

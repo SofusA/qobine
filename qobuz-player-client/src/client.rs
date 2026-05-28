@@ -6,6 +6,7 @@ use crate::{
         album_suggestion::{AlbumOfTheWeekQuery, AlbumSuggestionResponse, ReleaseQuery},
         artist::{Artist, ArtistsResponse},
         artist_page::ArtistPage,
+        discover::Discover,
         favorites::Favorites,
         featured::{FeaturedAlbumsResponse, FeaturedPlaylistsResponse},
         genre::{GenreFeaturedPlaylists, GenreResponse},
@@ -208,6 +209,7 @@ enum Endpoint {
     GenreList,
     GenreFeatured,
     GenrePlaylists,
+    DiscoverIndex,
 }
 
 impl Display for Endpoint {
@@ -241,6 +243,7 @@ impl Display for Endpoint {
             Endpoint::GenreList => "genre/list",
             Endpoint::GenreFeatured => "album/getFeatured",
             Endpoint::GenrePlaylists => "discover/playlists",
+            Endpoint::DiscoverIndex => "discover/index",
         };
 
         f.write_str(endpoint)
@@ -418,6 +421,7 @@ impl Client {
         self.user_id
     }
 
+    // TODO: To be removed
     pub async fn featured_albums(
         &self,
         featured_type: FeaturedAlbumType,
@@ -436,6 +440,7 @@ impl Client {
         .await
     }
 
+    // TODO: To be removed
     pub async fn featured_playlists(
         &self,
         featured_type: FeaturedPlaylistType,
@@ -451,6 +456,7 @@ impl Client {
         self.get(&endpoint, None).await
     }
 
+    // TODO: To be removed
     pub async fn genre_albums(
         &self,
         genre_id: u32,
@@ -469,15 +475,30 @@ impl Client {
         self.get(&endpoint, Some(&params)).await
     }
 
-    pub async fn genre_playlists(&self, genre_id: u32) -> Result<GenreFeaturedPlaylists> {
+    pub async fn genre_playlists(
+        &self,
+        genre_id: Option<u32>,
+        tag: Option<&str>,
+    ) -> Result<GenreFeaturedPlaylists> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::GenrePlaylists);
-        let genre_id = genre_id.to_string();
+        let genre_id = genre_id.map(|x| x.to_string()).unwrap_or_default();
+        let tag = tag.map(|x| x.to_string()).unwrap_or_default();
 
         let params = vec![
             ("genre_ids", genre_id.as_str()),
+            ("tags", tag.as_str()),
             ("offset", "0"),
             ("limit", "20"),
         ];
+
+        self.get(&endpoint, Some(&params)).await
+    }
+
+    pub async fn discover_index(&self, genre_id: Option<u32>) -> Result<Discover> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::DiscoverIndex);
+        let genre_id = genre_id.map(|x| x.to_string()).unwrap_or_default();
+
+        let params = vec![("genre_ids", genre_id.as_str())];
 
         self.get(&endpoint, Some(&params)).await
     }

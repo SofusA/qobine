@@ -5,6 +5,7 @@ pub mod album;
 pub mod album_suggestion;
 pub mod artist;
 pub mod artist_page;
+pub mod discover;
 pub mod favorites;
 pub mod featured;
 pub mod genre;
