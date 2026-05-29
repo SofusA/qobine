@@ -6541,14 +6541,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/skabelon/skabelon-0.2.1.crate",
-        "sha256": "0e60e26056ecae2bf8fca9939257a937b3187a24b3027abc6774dee7880b31b3",
-        "dest": "cargo/vendor/skabelon-0.2.1"
+        "url": "https://static.crates.io/crates/skabelon/skabelon-0.2.2.crate",
+        "sha256": "94b178045f3de69738f61410fad0df38d7237c10699f7c7342d699a6558618b8",
+        "dest": "cargo/vendor/skabelon-0.2.2"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"0e60e26056ecae2bf8fca9939257a937b3187a24b3027abc6774dee7880b31b3\", \"files\": {}}",
-        "dest": "cargo/vendor/skabelon-0.2.1",
+        "contents": "{\"package\": \"94b178045f3de69738f61410fad0df38d7237c10699f7c7342d699a6558618b8\", \"files\": {}}",
+        "dest": "cargo/vendor/skabelon-0.2.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {
