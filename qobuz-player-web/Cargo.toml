@@ -19,6 +19,7 @@ qobuz-player-rfid = { version = "*", path = "../qobuz-player-rfid" }
 qobuz-player-connect = { version = "*", path = "../qobuz-player-connect" }
 qobuz-player-gpio = { version = "*", path = "../qobuz-player-gpio", optional = true }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }
+qobuz-player-disconnect = { version = "*", path = "../qobuz-player-disconnect" }
 
 axum.workspace = true
 axum-extra.workspace = true

@@ -1,0 +1,25 @@
+use std::time::Duration;
+
+use qobuz_player_controls::{Status, controls::ControlCommand, tracklist::Tracklist};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum DisconnectServerEvent {
+    Tracklist(Tracklist),
+    Status(Status),
+    Position(Duration),
+    Volume(f32),
+    ActiveDevice(String),
+    Control(ControlCommand),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DisconnectState {
+    pub selected_device: Option<String>,
+    pub available_devices: Vec<String>,
+    pub playback_status: Status,
+    pub tracklist: Tracklist,
+    pub position: Duration,
+    pub volume: f32,
+}

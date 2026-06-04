@@ -402,10 +402,8 @@ impl PreferencesState {
                 }
             }
 
-            PreferenceFocus::Logout => {
-                if self.database.set_credentials(None).await.is_ok() {
-                    let _ = self.exit_sender.send(true);
-                };
+            PreferenceFocus::Logout if self.database.set_credentials(None).await.is_ok() => {
+                let _ = self.exit_sender.send(true);
             }
 
             _ => {}

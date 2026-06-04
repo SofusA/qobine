@@ -11,6 +11,18 @@
   <div
     class="pt-safe-or-4 z-10 mx-auto flex w-full max-w-md grow flex-col justify-center p-3 sm:gap-4 sm:p-6 md:max-w-4xl md:flex-row md:items-center md:gap-8 md:px-8 md:pt-0"
   >
+    <div>
+      <div>{{ disconnect_state.selected_device }}</div>
+      @for (device in disconnect_state.available_devices) {
+        <button
+          class="btn btn-primary"
+          hx-post="/api/active-device/{{ device }}"
+          hx-swap="none"
+        >
+          {{ device }}
+        </button>
+      }
+    </div>
     <!-- Artwork (flexible height on mobile, fixed width on tablet) -->
     <div
       class="relative flex min-h-0 items-center justify-center md:w-96 md:flex-none"

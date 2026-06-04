@@ -16,6 +16,7 @@ use qobuz_player_controls::{
     models::{Album, AlbumSimple},
     notification::{Notification, NotificationBroadcast},
 };
+use qobuz_player_disconnect::client::DisconnectClient;
 use qobuz_player_rfid::RfidState;
 use serde_json::json;
 use skabelon::Templates;
@@ -54,6 +55,7 @@ pub async fn init(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
+    disconnect_client: DisconnectClient,
 ) -> AppResult<()> {
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
@@ -71,6 +73,7 @@ pub async fn init(
         broadcast,
         client,
         database,
+        disconnect_client,
     )
     .await;
 
@@ -90,6 +93,7 @@ async fn create_router(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
+    disconnect_client: DisconnectClient,
 ) -> Router {
     let (tx, _rx) = broadcast::channel::<ServerSentEvent>(100);
     let broadcast_subscribe = broadcast.subscribe();
@@ -144,6 +148,7 @@ async fn create_router(
         status_receiver: status_receiver.clone(),
         templates: templates_rx.clone(),
         database,
+        disconnect_client,
     });
 
     tokio::spawn(background_task(

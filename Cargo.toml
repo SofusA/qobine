@@ -10,6 +10,7 @@ members = [
   "qobuz-player-connect",
   "qobuz-player-cli",
   "qobuz-player-gtk",
+  "qobuz-player-disconnect-server", "qobuz-player-disconnect",
 ]
 resolver = "2"
 
@@ -34,7 +35,7 @@ mime = "0.3"
 mime_guess = "2"
 rand = "0.10"
 regex = "1"
-reqwest = { version = "0.12", features = ["rustls-tls", "cookies", "json"] }
+reqwest = { version = "0.12", features = ["rustls-tls", "cookies", "json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 snafu = "0.9"

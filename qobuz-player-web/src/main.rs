@@ -4,6 +4,7 @@ use qobuz_player_cli::{
     ConnectArgs, DelayArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
     default_audio_cache, default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
+use qobuz_player_disconnect::client::DisconnectClient;
 use qobuz_player_rfid::RfidState;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -16,6 +17,18 @@ use qobuz_player_controls::{
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Arguments {
+    /// Device name
+    #[clap(short, long)]
+    device_name: String,
+
+    /// Password
+    #[clap(short, long)]
+    password: String,
+
+    /// server url
+    #[clap(short, long)]
+    server_url: String, // TODO
+
     #[clap(long)]
     /// Secret used for web ui auth
     web_secret: Option<String>,
@@ -98,6 +111,22 @@ pub async fn run() -> AppResult<()> {
 
     let rfid_state = args.rfid.then(RfidState::default);
 
+    let tracklist_sender = player.tracklist_sender();
+    let position_sender = player.position_sender();
+    let status_sender = player.status_sender();
+    let volume_sender = player.volume_sender();
+    let disconnect_client = DisconnectClient::new(
+        &args.server_url,
+        &args.password,
+        &args.device_name,
+        player.controls(),
+        tracklist_sender,
+        position_sender,
+        volume_sender,
+        status_sender,
+        player.active_sender(),
+    );
+
     {
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
@@ -108,6 +137,7 @@ pub async fn run() -> AppResult<()> {
         let client = client.clone();
         let database = database.clone();
         let rfid_state = rfid_state.clone();
+        let disconnect_client = disconnect_client.clone();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_web::init(
@@ -122,6 +152,30 @@ pub async fn run() -> AppResult<()> {
                 broadcast,
                 client,
                 database,
+                disconnect_client,
+            )
+            .await
+            {
+                error_exit(e);
+            }
+        });
+    }
+
+    {
+        let position_receiver = player.position();
+        let tracklist_receiver = player.tracklist();
+        let volume_receiver = player.volume();
+        let status_receiver = player.status();
+        let controls = player.controls();
+
+        tokio::spawn(async move {
+            if let Err(e) = qobuz_player_disconnect::init(
+                disconnect_client,
+                controls,
+                position_receiver,
+                tracklist_receiver,
+                status_receiver,
+                volume_receiver,
             )
             .await
             {

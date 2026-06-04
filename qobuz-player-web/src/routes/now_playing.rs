@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::State,
+    extract::{Path, State},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::json;
 
@@ -16,10 +16,22 @@ pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
         .route("/status", get(status_partial))
         .route("/now-playing", get(now_playing_partial))
         .route("/now-playing/content", get(now_playing_content))
+        .route("/active_device/{device_id}", post(set_active_device))
+}
+
+async fn set_active_device(
+    State(state): State<Arc<AppState>>,
+    Path(device_id): Path<String>,
+) -> impl IntoResponse {
+    state
+        .disconnect_client
+        .set_current_device(&device_id)
+        .await
+        .unwrap()
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    now_playing(&state)
+    now_playing(&state).await
 }
 
 async fn status_partial(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -27,15 +39,15 @@ async fn status_partial(State(state): State<Arc<AppState>>) -> impl IntoResponse
 }
 
 async fn now_playing_partial(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    now_playing(&state)
+    now_playing(&state).await
 }
 
 async fn now_playing_content(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let context = now_playing_context(&state);
+    let context = now_playing_context(&state).await;
     state.render("now-playing-content.html", &context)
 }
 
-fn now_playing_context(state: &AppState) -> serde_json::Value {
+async fn now_playing_context(state: &AppState) -> serde_json::Value {
     let tracklist = state.tracklist_receiver.borrow().clone();
     let position_mseconds = state.position_receiver.borrow().as_millis();
 
@@ -48,14 +60,17 @@ fn now_playing_context(state: &AppState) -> serde_json::Value {
     let position_string = mseconds_to_mm_ss(position_mseconds);
     let duration_string = mseconds_to_mm_ss(duration_mseconds);
 
+    let disconnect_state = state.disconnect_client.get_state().await.unwrap(); // TODO
+
     json!({
         "position_string": position_string,
         "duration_string": duration_string,
+        "disconnect_state": disconnect_state
     })
 }
 
-fn now_playing(state: &AppState) -> Response {
-    let context = now_playing_context(state);
+async fn now_playing(state: &AppState) -> Response {
+    let context = now_playing_context(state).await;
     state.render("now-playing.html", &context)
 }
 

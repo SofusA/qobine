@@ -6,7 +6,7 @@ use rand::seq::SliceRandom;
 use tokio::{
     select,
     sync::{
-        mpsc,
+        broadcast,
         watch::{self, Receiver, Sender},
     },
     time::sleep,
@@ -42,7 +42,7 @@ pub struct Player {
     volume: Sender<f32>,
     position: Sender<Duration>,
     track_finished: Receiver<()>,
-    controls_rx: mpsc::UnboundedReceiver<ControlCommand>,
+    controls_rx: broadcast::Receiver<ControlCommand>,
     controls: Controls,
     database: Arc<Database>,
     next_track_is_queried: bool,
@@ -50,6 +50,7 @@ pub struct Player {
     downloader: Downloader,
     state_change_delay: Option<Duration>,
     sample_rate_change_delay: Option<Duration>,
+    active: Sender<bool>,
 }
 
 impl Player {
@@ -76,8 +77,10 @@ impl Player {
         let (target_status, _) = watch::channel(Default::default());
         let (tracklist_tx, tracklist_rx) = watch::channel(tracklist);
 
-        let (controls_tx, controls_rx) = tokio::sync::mpsc::unbounded_channel();
-        let controls = Controls::new(controls_tx);
+        let controls = Controls::new();
+        let controls_rx = controls.subscribe();
+
+        let (active, _) = watch::channel(true);
 
         Ok(Self {
             broadcast,
@@ -97,6 +100,7 @@ impl Player {
             downloader,
             state_change_delay,
             sample_rate_change_delay,
+            active,
         })
     }
 
@@ -118,6 +122,30 @@ impl Player {
 
     pub fn tracklist(&self) -> TracklistReceiver {
         self.tracklist_tx.subscribe()
+    }
+
+    pub fn status_sender(&self) -> watch::Sender<Status> {
+        self.target_status.clone()
+    }
+
+    pub fn volume_sender(&self) -> watch::Sender<f32> {
+        self.volume.clone()
+    }
+
+    pub fn position_sender(&self) -> watch::Sender<Duration> {
+        self.position.clone()
+    }
+
+    pub fn tracklist_sender(&self) -> watch::Sender<Tracklist> {
+        self.tracklist_tx.clone()
+    }
+
+    pub fn active(&self) -> watch::Receiver<bool> {
+        self.active.subscribe()
+    }
+
+    pub fn active_sender(&self) -> watch::Sender<bool> {
+        self.active.clone()
     }
 
     async fn play_pause(&mut self) -> AppResult<()> {
@@ -585,6 +613,11 @@ impl Player {
     }
 
     async fn handle_message(&mut self, notification: ControlCommand) -> AppResult<()> {
+        if !*self.active.borrow() {
+            tracing::info!("Skipping command due to not being active device");
+            return Ok(());
+        }
+
         match notification {
             ControlCommand::Album { id, index } => {
                 self.play_album(&id, index).await?;
@@ -646,7 +679,6 @@ impl Player {
                 start_index,
             } => self.new_track_queue(items, play, start_index).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
-
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
                     self.database.set_max_audio_quality(new_quality).await?;
@@ -718,7 +750,7 @@ impl Player {
                     };
                 }
 
-                Some(notification) = self.controls_rx.recv() => {
+                Ok(notification) = self.controls_rx.recv() => {
                     if let Err(err) = self.handle_message(notification).await {
                         self.broadcast.send_error(err.to_string());
                     };

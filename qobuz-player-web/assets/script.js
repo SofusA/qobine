@@ -28,6 +28,11 @@ function initSse() {
     if (slider) {
       slider.value = event.data;
     }
+
+    const percentage = document.getElementById("volume-percentage");
+    if (percentage) {
+      percentage.innerHTML = `${event.data}%`;
+    }
   });
 
   for (const level of ["error", "warn", "success", "info"]) {

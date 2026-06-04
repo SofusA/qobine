@@ -52,7 +52,7 @@ pub struct Client {
     active_secret: Option<String>,
 }
 
-#[derive(Default, Clone, Copy, Debug, clap::ValueEnum)]
+#[derive(Default, Clone, Copy, Debug, clap::ValueEnum, serde::Deserialize, serde::Serialize)]
 pub enum AudioQuality {
     Mp3 = 5,
     CD = 6,

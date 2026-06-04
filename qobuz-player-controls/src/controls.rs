@@ -1,8 +1,9 @@
 use std::{path::PathBuf, time::Duration};
 
 use qobuz_player_client::client::AudioQuality;
+use tokio::sync::broadcast;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ControlCommand {
     Album {
         id: String,
@@ -64,7 +65,7 @@ pub enum ControlCommand {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum StreamingConfiguration {
     SetMaxAudioQuality { new_quality: AudioQuality },
     SetAudioCacheDirectory { new_directory: PathBuf },
@@ -73,168 +74,145 @@ pub enum StreamingConfiguration {
 
 #[derive(Debug, Clone)]
 pub struct Controls {
-    tx: tokio::sync::mpsc::UnboundedSender<ControlCommand>,
+    tx: broadcast::Sender<ControlCommand>,
+}
+
+impl Default for Controls {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Controls {
-    pub fn new(tx: tokio::sync::mpsc::UnboundedSender<ControlCommand>) -> Self {
+    pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(20);
         Self { tx }
     }
 
+    pub fn subscribe(&self) -> broadcast::Receiver<ControlCommand> {
+        self.tx.subscribe()
+    }
+
+    pub fn send(&self, command: ControlCommand) {
+        self.tx.send(command).expect("infallible");
+    }
+
     pub fn next(&self) {
-        self.tx.send(ControlCommand::Next).expect("infallible");
+        self.send(ControlCommand::Next);
     }
 
     pub fn previous(&self) {
-        self.tx.send(ControlCommand::Previous).expect("infallible");
+        self.send(ControlCommand::Previous);
     }
 
     pub fn play_pause(&self) {
-        self.tx.send(ControlCommand::PlayPause).expect("infallible");
+        self.send(ControlCommand::PlayPause);
     }
 
     pub fn play(&self) {
-        self.tx.send(ControlCommand::Play).expect("infallible");
+        self.send(ControlCommand::Play);
     }
 
     pub fn pause(&self) {
-        self.tx.send(ControlCommand::Pause).expect("infallible");
+        self.send(ControlCommand::Pause);
     }
 
     pub fn play_album(&self, id: &str, index: usize) {
-        self.tx
-            .send(ControlCommand::Album {
-                id: id.to_string(),
-                index,
-            })
-            .expect("infallible");
+        self.send(ControlCommand::Album {
+            id: id.to_string(),
+            index,
+        });
     }
 
     pub fn play_playlist(&self, id: u32, index: usize, shuffle: bool) {
-        self.tx
-            .send(ControlCommand::Playlist { id, index, shuffle })
-            .expect("infallible");
+        self.send(ControlCommand::Playlist { id, index, shuffle });
     }
 
     pub fn play_track(&self, id: u32) {
-        self.tx
-            .send(ControlCommand::Track { id })
-            .expect("infallible");
+        self.send(ControlCommand::Track { id });
     }
 
     pub fn play_tracks(&self, ids: Vec<u32>, shuffle: bool) {
-        self.tx
-            .send(ControlCommand::Tracks { ids, shuffle })
-            .expect("infallible");
+        self.send(ControlCommand::Tracks { ids, shuffle });
     }
 
     pub fn add_tracks_to_queue(&self, ids: Vec<u32>) {
-        self.tx
-            .send(ControlCommand::AddTracksToQueue { ids })
-            .expect("infallible");
+        self.send(ControlCommand::AddTracksToQueue { ids });
     }
 
     pub fn remove_index_from_queue(&self, index: usize) {
-        self.tx
-            .send(ControlCommand::RemoveIndexFromQueue { index })
-            .expect("infallible");
+        self.send(ControlCommand::RemoveIndexFromQueue { index });
     }
 
     pub fn play_tracks_next(&self, ids: Vec<u32>) {
-        self.tx
-            .send(ControlCommand::PlayTracksNext { ids })
-            .expect("infallible");
+        self.send(ControlCommand::PlayTracksNext { ids });
     }
 
     pub fn play_top_tracks(&self, artist_id: u32, index: usize) {
-        self.tx
-            .send(ControlCommand::ArtistTopTracks { artist_id, index })
-            .expect("infallible");
+        self.send(ControlCommand::ArtistTopTracks { artist_id, index });
     }
 
     pub fn skip_to_position(&self, index: usize, force: bool) {
-        self.tx
-            .send(ControlCommand::SkipToPosition {
-                new_position: index,
-                force,
-            })
-            .expect("infallible");
+        self.send(ControlCommand::SkipToPosition {
+            new_position: index,
+            force,
+        });
     }
 
     pub fn set_volume(&self, volume: f32) {
-        self.tx
-            .send(ControlCommand::SetVolume { volume })
-            .expect("infallible");
+        self.send(ControlCommand::SetVolume { volume });
     }
 
     pub fn seek(&self, time: Duration) {
-        self.tx
-            .send(ControlCommand::Seek { time })
-            .expect("infallible");
+        self.send(ControlCommand::Seek { time });
     }
 
     pub fn jump_forward(&self) {
-        self.tx
-            .send(ControlCommand::JumpForward)
-            .expect("infallible");
+        self.send(ControlCommand::JumpForward);
     }
 
     pub fn jump_backward(&self) {
-        self.tx
-            .send(ControlCommand::JumpBackward)
-            .expect("infallible");
+        self.send(ControlCommand::JumpBackward);
     }
 
     pub fn reorder_queue(&self, new_order: Vec<usize>) {
-        self.tx
-            .send(ControlCommand::ReorderQueue { new_order })
-            .expect("infallible");
+        self.send(ControlCommand::ReorderQueue { new_order });
     }
 
     pub fn new_queue(&self, items: Vec<NewQueueItem>, play: bool, start_index: Option<usize>) {
-        self.tx
-            .send(ControlCommand::NewQueue {
-                items,
-                play,
-                start_index,
-            })
-            .expect("infallible");
+        self.send(ControlCommand::NewQueue {
+            items,
+            play,
+            start_index,
+        });
     }
 
     pub fn clear_queue(&self) {
-        self.tx
-            .send(ControlCommand::ClearQueue)
-            .expect("infallible");
+        self.send(ControlCommand::ClearQueue);
     }
 
     pub fn set_audio_max_quality(&self, new_quality: AudioQuality) {
-        self.tx
-            .send(ControlCommand::StreamingConfiguration {
-                configuration: StreamingConfiguration::SetMaxAudioQuality { new_quality },
-            })
-            .expect("infallible");
+        self.send(ControlCommand::StreamingConfiguration {
+            configuration: StreamingConfiguration::SetMaxAudioQuality { new_quality },
+        });
     }
 
     pub fn set_use_file_based_streaming(&self, use_file_based_streaming: bool) {
-        self.tx
-            .send(ControlCommand::StreamingConfiguration {
-                configuration: StreamingConfiguration::UseFileBasedStreaming {
-                    use_file_based_streaming,
-                },
-            })
-            .expect("infallible");
+        self.send(ControlCommand::StreamingConfiguration {
+            configuration: StreamingConfiguration::UseFileBasedStreaming {
+                use_file_based_streaming,
+            },
+        });
     }
 
     pub fn set_audio_cache_directory(&self, new_directory: PathBuf) {
-        self.tx
-            .send(ControlCommand::StreamingConfiguration {
-                configuration: StreamingConfiguration::SetAudioCacheDirectory { new_directory },
-            })
-            .expect("infallible");
+        self.send(ControlCommand::StreamingConfiguration {
+            configuration: StreamingConfiguration::SetAudioCacheDirectory { new_directory },
+        });
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, serde::Deserialize, serde::Serialize)]
 pub struct NewQueueItem {
     pub track_id: u32,
     pub queue_id: u64,

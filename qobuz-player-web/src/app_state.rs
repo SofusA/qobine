@@ -9,6 +9,7 @@ use qobuz_player_controls::{
     notification::{Notification, NotificationBroadcast},
     tracklist::{Tracklist, TracklistType},
 };
+use qobuz_player_disconnect::client::DisconnectClient;
 use qobuz_player_rfid::RfidState;
 use serde_json::json;
 use skabelon::Templates;
@@ -30,6 +31,7 @@ pub struct AppState {
     pub volume_receiver: VolumeReceiver,
     pub templates: watch::Receiver<Templates>,
     pub database: Arc<Database>,
+    pub disconnect_client: DisconnectClient,
 }
 
 impl AppState {

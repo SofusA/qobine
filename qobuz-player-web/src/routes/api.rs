@@ -56,6 +56,7 @@ pub fn routes() -> Router<Arc<AppState>> {
             "/api/rfid/reference/playlist",
             post(link_playlist_rfid_reference),
         )
+        .route("/api/active-device/{device_id}", post(set_active_device))
 }
 
 async fn playing_info(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -318,4 +319,16 @@ async fn link_playlist_rfid_reference(
     )?;
 
     Ok(state.send_toast(Notification::Success("Link complete".into())))
+}
+
+// TODO: Should be a channel instead
+async fn set_active_device(
+    State(state): State<Arc<AppState>>,
+    Path(device_id): Path<String>,
+) -> impl IntoResponse {
+    state
+        .disconnect_client
+        .set_current_device(&device_id)
+        .await
+        .unwrap();
 }
