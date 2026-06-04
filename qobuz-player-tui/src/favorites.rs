@@ -259,7 +259,7 @@ impl FavoritesState {
                         client,
                         controls,
                         notifications,
-                        TrackListEvent::Track,
+                        TrackListEvent::Favorites,
                     )
                     .await
             }

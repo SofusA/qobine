@@ -305,19 +305,49 @@ impl Player {
         self.skip_to_position(current_position - 1, false).await
     }
 
-    async fn new_queue(&mut self, tracklist: Tracklist) -> AppResult<()> {
+    async fn new_queue(&mut self, mut tracklist: Tracklist) -> AppResult<()> {
         self.sink.clear()?;
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
 
-        if let Some(first_track) = tracklist.current_track() {
-            tracing::info!("New queue starting with: {}", first_track.title);
-            self.query_track(first_track, false).await?;
+        if !self.query_current_or_skip(&mut tracklist).await? {
+            self.set_target_status(Status::Paused);
+            self.sink.pause();
+            self.position.send(Default::default())?;
         }
 
         self.broadcast_tracklist(tracklist).await?;
 
         Ok(())
+    }
+
+    async fn query_current_or_skip(&mut self, tracklist: &mut Tracklist) -> AppResult<bool> {
+        loop {
+            let Some(track) = tracklist.current_track().cloned() else {
+                return Ok(false);
+            };
+
+            match self.query_track(&track, false).await {
+                Ok(()) => {
+                    tracing::info!("Playing: {}", track.title);
+                    return Ok(true);
+                }
+                Err(err) => {
+                    tracing::warn!("Skipping unavailable track {}: {}", track.title, err);
+                    self.broadcast.send(Notification::Warning(format!(
+                        "Skipping unavailable track: {}",
+                        track.title
+                    )));
+
+                    let position = tracklist.current_position();
+                    tracklist.remove_track(position);
+
+                    if tracklist.skip_to_track(position).is_none() {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
     }
 
     async fn new_track_queue(
@@ -429,7 +459,14 @@ impl Player {
         self.new_queue(tracklist).await
     }
 
-    async fn play_tracks(&mut self, ids: Vec<u32>, shuffle: bool) -> AppResult<()> {
+    async fn play_tracks(
+        &mut self,
+        ids: Vec<u32>,
+        shuffle: bool,
+        start_index: usize,
+    ) -> AppResult<()> {
+        let target_id = ids.get(start_index).copied();
+
         let mut tracks: Vec<_> = self
             .client
             .tracks(ids)
@@ -438,13 +475,18 @@ impl Player {
             .filter(|t| t.available)
             .collect();
 
-        if shuffle {
+        let skip_index = if shuffle {
             tracks.shuffle(&mut rand::rng());
-        }
+            0
+        } else {
+            target_id
+                .and_then(|id| tracks.iter().position(|t| t.id == id))
+                .unwrap_or(0)
+        };
 
         let mut tracklist = Tracklist::new(TracklistType::Tracks, tracks_to_queue_items(tracks));
 
-        tracklist.skip_to_track(0);
+        tracklist.skip_to_track(skip_index);
         self.new_queue(tracklist).await
     }
 
@@ -574,9 +616,15 @@ impl Player {
 
                 let tracklist = self.tracklist_rx.borrow().clone();
 
-                if let Some(next_track) = tracklist.next_track() {
+                if let Some(next_track) = tracklist.next_track().cloned() {
                     tracing::info!("Query next track: {} from tick", &next_track.title);
-                    self.query_track(next_track, true).await?;
+                    if let Err(err) = self.query_track(&next_track, true).await {
+                        tracing::warn!(
+                            "Could not prefetch next track {}: {}",
+                            next_track.title,
+                            err
+                        );
+                    }
                 }
             }
         }
@@ -598,8 +646,12 @@ impl Player {
             ControlCommand::Track { id } => {
                 self.play_track(id).await?;
             }
-            ControlCommand::Tracks { ids, shuffle } => {
-                self.play_tracks(ids, shuffle).await?;
+            ControlCommand::Tracks {
+                ids,
+                shuffle,
+                start_index,
+            } => {
+                self.play_tracks(ids, shuffle, start_index).await?;
             }
             ControlCommand::Next => {
                 self.next().await?;
@@ -681,7 +733,7 @@ impl Player {
         let next_track = tracklist.skip_to_track(new_position);
 
         match next_track {
-            Some(next_track) => {
+            Some(_) => {
                 if !self.next_track_in_sink_queue {
                     tracing::info!(
                         "Track finished and next track is not in queue. Resetting queue, and querying track."
@@ -691,7 +743,14 @@ impl Player {
                         tracing::info!("Waiting for sample rate change delay");
                         sleep(delay).await;
                     }
-                    self.query_track(next_track, false).await?;
+                    //skips over track that can no longer be fetched, qobuz licensing?
+                    if !self.query_current_or_skip(&mut tracklist).await? {
+                        tracklist.reset();
+                        self.set_target_status(Status::Paused);
+                        self.sink.pause();
+                        self.sink.clear()?;
+                        self.position.send(Default::default())?;
+                    }
                 }
             }
             None => {

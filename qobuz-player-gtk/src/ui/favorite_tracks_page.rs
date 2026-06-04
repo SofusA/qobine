@@ -58,7 +58,7 @@ impl FavoriteTracksPage {
 
             move |_| {
                 let tracks = tracks.borrow().iter().map(|x| x.id).collect();
-                controls.play_tracks(tracks, false);
+                controls.play_tracks(tracks, false, 0);
             }
         });
 
@@ -68,7 +68,7 @@ impl FavoriteTracksPage {
 
             move |_| {
                 let tracks = tracks.borrow().iter().map(|x| x.id).collect();
-                controls.play_tracks(tracks, true);
+                controls.play_tracks(tracks, true, 0);
             }
         });
 

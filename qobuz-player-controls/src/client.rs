@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 
 use crate::{
     database::Credentials,
@@ -11,7 +11,7 @@ use crate::{
         },
     },
 };
-use futures::future::join_all;
+use futures::{StreamExt, stream};
 use moka::future::Cache;
 use qobuz_player_client::{
     client::{AudioQuality, OAuthResult, ReleaseType, browser_oauth_login},
@@ -311,9 +311,38 @@ impl Client {
     }
 
     pub async fn tracks(&self, ids: Vec<u32>) -> Result<Vec<Track>> {
-        let futures = ids.into_iter().map(|id| self.track(id));
-        let results = join_all(futures).await;
-        results.into_iter().collect()
+        // aggressively cache, as fetching everything each time
+        // is not viable on very large fav track lists
+        let cached: HashMap<u32, Track> = self
+            .favorites_cache
+            .get()
+            .await
+            .map(|f| f.tracks.into_iter().map(|t| (t.id, t)).collect())
+            .unwrap_or_default();
+
+        const MAX_CONCURRENT: usize = 10;
+        let tracks: Vec<Track> = stream::iter(ids)
+            .map(|id| {
+                let cached = cached.get(&id).cloned();
+                async move {
+                    if let Some(track) = cached {
+                        return Some(track);
+                    }
+                    match self.track(id).await {
+                        Ok(track) => Some(track),
+                        Err(err) => {
+                            tracing::warn!("Skipping unfetchable track {id}: {err}");
+                            None
+                        }
+                    }
+                }
+            })
+            .buffered(MAX_CONCURRENT)
+            .filter_map(|track| async move { track })
+            .collect()
+            .await;
+
+        Ok(tracks)
     }
 
     pub async fn track(&self, id: u32) -> Result<Track> {
@@ -460,10 +489,9 @@ impl Client {
 
         playlists.sort_by_key(|a| a.title.to_lowercase());
 
-        let mut track_items = favorites_result.tracks.items;
-        track_items.sort_by_key(|t| std::cmp::Reverse(t.favorited_at));
-
-        let tracks: Vec<_> = track_items
+        let tracks: Vec<_> = favorites_result
+            .tracks
+            .items
             .into_iter()
             .map(|x| parse_track(x, &audio_quality))
             .collect();

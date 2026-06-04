@@ -20,6 +20,7 @@ pub enum ControlCommand {
     Tracks {
         ids: Vec<u32>,
         shuffle: bool,
+        start_index: usize,
     },
     Track {
         id: u32,
@@ -122,9 +123,13 @@ impl Controls {
             .expect("infallible");
     }
 
-    pub fn play_tracks(&self, ids: Vec<u32>, shuffle: bool) {
+    pub fn play_tracks(&self, ids: Vec<u32>, shuffle: bool, start_index: usize) {
         self.tx
-            .send(ControlCommand::Tracks { ids, shuffle })
+            .send(ControlCommand::Tracks {
+                ids,
+                shuffle,
+                start_index,
+            })
             .expect("infallible");
     }
 

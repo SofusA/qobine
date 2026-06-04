@@ -21,8 +21,6 @@ pub struct Track {
     pub track_number: u32,
     pub parental_warning: bool,
     pub playlist_track_id: Option<u64>,
-    #[serde(default)]
-    pub favorited_at: Option<i64>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -24,6 +24,10 @@ pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
         .route("/favorites/{tab}", get(index))
         .route("/favorites/tracks/partial", get(tracks_partial))
         .route("/favorites/tracks/shuffle", put(shuffle_favorite_tracks))
+        .route(
+            "/favorites/tracks/play/{track_id}",
+            put(play_favorite_track),
+        )
 }
 
 async fn index(State(state): State<Arc<AppState>>, Path(tab): Path<Tab>) -> ResponseResult {
@@ -48,7 +52,28 @@ async fn shuffle_favorite_tracks(State(state): State<Arc<AppState>>) -> Response
     let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
     let track_ids = favorites.tracks.into_iter().map(|x| x.id).collect();
 
-    state.controls.play_tracks(track_ids, true);
+    state.controls.play_tracks(track_ids, true, 0);
+
+    Ok(().into_response())
+}
+
+async fn play_favorite_track(
+    State(state): State<Arc<AppState>>,
+    Path(track_id): Path<u32>,
+) -> ResponseResult {
+    const TRACKS_BEFORE: usize = 3;
+    let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
+    let tracks = favorites.tracks;
+
+    match tracks.iter().position(|t| t.id == track_id) {
+        Some(pos) => {
+            let start = pos.saturating_sub(TRACKS_BEFORE);
+            let start_index = pos - start;
+            let ids = tracks[start..].iter().map(|t| t.id).collect();
+            state.controls.play_tracks(ids, false, start_index);
+        }
+        None => state.controls.play_track(track_id),
+    }
 
     Ok(().into_response())
 }

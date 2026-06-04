@@ -28,6 +28,7 @@ pub struct TrackList {
 
 pub enum TrackListEvent {
     Track,
+    Favorites,
     Album(String),
     Playlist(u32, bool),
     Artist(u32),
@@ -179,7 +180,7 @@ impl TrackList {
 
             KeyCode::Char('S') => {
                 let ids = self.filter().iter().map(|x| x.id).collect();
-                controls.play_tracks(ids, true);
+                controls.play_tracks(ids, true, 0);
                 Ok(Output::Consumed)
             }
 
@@ -211,6 +212,16 @@ impl TrackList {
                         let selected = self.items.filter().get(index);
                         if let Some(selected) = selected {
                             controls.play_track(selected.id);
+                        }
+                    }
+                    TrackListEvent::Favorites => {
+                        const TRACKS_BEFORE: usize = 3;
+                        let tracks = self.items.filter();
+                        if index < tracks.len() {
+                            let start = index.saturating_sub(TRACKS_BEFORE);
+                            let ids = tracks[start..].iter().map(|t| t.id).collect();
+                            let start_index = index - start;
+                            controls.play_tracks(ids, false, start_index);
                         }
                     }
                     TrackListEvent::Album(id) => controls.play_album(&id, index),
