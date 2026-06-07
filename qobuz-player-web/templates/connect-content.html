@@ -1,0 +1,10 @@
+<div>{{ playing_info.active_device }}</div>
+@for (device in playing_info.available_devices) {
+  <button
+    class="btn btn-primary"
+    hx-post="/api/active-device/{{ device }}"
+    hx-swap="none"
+  >
+    {{ device }}
+  </button>
+}

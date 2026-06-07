@@ -23,6 +23,9 @@ pub struct DisconnectClient {
     volume_sender: watch::Sender<f32>,
     status_sender: watch::Sender<Status>,
     active_sender: watch::Sender<bool>,
+    available_devices_sender: watch::Sender<Vec<String>>,
+    active_device_sender: watch::Sender<String>,
+    set_active_device_receiver: watch::Receiver<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -37,6 +40,9 @@ impl DisconnectClient {
         volume_sender: watch::Sender<f32>,
         status_sender: watch::Sender<Status>,
         active_sender: watch::Sender<bool>,
+        available_devices_sender: watch::Sender<Vec<String>>,
+        active_device_sender: watch::Sender<String>,
+        set_active_device_receiver: watch::Receiver<String>,
     ) -> Self {
         let secret = format!("{:x}", md5::compute(password));
 
@@ -51,6 +57,9 @@ impl DisconnectClient {
             volume_sender,
             status_sender,
             active_sender,
+            available_devices_sender,
+            active_device_sender,
+            set_active_device_receiver,
         }
     }
 
@@ -74,9 +83,9 @@ impl DisconnectClient {
         Ok(res)
     }
 
-    pub async fn set_current_device(&self, device_id: &str) -> AppResult<()> {
+    async fn set_active_device(&self, device_id: &str) -> AppResult<()> {
         self.client
-            .post(self.url("/current-device"))
+            .post(self.url("/active-device"))
             .json(&serde_json::json!({ "device_id": device_id }))
             .send()
             .await?;
@@ -134,65 +143,115 @@ impl DisconnectClient {
         Ok(())
     }
 
-    pub async fn connect_and_listen(&self) -> AppResult<()> {
+    pub async fn connect_and_listen(&mut self) -> AppResult<()> {
         let url = format!(
             "{}/stream?secret={}&device_id={}",
             self.base_url, self.secret, self.device_name
         );
 
         let resp = self.client.get(url).send().await?;
-
         let mut stream = resp.bytes_stream().eventsource();
 
-        while let Some(event) = stream.next().await {
-            match event {
-                Ok(ev) => {
-                    let parsed: DisconnectServerEvent = match serde_json::from_str(&ev.data) {
-                        Ok(res) => res,
-                        Err(err) => {
-                            tracing::error!("Error parsing Disconnect event: {err}");
-                            continue;
-                        }
-                    };
+        let initial_state = self.get_state().await?;
+        _ = self
+            .active_sender
+            .send(initial_state.active_device == self.device_name);
+        _ = self.active_device_sender.send(initial_state.active_device);
+        _ = self.tracklist_sender.send(initial_state.tracklist);
+        _ = self.status_sender.send(initial_state.playback_status);
+        _ = self.volume_sender.send(initial_state.volume);
+        _ = self.position_sender.send(initial_state.position);
 
-                    match parsed {
-                        DisconnectServerEvent::Status(status) => {
-                            tracing::info!("Status update: {:?}", status);
-                            _ = self.status_sender.send(status);
-                        }
-                        DisconnectServerEvent::Tracklist(tracklist) => {
-                            tracing::info!("Tracklist update: {:?}", tracklist);
-                            _ = self.tracklist_sender.send(tracklist);
-                        }
-                        DisconnectServerEvent::Position(duration) => {
-                            tracing::info!("Position update: {:?}", duration);
-                            _ = self.position_sender.send(duration);
-                        }
-                        DisconnectServerEvent::ActiveDevice(device) => {
-                            let is_active = device == self.device_name;
+        loop {
+            tokio::select! {
+                changed = self.set_active_device_receiver.changed() => {
+                    match changed {
+                        Ok(()) => {
+                            let device = self.set_active_device_receiver.borrow_and_update().clone();
 
-                            tracing::info!(
-                                "New active device: {:?}. I am {}, and therefore i am active: {}",
-                                device,
-                                self.device_name,
-                                is_active
-                            );
+                            tracing::info!("Setting current device to {:?}", device);
 
-                            _ = self.active_sender.send(is_active);
+                            if let Err(err) = self.set_active_device(&device).await {
+                                tracing::error!("Failed setting current device: {:?}", err);
+                            }
                         }
-                        DisconnectServerEvent::Volume(volume) => {
-                            tracing::info!("Volume update: {:?}", volume);
-                            _ = self.volume_sender.send(volume);
-                        }
-                        DisconnectServerEvent::Control(control_command) => {
-                            tracing::info!("Control: {:?}", control_command);
-                            self.controls.send(control_command);
+                        Err(_) => {
+                            tracing::warn!("Active device sender dropped");
+                            break;
                         }
                     }
                 }
 
-                Err(err) => {
-                    tracing::error!("Disconnect SSE error: {:?}", err);
+                event = stream.next() => {
+                    match event {
+                        Some(Ok(ev)) => {
+                            let parsed: DisconnectServerEvent =
+                                match serde_json::from_str(&ev.data) {
+                                    Ok(res) => res,
+                                    Err(err) => {
+                                        tracing::error!(
+                                            "Error parsing Disconnect event: {err}"
+                                        );
+                                        continue;
+                                    }
+                                };
+
+                            match parsed {
+                                DisconnectServerEvent::Status(status) => {
+                                    tracing::info!("Status update: {:?}", status);
+                                    _ = self.status_sender.send(status);
+                                }
+
+                                DisconnectServerEvent::Tracklist(tracklist) => {
+                                    tracing::info!("Tracklist update: {:?}", tracklist);
+                                    _ = self.tracklist_sender.send(tracklist);
+                                }
+
+                                DisconnectServerEvent::Position(duration) => {
+                                    tracing::info!("Position update: {:?}", duration);
+                                    _ = self.position_sender.send(duration);
+                                }
+
+                                DisconnectServerEvent::ActiveDevice(device) => {
+                                    let is_active = device == self.device_name;
+
+                                    tracing::info!(
+                                        "New active device: {:?}. I am {}, and therefore i am active: {}",
+                                        device,
+                                        self.device_name,
+                                        is_active
+                                    );
+
+                                    _ = self.active_sender.send(is_active);
+                                    _ = self.active_device_sender.send(device);
+                                }
+
+                                DisconnectServerEvent::Volume(volume) => {
+                                    tracing::info!("Volume update: {:?}", volume);
+                                    _ = self.volume_sender.send(volume);
+                                }
+
+                                DisconnectServerEvent::Control(control_command) => {
+                                    tracing::info!("Control: {:?}", control_command);
+                                    self.controls.send(control_command);
+                                }
+
+                                DisconnectServerEvent::AvailableDevices(devices) => {
+                                    tracing::info!("New available devices: {:?}", devices);
+                                    _ = self.available_devices_sender.send(devices);
+                                }
+                            }
+                        }
+
+                        Some(Err(err)) => {
+                            tracing::error!("Disconnect SSE error: {:?}", err);
+                        }
+
+                        None => {
+                            tracing::warn!("Disconnect SSE stream ended");
+                            break;
+                        }
+                    }
                 }
             }
         }

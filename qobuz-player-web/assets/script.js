@@ -54,6 +54,21 @@ function initSse() {
     const seconds = String(totalSeconds % 60).padStart(2, "0");
     positionElement.textContent = `${minutes}:${seconds}`;
   });
+
+  evtSource.addEventListener("available-devices", () => {
+    for (const el of document.querySelectorAll(
+      "[data-sse~=available-devices]",
+    )) {
+      htmx.trigger(el, "available-devices");
+    }
+  });
+
+  evtSource.addEventListener("active-device", () => {
+    console.warn("new active device");
+    for (const el of document.querySelectorAll("[data-sse~=active-device]")) {
+      htmx.trigger(el, "active-device");
+    }
+  });
 }
 
 initSse();

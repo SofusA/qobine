@@ -51,6 +51,7 @@ pub struct Player {
     state_change_delay: Option<Duration>,
     sample_rate_change_delay: Option<Duration>,
     active: Sender<bool>,
+    active_rx: Receiver<bool>,
 }
 
 impl Player {
@@ -80,7 +81,7 @@ impl Player {
         let controls = Controls::new();
         let controls_rx = controls.subscribe();
 
-        let (active, _) = watch::channel(true);
+        let (active, active_rx) = watch::channel(true);
 
         Ok(Self {
             broadcast,
@@ -101,6 +102,7 @@ impl Player {
             state_change_delay,
             sample_rate_change_delay,
             active,
+            active_rx,
         })
     }
 
@@ -583,6 +585,10 @@ impl Player {
             return Ok(());
         }
 
+        if !*self.active_rx.borrow() {
+            return Ok(());
+        }
+
         let position = self.sink.position();
         self.position.send(position)?;
 
@@ -739,6 +745,23 @@ impl Player {
         Ok(())
     }
 
+    pub async fn handle_active_change(&mut self, active: bool) -> AppResult<()> {
+        match active {
+            true => {
+                let tracklist = {
+                    let tracklist = self.tracklist_rx.borrow();
+                    tracklist.clone()
+                };
+                self.new_queue(tracklist).await?;
+            }
+            false => {
+                self.sink.clear()?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn player_loop(&mut self, mut exit_receiver: ExitReceiver) -> AppResult<()> {
         let mut interval = tokio::time::interval(Duration::from_millis(INTERVAL_MS));
 
@@ -760,6 +783,17 @@ impl Player {
                     if let Err(err) = self.track_finished().await {
                         self.broadcast.send_error(err.to_string());
                     };
+                }
+
+                Ok(_) = self.active_rx.changed() => {
+                    let active = {
+                        let active = self.active_rx.borrow_and_update();
+                        *active
+                    };
+
+                    if let Err(err) =  self.handle_active_change(active).await {
+                        self.broadcast.send_error(err.to_string());
+                    }
                 }
 
                 Ok(exit) = exit_receiver.recv() => {

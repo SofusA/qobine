@@ -1,12 +1,15 @@
+use std::time::Duration;
+
 use qobuz_player_controls::{
-    AppResult, PositionReceiver, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AppResult, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{ControlCommand, Controls},
+    tracklist::Tracklist,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use crate::client::DisconnectClient;
 
-pub mod client;
+mod client;
 
 struct DisconnectState {
     client: DisconnectClient,
@@ -20,7 +23,7 @@ struct DisconnectState {
 impl DisconnectState {
     async fn start(&mut self) {
         tokio::spawn({
-            let client = self.client.clone();
+            let mut client = self.client.clone();
             async move {
                 client.connect_and_listen().await.unwrap();
             }
@@ -55,20 +58,48 @@ impl DisconnectState {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn init(
-    disconnect_client: DisconnectClient,
+    server_url: &str,
+    password: &str,
+    device_name: &str,
     controls: Controls,
+
+    tracklist_sender: watch::Sender<Tracklist>,
+    position_sender: watch::Sender<Duration>,
+    volume_sender: watch::Sender<f32>,
+    status_sender: watch::Sender<Status>,
+    active_sender: watch::Sender<bool>,
+    available_devices_sender: watch::Sender<Vec<String>>,
+    active_device_sender: watch::Sender<String>,
+
     position_receiver: PositionReceiver,
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
+    set_active_device_receiver: watch::Receiver<String>,
 ) -> AppResult<()> {
+    let controls_rx = controls.subscribe();
+    let disconnect_client = DisconnectClient::new(
+        server_url,
+        password,
+        device_name,
+        controls,
+        tracklist_sender,
+        position_sender,
+        volume_sender,
+        status_sender,
+        active_sender,
+        available_devices_sender,
+        active_device_sender,
+        set_active_device_receiver,
+    );
+
     let mut state = DisconnectState {
-        client: disconnect_client.clone(),
-        position_receiver: position_receiver.clone(),
-        tracklist_receiver: tracklist_receiver.clone(),
-        status_receiver: status_receiver.clone(),
-        volume_receiver: volume_receiver.clone(),
-        controls_rx: controls.subscribe(),
+        client: disconnect_client,
+        position_receiver,
+        tracklist_receiver,
+        status_receiver,
+        volume_receiver,
+        controls_rx,
     };
 
     state.start().await;

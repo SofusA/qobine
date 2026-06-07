@@ -9,7 +9,6 @@ use qobuz_player_controls::{
     notification::{Notification, NotificationBroadcast},
     tracklist::{Tracklist, TracklistType},
 };
-use qobuz_player_disconnect::client::DisconnectClient;
 use qobuz_player_rfid::RfidState;
 use serde_json::json;
 use skabelon::Templates;
@@ -31,11 +30,22 @@ pub struct AppState {
     pub volume_receiver: VolumeReceiver,
     pub templates: watch::Receiver<Templates>,
     pub database: Arc<Database>,
-    pub disconnect_client: DisconnectClient,
+    pub available_devices: Option<watch::Receiver<Vec<String>>>,
+    pub active_device: Option<watch::Receiver<String>>,
+    pub active_device_sender: Option<watch::Sender<String>>,
 }
 
 impl AppState {
     pub fn playing_info(&self) -> PlayingInfo {
+        let available_devices = {
+            self.available_devices
+                .as_ref()
+                .map(|x| x.borrow().to_vec())
+                .unwrap_or_default()
+        };
+
+        let active_device = { self.active_device.as_ref().map(|x| x.borrow().to_string()) };
+
         let current_volume = self.volume_receiver.borrow();
         let current_volume = (*current_volume * 100.0) as u32;
 
@@ -91,6 +101,8 @@ impl AppState {
             hires_available,
             duration_ms,
             position_ms,
+            available_devices,
+            active_device,
         }
     }
 
@@ -205,6 +217,8 @@ pub struct PlayingInfo {
     current_volume: u32,
     explicit: bool,
     hires_available: bool,
+    available_devices: Vec<String>,
+    active_device: Option<String>,
 }
 
 fn merge_serialized<T: serde::Serialize, Y: serde::Serialize>(

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    extract::{Path, State},
+    extract::State,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use serde_json::json;
 
@@ -16,18 +16,6 @@ pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
         .route("/status", get(status_partial))
         .route("/now-playing", get(now_playing_partial))
         .route("/now-playing/content", get(now_playing_content))
-        .route("/active_device/{device_id}", post(set_active_device))
-}
-
-async fn set_active_device(
-    State(state): State<Arc<AppState>>,
-    Path(device_id): Path<String>,
-) -> impl IntoResponse {
-    state
-        .disconnect_client
-        .set_current_device(&device_id)
-        .await
-        .unwrap()
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -60,12 +48,9 @@ async fn now_playing_context(state: &AppState) -> serde_json::Value {
     let position_string = mseconds_to_mm_ss(position_mseconds);
     let duration_string = mseconds_to_mm_ss(duration_mseconds);
 
-    let disconnect_state = state.disconnect_client.get_state().await.unwrap(); // TODO
-
     json!({
         "position_string": position_string,
         "duration_string": duration_string,
-        "disconnect_state": disconnect_state
     })
 }
 

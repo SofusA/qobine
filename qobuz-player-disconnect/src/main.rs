@@ -2,9 +2,8 @@ use qobuz_player_cli::{
     DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
-use qobuz_player_disconnect::client::DisconnectClient;
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use clap::Parser;
 use qobuz_player_controls::{
@@ -22,7 +21,7 @@ struct Arguments {
     #[clap(short, long)]
     password: String,
 
-    /// server url
+    /// Server url
     #[clap(short, long)]
     server_url: String,
 
@@ -82,6 +81,9 @@ pub async fn run() -> AppResult<()> {
     )
     .await?;
 
+    let (available_devices_tx, _) = watch::channel(Default::default());
+    let (active_device_sender, active_device_receiver) = watch::channel(Default::default());
+
     {
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
@@ -93,27 +95,26 @@ pub async fn run() -> AppResult<()> {
         let position_sender = player.position_sender();
         let status_sender = player.status_sender();
         let volume_sender = player.volume_sender();
-
-        let client = DisconnectClient::new(
-            &args.server_url,
-            &args.password,
-            &args.device_name,
-            controls.clone(),
-            tracklist_sender,
-            position_sender,
-            volume_sender,
-            status_sender,
-            player.active_sender(),
-        );
+        let active_sender = player.active_sender();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(
-                client,
+                &args.server_url,
+                &args.password,
+                &args.device_name,
                 controls,
+                tracklist_sender,
+                position_sender,
+                volume_sender,
+                status_sender,
+                active_sender,
+                available_devices_tx,
+                active_device_sender,
                 position_receiver,
                 tracklist_receiver,
                 status_receiver,
                 volume_receiver,
+                active_device_receiver,
             )
             .await
             {

@@ -1,0 +1,9 @@
+<div
+  hx-trigger="available-devices, active-device"
+  hx-get="/api/available-devices"
+  data-sse="available-devices active-device"
+  hx-swap="innerHTML"
+  hx-target="this"
+>
+  @defer (connect-content.html; playing_info=playing_info) {}
+</div>

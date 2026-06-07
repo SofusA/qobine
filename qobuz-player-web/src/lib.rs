@@ -16,11 +16,10 @@ use qobuz_player_controls::{
     models::{Album, AlbumSimple},
     notification::{Notification, NotificationBroadcast},
 };
-use qobuz_player_disconnect::client::DisconnectClient;
 use qobuz_player_rfid::RfidState;
 use serde_json::json;
 use skabelon::Templates;
-use std::{convert::Infallible, env, path::PathBuf, sync::Arc};
+use std::{convert::Infallible, env, future::pending, path::PathBuf, sync::Arc};
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
     watch,
@@ -55,7 +54,9 @@ pub async fn init(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
-    disconnect_client: DisconnectClient,
+    available_devices: Option<watch::Receiver<Vec<String>>>,
+    active_device: Option<watch::Receiver<String>>,
+    active_device_sender: Option<watch::Sender<String>>,
 ) -> AppResult<()> {
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
@@ -73,7 +74,9 @@ pub async fn init(
         broadcast,
         client,
         database,
-        disconnect_client,
+        available_devices,
+        active_device,
+        active_device_sender,
     )
     .await;
 
@@ -93,7 +96,9 @@ async fn create_router(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
-    disconnect_client: DisconnectClient,
+    available_devices: Option<watch::Receiver<Vec<String>>>,
+    active_device: Option<watch::Receiver<String>>,
+    active_device_sender: Option<watch::Sender<String>>,
 ) -> Router {
     let (tx, _rx) = broadcast::channel::<ServerSentEvent>(100);
     let broadcast_subscribe = broadcast.subscribe();
@@ -148,7 +153,9 @@ async fn create_router(
         status_receiver: status_receiver.clone(),
         templates: templates_rx.clone(),
         database,
-        disconnect_client,
+        available_devices: available_devices.clone(),
+        active_device: active_device.clone(),
+        active_device_sender,
     });
 
     tokio::spawn(background_task(
@@ -158,6 +165,8 @@ async fn create_router(
         tracklist_receiver,
         volume_receiver,
         status_receiver,
+        available_devices,
+        active_device,
         templates_rx,
     ));
 
@@ -182,6 +191,7 @@ async fn create_router(
         .with_state(shared_state.clone())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn background_task(
     tx: Sender<ServerSentEvent>,
     mut receiver: Receiver<Notification>,
@@ -189,6 +199,8 @@ async fn background_task(
     mut tracklist: TracklistReceiver,
     mut volume: VolumeReceiver,
     mut status: StatusReceiver,
+    mut available_devices: Option<watch::Receiver<Vec<String>>>,
+    mut active_device: Option<watch::Receiver<String>>,
     templates: watch::Receiver<Templates>,
 ) {
     loop {
@@ -233,6 +245,45 @@ async fn background_task(
                 };
                 _ = tx.send(event);
             }
+
+            Ok(_) = async {
+                match &mut available_devices {
+                    Some(devices) => devices.changed().await,
+                    None => pending().await,
+                }
+            } => {
+                tracing::info!("New available_devices event");
+                if let Some(devices) = &mut available_devices {
+                    let devices = devices.borrow_and_update();
+
+                    let event = ServerSentEvent {
+                        event_name: "available-devices".into(),
+                        event_data: serde_json::to_string(&*devices).unwrap(),
+                    };
+
+                    _ = tx.send(event);
+                }
+            },
+
+            Ok(_) = async {
+                match &mut active_device {
+                    Some(device) => device.changed().await,
+                    None => pending().await,
+                }
+            } => {
+                tracing::info!("New active device event");
+                if let Some(device) = &mut active_device {
+                    let device = device.borrow_and_update();
+
+                    let event = ServerSentEvent {
+                        event_name: "active-device".into(),
+                        event_data: serde_json::to_string(&*device).unwrap(),
+                    };
+
+                    _ = tx.send(event);
+                }
+            },
+
             notification = receiver.recv() => {
                 tracing::info!("notification: {:?}", notification);
                 if let Ok(message) = notification {

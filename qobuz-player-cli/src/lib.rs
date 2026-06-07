@@ -78,6 +78,58 @@ pub struct DelayArgs {
     pub sample_rate_change_delay_ms: Option<u64>,
 }
 
+#[derive(Args, Debug)]
+pub struct DisconnectArgs {
+    /// Disconnect device name
+    #[clap(long)]
+    disconnect_device_name: Option<String>,
+
+    /// Disconnect password
+    #[clap(long)]
+    disconnect_password: Option<String>,
+
+    /// Disconnect server url
+    #[clap(long)]
+    disconnect_server_url: Option<String>,
+}
+
+pub struct ParsedDisconnect {
+    pub device_name: String,
+    pub password: String,
+    pub server_url: String,
+}
+
+impl TryFrom<DisconnectArgs> for Option<ParsedDisconnect> {
+    type Error = &'static str;
+
+    fn try_from(args: DisconnectArgs) -> Result<Self, Self::Error> {
+        match (
+            args.disconnect_device_name,
+            args.disconnect_password,
+            args.disconnect_server_url,
+        ) {
+            (None, None, None) => Ok(None),
+
+            (Some(device_name), Some(password), Some(server_url)) => Ok(Some(ParsedDisconnect {
+                device_name,
+                password,
+                server_url,
+            })),
+
+            _ => Err(
+                "disconnect-device-name, disconnect-password and disconnect-server-url must all be provided",
+            ),
+        }
+    }
+}
+
+pub fn parse_disconnect_args(args: DisconnectArgs) -> Option<ParsedDisconnect> {
+    Option::<ParsedDisconnect>::try_from(args).unwrap_or_else(|msg| {
+        eprintln!("{msg}");
+        None
+    })
+}
+
 #[derive(Subcommand, Debug)]
 pub enum SharedCommands {
     /// Authenticate with Qobuz via browser

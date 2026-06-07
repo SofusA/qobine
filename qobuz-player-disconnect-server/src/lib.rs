@@ -12,11 +12,12 @@ pub enum DisconnectServerEvent {
     Volume(f32),
     ActiveDevice(String),
     Control(ControlCommand),
+    AvailableDevices(Vec<String>),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DisconnectState {
-    pub selected_device: Option<String>,
+    pub active_device: String,
     pub available_devices: Vec<String>,
     pub playback_status: Status,
     pub tracklist: Tracklist,
