@@ -102,11 +102,6 @@ pub async fn run() -> AppResult<()> {
 
     let rfid_state = args.rfid.then(RfidState::default);
 
-    let tracklist_sender = player.tracklist_sender();
-    let position_sender = player.position_sender();
-    let status_sender = player.status_sender();
-    let volume_sender = player.volume_sender();
-
     let disconnect_args = parse_disconnect_args(args.disconnect);
 
     let (
@@ -227,6 +222,11 @@ pub async fn run() -> AppResult<()> {
         let status_receiver = player.status();
         let controls = player.controls();
         let active_sender = player.active_sender();
+
+        let tracklist_sender = player.tracklist_sender();
+        let position_sender = player.position_sender();
+        let status_sender = player.status_sender();
+        let volume_sender = player.volume_sender();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(

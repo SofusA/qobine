@@ -85,6 +85,14 @@ jobs:
           features: ${{ matrix.features || '' }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and upload qobuz-player-disconnect-server
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: qobuz-player-disconnect-server
+          target: ${{ matrix.target }}
+          features: ${{ matrix.features || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   flatpak:
     name: "Flatpak ${{ matrix.variant.arch }}"
     runs-on: ${{ matrix.variant.runner }}

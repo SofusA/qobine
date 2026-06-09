@@ -1,10 +1,31 @@
-<div>{{ playing_info.active_device }}</div>
-@for (device in playing_info.available_devices) {
+@if (playing_info.available_devices) {
   <button
-    class="btn btn-primary"
-    hx-post="/api/active-device/{{ device }}"
-    hx-swap="none"
+    id="btn"
+    class="btn btn-ghost size-16 text-amber-600"
+    popovertarget="popover"
   >
-    {{ device }}
+    @defer (icons/musical-note.html) {}
   </button>
+
+  <div
+    popover
+    id="popover"
+    class="fixed inset-0 m-auto h-fit w-fit scale-95 rounded-xl bg-gray-900 p-4 opacity-0 shadow-2xl transition-[opacity,scale,display,overlay] transition-discrete duration-150 ease-out backdrop:bg-gray-950/60 backdrop:backdrop-blur-sm open:scale-100 open:opacity-100 starting:open:scale-95 starting:open:opacity-0"
+  >
+    <div class="flex flex-col gap-4">
+      <h2 class="text-white">Select output device</h2>
+
+      <div class="flex flex-wrap gap-2">
+        @for (device in playing_info.available_devices) {
+          <button
+            class="btn @if(device == playing_info.active_device) {btn-primary} @else {btn-secondary}"
+            hx-post="/api/active-device/{{ device }}"
+            hx-swap="none"
+          >
+            {{ device }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
 }

@@ -11,7 +11,6 @@
   <div
     class="pt-safe-or-4 z-10 mx-auto flex w-full max-w-md grow flex-col justify-center p-3 sm:gap-4 sm:p-6 md:max-w-4xl md:flex-row md:items-center md:gap-8 md:px-8 md:pt-0"
   >
-    @defer (connect.html; playing_info=playing_info) {}
     <!-- Artwork (flexible height on mobile, fixed width on tablet) -->
     <div
       class="relative flex min-h-0 items-center justify-center md:w-96 md:flex-none"
@@ -30,7 +29,7 @@
       </div>
     </div>
 
-    <!-- Info & Controls (never clipped) -->
+    <!-- Info & Controls -->
     <div class="flex min-w-0 flex-1 flex-col justify-center sm:gap-4">
       <!-- Track Info -->
       <div class="flex flex-col text-center md:text-left">
@@ -78,20 +77,26 @@
       ) {}
 
       <!-- Controls -->
-      <div class="flex items-center justify-center gap-8">
-        <div class="flex w-12 items-center justify-center">
+      <div class="flex items-center justify-center">
+        <div class="btn btn-ghost flex w-20 items-center">
           @defer (previous.html) {}
         </div>
-        <div class="flex w-12 items-center justify-center">
+        <div class="btn btn-ghost flex w-20 items-center">
           @defer (player-state.html; playing_info=playing_info) {}
         </div>
-        <div class="flex w-12 items-center justify-center">
+        <div class="btn btn-ghost flex w-20 items-center">
           @defer (next.html) {}
         </div>
       </div>
 
       <!-- Volume -->
-      @defer (volume-slider.html; current_volume=playing_info.current_volume) {}
+      <div class="flex">
+        @defer (
+          volume-slider.html;
+          current_volume=playing_info.current_volume
+        ) {}
+        @defer (connect.html; playing_info=playing_info) {}
+      </div>
     </div>
   </div>
 </div>

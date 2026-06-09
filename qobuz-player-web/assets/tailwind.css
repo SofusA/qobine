@@ -43,7 +43,7 @@ body {
   }
 
   .btn-ghost {
-    @apply text-gray-400 hover:bg-gray-800/50 hover:text-white active:bg-gray-800;
+    @apply hover:bg-gray-800/50 hover:text-white active:bg-gray-800;
   }
 
   .btn-danger {
