@@ -9,7 +9,7 @@ use qobuz_player_controls::{
 };
 use qobuz_player_disconnect_server::DisconnectServerEvent;
 use reqwest::Client;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 #[derive(Debug, Clone)]
 pub struct DisconnectClient {
@@ -25,7 +25,6 @@ pub struct DisconnectClient {
     active_sender: watch::Sender<bool>,
     available_devices_sender: watch::Sender<Vec<String>>,
     active_device_sender: watch::Sender<String>,
-    set_active_device_receiver: watch::Receiver<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -42,7 +41,6 @@ impl DisconnectClient {
         active_sender: watch::Sender<bool>,
         available_devices_sender: watch::Sender<Vec<String>>,
         active_device_sender: watch::Sender<String>,
-        set_active_device_receiver: watch::Receiver<String>,
     ) -> Self {
         let secret = format!("{:x}", md5::compute(password));
 
@@ -59,7 +57,6 @@ impl DisconnectClient {
             active_sender,
             available_devices_sender,
             active_device_sender,
-            set_active_device_receiver,
         }
     }
 
@@ -143,7 +140,10 @@ impl DisconnectClient {
         Ok(())
     }
 
-    pub async fn connect_and_listen(&mut self) -> AppResult<()> {
+    pub async fn connect_and_listen(
+        &mut self,
+        mut set_active_device_receiver: mpsc::UnboundedReceiver<String>,
+    ) -> AppResult<()> {
         let url = format!(
             "{}/stream?secret={}&device_id={}",
             self.base_url, self.secret, self.device_name
@@ -164,18 +164,16 @@ impl DisconnectClient {
 
         loop {
             tokio::select! {
-                changed = self.set_active_device_receiver.changed() => {
+                changed = set_active_device_receiver.recv() => {
                     match changed {
-                        Ok(()) => {
-                            let device = self.set_active_device_receiver.borrow_and_update().clone();
-
+                        Some(device) => {
                             tracing::info!("Setting current device to {:?}", device);
 
                             if let Err(err) = self.set_active_device(&device).await {
                                 tracing::error!("Failed setting current device: {:?}", err);
                             }
                         }
-                        Err(_) => {
+                        None => {
                             tracing::warn!("Active device sender dropped");
                             break;
                         }

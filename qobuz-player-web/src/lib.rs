@@ -22,7 +22,7 @@ use skabelon::Templates;
 use std::{convert::Infallible, env, future::pending, path::PathBuf, sync::Arc};
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
-    watch,
+    mpsc, watch,
 };
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::BroadcastStream;
@@ -56,7 +56,7 @@ pub async fn init(
     database: Arc<Database>,
     available_devices: Option<watch::Receiver<Vec<String>>>,
     active_device: Option<watch::Receiver<String>>,
-    active_device_sender: Option<watch::Sender<String>>,
+    active_device_sender: Option<mpsc::UnboundedSender<String>>,
 ) -> AppResult<()> {
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
@@ -98,7 +98,7 @@ async fn create_router(
     database: Arc<Database>,
     available_devices: Option<watch::Receiver<Vec<String>>>,
     active_device: Option<watch::Receiver<String>>,
-    active_device_sender: Option<watch::Sender<String>>,
+    active_device_sender: Option<mpsc::UnboundedSender<String>>,
 ) -> Router {
     let (tx, _rx) = broadcast::channel::<ServerSentEvent>(100);
     let broadcast_subscribe = broadcast.subscribe();

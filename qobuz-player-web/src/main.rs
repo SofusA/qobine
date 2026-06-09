@@ -7,7 +7,7 @@ use qobuz_player_cli::{
 };
 use qobuz_player_rfid::RfidState;
 use std::sync::Arc;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
 use qobuz_player_controls::{
@@ -123,7 +123,7 @@ pub async fn run() -> AppResult<()> {
 
         let (active_device_tx, active_device_rx) = watch::channel(Default::default());
 
-        let (set_active_device_tx, set_active_device_rx) = watch::channel(Default::default());
+        let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
         (
             Some(available_devices_tx),

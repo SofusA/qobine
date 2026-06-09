@@ -3,7 +3,7 @@ use qobuz_player_cli::{
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
 use std::sync::Arc;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
 use qobuz_player_controls::{
@@ -82,7 +82,8 @@ pub async fn run() -> AppResult<()> {
     .await?;
 
     let (available_devices_tx, _) = watch::channel(Default::default());
-    let (active_device_sender, active_device_receiver) = watch::channel(Default::default());
+    let (active_device_sender, _) = watch::channel(Default::default());
+    let (_, active_device_receiver) = mpsc::unbounded_channel();
 
     {
         let position_receiver = player.position();

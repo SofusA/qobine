@@ -13,7 +13,7 @@ use qobuz_player_rfid::RfidState;
 use serde_json::json;
 use skabelon::Templates;
 use std::sync::Arc;
-use tokio::sync::{broadcast::Sender, watch};
+use tokio::sync::{broadcast::Sender, mpsc, watch};
 
 use crate::{AlbumData, ServerSentEvent};
 
@@ -32,7 +32,7 @@ pub struct AppState {
     pub database: Arc<Database>,
     pub available_devices: Option<watch::Receiver<Vec<String>>>,
     pub active_device: Option<watch::Receiver<String>>,
-    pub active_device_sender: Option<watch::Sender<String>>,
+    pub active_device_sender: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl AppState {

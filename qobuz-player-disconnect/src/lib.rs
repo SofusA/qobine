@@ -5,7 +5,7 @@ use qobuz_player_controls::{
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::client::DisconnectClient;
 
@@ -21,11 +21,14 @@ struct DisconnectState {
 }
 
 impl DisconnectState {
-    async fn start(&mut self) {
+    async fn start(&mut self, set_active_device_receiver: mpsc::UnboundedReceiver<String>) {
         tokio::spawn({
             let mut client = self.client.clone();
             async move {
-                client.connect_and_listen().await.unwrap();
+                client
+                    .connect_and_listen(set_active_device_receiver)
+                    .await
+                    .unwrap();
             }
         });
 
@@ -75,7 +78,7 @@ pub async fn init(
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
-    set_active_device_receiver: watch::Receiver<String>,
+    set_active_device_receiver: mpsc::UnboundedReceiver<String>,
 ) -> AppResult<()> {
     let controls_rx = controls.subscribe();
     let disconnect_client = DisconnectClient::new(
@@ -90,7 +93,6 @@ pub async fn init(
         active_sender,
         available_devices_sender,
         active_device_sender,
-        set_active_device_receiver,
     );
 
     let mut state = DisconnectState {
@@ -102,7 +104,7 @@ pub async fn init(
         controls_rx,
     };
 
-    state.start().await;
+    state.start(set_active_device_receiver).await;
 
     Ok(())
 }
