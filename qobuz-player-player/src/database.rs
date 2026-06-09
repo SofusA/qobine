@@ -101,10 +101,10 @@ impl Database {
     pub async fn set_volume(&self, volume: f32) -> AppResult<()> {
         sqlx::query!(
             r#"
-            update configuration
-            set volume=?1
-            where rowid = 1
-            "#,
+             update configuration
+             set volume=?1
+             where rowid = 1
+             "#,
             volume
         )
         .execute(&self.pool)
@@ -127,10 +127,10 @@ impl Database {
 
         sqlx::query!(
             r#"
-            update configuration
-            set cache_directory=?1
-            where rowid = 1
-            "#,
+             update configuration
+             set cache_directory=?1
+             where rowid = 1
+             "#,
             directory
         )
         .execute(&self.pool)
@@ -142,10 +142,10 @@ impl Database {
     pub async fn set_cache_ttl_hours(&self, ttl: u32) -> AppResult<()> {
         sqlx::query!(
             r#"
-            update configuration
-            set cache_ttl_hours=?1
-            where rowid = 1
-            "#,
+             update configuration
+             set cache_ttl_hours=?1
+             where rowid = 1
+             "#,
             ttl
         )
         .execute(&self.pool)
@@ -160,10 +160,10 @@ impl Database {
     ) -> AppResult<()> {
         sqlx::query!(
             r#"
-            update configuration
-            set use_file_based_streaming=?1
-            where rowid = 1
-            "#,
+             update configuration
+             set use_file_based_streaming=?1
+             where rowid = 1
+             "#,
             use_file_based_streaming
         )
         .execute(&self.pool)
@@ -177,10 +177,10 @@ impl Database {
 
         sqlx::query!(
             r#"
-            update configuration
-            set max_audio_quality=?1
-            where rowid = 1
-            "#,
+             update configuration
+             set max_audio_quality=?1
+             where rowid = 1
+             "#,
             quality_id
         )
         .execute(&self.pool)
@@ -211,7 +211,19 @@ impl Database {
     pub async fn get_configuration(&self) -> AppResult<Configuration> {
         let configuration = sqlx::query_as!(
             DatabaseConfiguration,
-            "select cache_directory, cache_ttl_hours, volume, max_audio_quality, use_file_based_streaming from configuration where rowid = 1"
+            r#"
+             select
+                 cache_directory,
+                 cache_ttl_hours,
+                 volume,
+                 max_audio_quality,
+                 use_file_based_streaming,
+                 disconnect_server_url,
+                 disconnect_password,
+                 device_name,
+                 enable_disconnect,
+                 auto_play
+             from configuration where rowid = 1"#
         )
         .fetch_one(&self.pool)
         .await?;
@@ -229,6 +241,7 @@ impl Database {
         let cache_ttl_hours = configuration.cache_ttl_hours.unwrap_or(1) as u32;
         let volume = configuration.volume.unwrap_or(1.0);
         let use_file_based_streaming = configuration.use_file_based_streaming.unwrap_or(false);
+        let auto_play = configuration.auto_play.unwrap_or(false);
 
         Ok(Configuration {
             max_audio_quality,
@@ -236,6 +249,11 @@ impl Database {
             cache_ttl_hours,
             use_file_based_streaming,
             volume: volume as f32,
+            enable_disconnect: configuration.enable_disconnect,
+            device_name: configuration.device_name,
+            disconnect_server_url: configuration.disconnect_server_url,
+            disconnect_password: configuration.disconnect_password,
+            auto_play,
         })
     }
 
@@ -249,23 +267,23 @@ impl Database {
                 let id = Some(id);
 
                 sqlx::query!(
-                    "insert into rfid_references (id, reference_type, album_id, playlist_id) values ($1, $2, $3, $4) on conflict(id) do update set reference_type = excluded.reference_type, album_id = excluded.album_id, playlist_id = excluded.playlist_id returning *",
-                    rfid_id,
-                    1,
-                    id,
-                    None::<u32>,
-                ).fetch_one(&self.pool).await?;
+                     "insert into rfid_references (id, reference_type, album_id, playlist_id) values ($1, $2, $3, $4) on conflict(id) do update set reference_type = excluded.reference_type, album_id = excluded.album_id, playlist_id = excluded.playlist_id returning *",
+                     rfid_id,
+                     1,
+                     id,
+                     None::<u32>,
+                 ).fetch_one(&self.pool).await?;
             }
             ReferenceType::Playlist(id) => {
                 let id = Some(id);
 
                 sqlx::query!(
-                    "insert into rfid_references (id, reference_type, album_id, playlist_id) values ($1, $2, $3, $4) on conflict(id) do update set reference_type = excluded.reference_type, album_id = excluded.album_id, playlist_id = excluded.playlist_id returning *",
-                    rfid_id,
-                    2,
-                    None::<String>,
-                    id,
-                ).fetch_one(&self.pool).await?;
+                     "insert into rfid_references (id, reference_type, album_id, playlist_id) values ($1, $2, $3, $4) on conflict(id) do update set reference_type = excluded.reference_type, album_id = excluded.album_id, playlist_id = excluded.playlist_id returning *",
+                     rfid_id,
+                     2,
+                     None::<String>,
+                     id,
+                 ).fetch_one(&self.pool).await?;
             }
         }
         Ok(())
@@ -332,12 +350,12 @@ impl Database {
 
         sqlx::query!(
             r#"
-                insert into cache_entries (path, last_opened)
-                values (?, ?)
-                on conflict(path) do update set
-                    path = excluded.path,
-                    last_opened = excluded.last_opened
-            "#,
+                 insert into cache_entries (path, last_opened)
+                 values (?, ?)
+                 on conflict(path) do update set
+                     path = excluded.path,
+                     last_opened = excluded.last_opened
+             "#,
             path_str,
             now
         )
@@ -403,6 +421,11 @@ struct DatabaseConfiguration {
     cache_ttl_hours: Option<i64>,
     volume: Option<f64>,
     use_file_based_streaming: Option<bool>,
+    enable_disconnect: bool,
+    disconnect_server_url: Option<String>,
+    disconnect_password: Option<String>,
+    device_name: Option<String>,
+    auto_play: Option<bool>,
 }
 
 #[derive(Default, Debug)]
@@ -412,6 +435,11 @@ pub struct Configuration {
     pub cache_directory: PathBuf,
     pub cache_ttl_hours: u32,
     pub volume: f32,
+    pub enable_disconnect: bool,
+    pub disconnect_server_url: Option<String>,
+    pub disconnect_password: Option<String>,
+    pub device_name: Option<String>,
+    pub auto_play: bool,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Deserialize)]

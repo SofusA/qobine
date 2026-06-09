@@ -13,7 +13,10 @@ use qobuz_player_player::{
     error::Error,
     notification::{Notification, NotificationBroadcast},
 };
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::{
+    mpsc::{self, UnboundedSender},
+    watch,
+};
 use webkit6::{WebView, prelude::*};
 
 use crate::{
@@ -41,6 +44,9 @@ pub fn init(
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     broadcast: Arc<NotificationBroadcast>,
+    _connect_available_devices: Option<watch::Receiver<Vec<String>>>,
+    _connect_active_device: Option<watch::Receiver<String>>,
+    _set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
 ) -> AppResult<()> {
     libadwaita::init().unwrap();
 

@@ -4258,6 +4258,7 @@ dependencies = [
  "libadwaita",
  "qobuz-player-cli",
  "qobuz-player-controls",
+ "qobuz-player-disconnect",
  "qobuz-player-mpris",
  "qobuz-player-player",
  "tokio",

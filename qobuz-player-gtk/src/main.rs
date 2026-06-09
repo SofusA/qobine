@@ -2,7 +2,7 @@ use qobuz_player_cli::{create_player, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use qobuz_player_controls::StatusReceiver;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use qobuz_player_player::{
     AppResult,
@@ -90,6 +90,32 @@ pub async fn run() -> AppResult<()> {
         ttl_rx,
     );
 
+    let (
+        available_devices_tx,
+        available_devices_rx,
+        active_device_tx,
+        active_device_rx,
+        set_active_device_tx,
+        set_active_device_rx,
+    ) = if configuration.enable_disconnect {
+        let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
+
+        let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+
+        let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+
+        (
+            Some(available_devices_tx),
+            Some(available_devices_rx),
+            Some(active_device_tx),
+            Some(active_device_rx),
+            Some(set_active_device_tx),
+            Some(set_active_device_rx),
+        )
+    } else {
+        (None, None, None, None, None, None)
+    };
+
     let client = client.clone();
 
     let controls = player.controls();
@@ -111,10 +137,66 @@ pub async fn run() -> AppResult<()> {
             exit_sender,
             ttl_tx,
             broadcast,
+            available_devices_rx,
+            active_device_rx,
+            set_active_device_tx,
         ) {
             error_exit(e);
         };
     });
+
+    if let (
+        Some(server_url),
+        Some(password),
+        Some(device_name),
+        Some(available_devices_tx),
+        Some(active_device_tx),
+        Some(set_active_device_rx),
+    ) = (
+        configuration.disconnect_server_url,
+        configuration.disconnect_password,
+        configuration.device_name,
+        available_devices_tx,
+        active_device_tx,
+        set_active_device_rx,
+    ) {
+        let position_receiver = player.position();
+        let tracklist_receiver = player.tracklist();
+        let volume_receiver = player.volume();
+        let status_receiver = player.status();
+        let controls = player.controls();
+        let active_sender = player.active_sender();
+
+        let tracklist_sender = player.tracklist_sender();
+        let position_sender = player.position_sender();
+        let status_sender = player.status_sender();
+        let volume_sender = player.volume_sender();
+
+        tokio::spawn(async move {
+            if let Err(e) = qobuz_player_disconnect::init(
+                &server_url,
+                &password,
+                &device_name,
+                controls,
+                tracklist_sender,
+                position_sender,
+                volume_sender,
+                status_sender,
+                active_sender,
+                available_devices_tx,
+                active_device_tx,
+                position_receiver,
+                tracklist_receiver,
+                status_receiver,
+                volume_receiver,
+                set_active_device_rx,
+            )
+            .await
+            {
+                error_exit(e);
+            }
+        });
+    }
 
     player.player_loop(exit_receiver).await?;
 
