@@ -177,8 +177,9 @@ pub async fn run() -> AppResult<()> {
     #[cfg(feature = "gpio")]
     if args.gpio.gpio {
         let status_receiver = player.status();
+        let active_receiver = player.active();
         tokio::spawn(async move {
-            if let Err(e) = qobuz_player_gpio::init(status_receiver).await {
+            if let Err(e) = qobuz_player_gpio::init(status_receiver, active_receiver).await {
                 error_exit(e.into());
             }
         });
