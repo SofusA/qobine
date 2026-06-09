@@ -109,8 +109,6 @@ pub async fn run() -> AppResult<()> {
 
     let disconnect_args = parse_disconnect_args(args.disconnect);
 
-    // TODO: these should be optional based on disconnect is Some or None
-
     let (
         available_devices_tx,
         available_devices_rx,
@@ -148,6 +146,8 @@ pub async fn run() -> AppResult<()> {
         let database = database.clone();
         let rfid_state = rfid_state.clone();
         let active_device_rx = active_device_rx.clone();
+        let connect_device_name = disconnect_args.as_ref().map(|x| x.device_name.clone());
+        let set_active_device_tx = set_active_device_tx.clone();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_web::init(
@@ -162,8 +162,44 @@ pub async fn run() -> AppResult<()> {
                 broadcast,
                 client,
                 database,
+                connect_device_name,
                 available_devices_rx,
                 active_device_rx,
+                set_active_device_tx,
+            )
+            .await
+            {
+                error_exit(e);
+            }
+        });
+    }
+
+    #[cfg(feature = "gpio")]
+    if args.gpio.gpio {
+        let status_receiver = player.status();
+        tokio::spawn(async move {
+            if let Err(e) = qobuz_player_gpio::init(status_receiver).await {
+                error_exit(e.into());
+            }
+        });
+    }
+
+    if let Some(rfid_state) = rfid_state {
+        let controls = player.controls();
+        let database = database.clone();
+        let tracklist_receiver = player.tracklist();
+        let connect_device_name = disconnect_args.as_ref().map(|x| x.device_name.clone());
+
+        tokio::spawn(async move {
+            if let Err(e) = qobuz_player_rfid::init(
+                rfid_state,
+                tracklist_receiver,
+                controls,
+                database,
+                broadcast,
+                args.rfid_config.rfid_server_base_address,
+                args.rfid_config.rfid_server_secret,
+                connect_device_name,
                 set_active_device_tx,
             )
             .await
@@ -209,38 +245,6 @@ pub async fn run() -> AppResult<()> {
                 status_receiver,
                 volume_receiver,
                 set_active_device_rx,
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
-
-    #[cfg(feature = "gpio")]
-    if args.gpio.gpio {
-        let status_receiver = player.status();
-        tokio::spawn(async move {
-            if let Err(e) = qobuz_player_gpio::init(status_receiver).await {
-                error_exit(e.into());
-            }
-        });
-    }
-
-    if let Some(rfid_state) = rfid_state {
-        let controls = player.controls();
-        let database = database.clone();
-        let tracklist_receiver = player.tracklist();
-
-        tokio::spawn(async move {
-            if let Err(e) = qobuz_player_rfid::init(
-                rfid_state,
-                tracklist_receiver,
-                controls,
-                database,
-                broadcast,
-                args.rfid_config.rfid_server_base_address,
-                args.rfid_config.rfid_server_secret,
             )
             .await
             {

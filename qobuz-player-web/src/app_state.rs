@@ -30,21 +30,26 @@ pub struct AppState {
     pub volume_receiver: VolumeReceiver,
     pub templates: watch::Receiver<Templates>,
     pub database: Arc<Database>,
-    pub available_devices: Option<watch::Receiver<Vec<String>>>,
-    pub active_device: Option<watch::Receiver<String>>,
-    pub active_device_sender: Option<mpsc::UnboundedSender<String>>,
+    pub connect_device_name: Option<String>,
+    pub connect_available_devices: Option<watch::Receiver<Vec<String>>>,
+    pub connect_active_device: Option<watch::Receiver<String>>,
+    pub set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl AppState {
     pub fn playing_info(&self) -> PlayingInfo {
         let available_devices = {
-            self.available_devices
+            self.connect_available_devices
                 .as_ref()
                 .map(|x| x.borrow().to_vec())
                 .unwrap_or_default()
         };
 
-        let active_device = { self.active_device.as_ref().map(|x| x.borrow().to_string()) };
+        let active_device = {
+            self.connect_active_device
+                .as_ref()
+                .map(|x| x.borrow().to_string())
+        };
 
         let current_volume = self.volume_receiver.borrow();
         let current_volume = (*current_volume * 100.0) as u32;

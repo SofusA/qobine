@@ -257,6 +257,10 @@ async fn set_active_device(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    if group.active_device == device_id {
+        return Ok(StatusCode::OK);
+    }
+
     info!("new active device {}", device_id);
 
     group.active_device = device_id.clone();

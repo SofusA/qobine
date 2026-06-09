@@ -54,9 +54,10 @@ pub async fn init(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
-    available_devices: Option<watch::Receiver<Vec<String>>>,
-    active_device: Option<watch::Receiver<String>>,
-    active_device_sender: Option<mpsc::UnboundedSender<String>>,
+    connect_device_name: Option<String>,
+    connect_available_devices: Option<watch::Receiver<Vec<String>>>,
+    connect_active_device: Option<watch::Receiver<String>>,
+    set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
 ) -> AppResult<()> {
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
@@ -74,9 +75,10 @@ pub async fn init(
         broadcast,
         client,
         database,
-        available_devices,
-        active_device,
-        active_device_sender,
+        connect_device_name,
+        connect_available_devices,
+        connect_active_device,
+        set_connect_active_device,
     )
     .await;
 
@@ -96,9 +98,10 @@ async fn create_router(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<Client>,
     database: Arc<Database>,
-    available_devices: Option<watch::Receiver<Vec<String>>>,
-    active_device: Option<watch::Receiver<String>>,
-    active_device_sender: Option<mpsc::UnboundedSender<String>>,
+    connect_device_name: Option<String>,
+    connect_available_devices: Option<watch::Receiver<Vec<String>>>,
+    connect_active_device: Option<watch::Receiver<String>>,
+    set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
 ) -> Router {
     let (tx, _rx) = broadcast::channel::<ServerSentEvent>(100);
     let broadcast_subscribe = broadcast.subscribe();
@@ -153,9 +156,10 @@ async fn create_router(
         status_receiver: status_receiver.clone(),
         templates: templates_rx.clone(),
         database,
-        available_devices: available_devices.clone(),
-        active_device: active_device.clone(),
-        active_device_sender,
+        connect_device_name,
+        connect_available_devices: connect_available_devices.clone(),
+        connect_active_device: connect_active_device.clone(),
+        set_connect_active_device,
     });
 
     tokio::spawn(background_task(
@@ -165,8 +169,8 @@ async fn create_router(
         tracklist_receiver,
         volume_receiver,
         status_receiver,
-        available_devices,
-        active_device,
+        connect_available_devices,
+        connect_active_device,
         templates_rx,
     ));
 

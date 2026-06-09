@@ -284,6 +284,8 @@ async fn play_rfid_reference(State(state): State<Arc<AppState>>, Path(reference)
         &state.tracklist_receiver,
         None,
         None,
+        state.connect_device_name.as_deref(),
+        state.set_connect_active_device.clone(),
     )
     .await;
 }
@@ -326,7 +328,7 @@ async fn set_active_device(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some(sender) = &state.active_device_sender {
+    if let Some(sender) = &state.set_connect_active_device {
         sender.send(device_id).unwrap();
     }
 }

@@ -15,6 +15,7 @@ gpio = ["qobuz-player-gpio/gpio"]
 [dependencies]
 qobuz-player-controls = { version = "*", path = "../qobuz-player-controls" }
 qobuz-player-connect = { version = "*", path = "../qobuz-player-connect" }
+qobuz-player-disconnect = { version = "*", path = "../qobuz-player-disconnect" }
 qobuz-player-gpio = { version = "*", path = "../qobuz-player-gpio", optional = true }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }
 

@@ -4399,6 +4399,7 @@ dependencies = [
  "qobuz-player-cli",
  "qobuz-player-connect",
  "qobuz-player-controls",
+ "qobuz-player-disconnect",
  "qobuz-player-gpio",
  "reqwest 0.12.28",
  "serde",

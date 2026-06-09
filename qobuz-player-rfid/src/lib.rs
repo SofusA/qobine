@@ -10,7 +10,7 @@ use reqwest::{RequestBuilder, header::CONTENT_TYPE};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt},
-    sync::Mutex,
+    sync::{Mutex, mpsc},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -18,6 +18,7 @@ pub struct RfidState {
     link_request: Arc<Mutex<Option<ReferenceType>>>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn init(
     state: RfidState,
     tracklist_receiver: TracklistReceiver,
@@ -26,6 +27,8 @@ pub async fn init(
     broadcast: Arc<NotificationBroadcast>,
     rfid_server_base_address: Option<String>,
     rfid_server_secret: Option<String>,
+    connect_device_name: Option<String>,
+    connect_set_device: Option<mpsc::UnboundedSender<String>>,
 ) -> AppResult<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut out = tokio::io::stdout();
@@ -88,6 +91,8 @@ pub async fn init(
                     &tracklist_receiver,
                     rfid_server_base_address.as_deref(),
                     rfid_server_secret.as_deref(),
+                    connect_device_name.as_deref(),
+                    connect_set_device.clone(),
                 )
                 .await;
             }
@@ -104,6 +109,8 @@ pub async fn handle_play_scan(
     tracklist_receiver: &TracklistReceiver,
     rfid_server_base_address: Option<&str>,
     rfid_server_secret: Option<&str>,
+    connect_device_name: Option<&str>,
+    connect_set_device: Option<mpsc::UnboundedSender<String>>,
 ) {
     let reference = match rfid_server_base_address {
         Some(server) => {
@@ -147,6 +154,13 @@ pub async fn handle_play_scan(
                 controls.play();
                 return;
             }
+
+            if let Some(connect_set_device) = connect_set_device
+                && let Some(connect_device_name) = connect_device_name
+            {
+                _ = connect_set_device.send(connect_device_name.to_string());
+            }
+
             controls.play_album(&id, 0);
         }
         ReferenceType::Playlist(id) => {
@@ -156,6 +170,13 @@ pub async fn handle_play_scan(
                 controls.play();
                 return;
             }
+
+            if let Some(connect_set_device) = connect_set_device
+                && let Some(connect_device_name) = connect_device_name
+            {
+                _ = connect_set_device.send(connect_device_name.to_string());
+            }
+
             controls.play_playlist(id, 0, false);
         }
     }
