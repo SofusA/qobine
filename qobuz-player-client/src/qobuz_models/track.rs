@@ -30,3 +30,30 @@ pub struct Performer {
     pub id: i64,
     pub name: String,
 }
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackSuggestionResponse {
+    pub algorithm: String,
+    pub tracks: TrackSuggestions,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackSuggestions {
+    pub limit: i64,
+    pub items: Vec<Track>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SuggestTrackRequest {
+    pub limit: u32,
+    pub listened_tracks_ids: Vec<u32>,
+    pub track_to_analysed: Vec<SuggestTrackInput>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SuggestTrackInput {
+    pub artist_id: Option<i64>,
+    pub genre_id: Option<u32>,
+    pub label_id: Option<u32>,
+    pub track_id: u32,
+}

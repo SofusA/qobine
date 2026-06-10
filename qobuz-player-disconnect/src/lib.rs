@@ -52,7 +52,6 @@ impl DisconnectState {
                     self.client.set_volume(&volume).await.unwrap();
                 }
                 Ok(notification) = self.controls_rx.recv() => {
-                    println!("got control command: {:?}", notification);
                     self.client.control(&notification).await.unwrap();
                 }
             }

@@ -11,7 +11,7 @@ use crate::{
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
         search_results::SearchAllResults,
-        track::Track,
+        track::{SuggestTrackInput, SuggestTrackRequest, Track, TrackSuggestionResponse},
     },
     stream::{
         cmaf, crypto, fetch_segment,
@@ -146,6 +146,7 @@ enum Endpoint {
     GenreList,
     GenrePlaylists,
     DiscoverIndex,
+    Suggest,
 }
 
 impl Display for Endpoint {
@@ -176,6 +177,7 @@ impl Display for Endpoint {
             Endpoint::GenreList => "genre/list",
             Endpoint::GenrePlaylists => "discover/playlists",
             Endpoint::DiscoverIndex => "discover/index",
+            Endpoint::Suggest => "dynamic/suggest",
         };
 
         f.write_str(endpoint)
@@ -872,6 +874,51 @@ impl Client {
         self.get(&endpoint, Some(&params)).await
     }
 
+    pub async fn suggest_track(
+        &self,
+        queue_track_ids: Vec<u32>,
+        genre_id: Option<u32>,
+        label_id: Option<u32>,
+    ) -> Result<Track> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::Suggest);
+
+        let listened_tracks_ids = queue_track_ids.clone();
+
+        let start_index = queue_track_ids.len().saturating_sub(5);
+
+        let last_track_ids = queue_track_ids[start_index..].to_vec();
+
+        let mut track_to_analysed = Vec::with_capacity(last_track_ids.len());
+
+        for track_id in last_track_ids {
+            let track = self.track(track_id).await?;
+
+            track_to_analysed.push(SuggestTrackInput {
+                track_id: track.id,
+                artist_id: track.performer.map(|x| x.id),
+                genre_id,
+                label_id,
+            });
+        }
+
+        let body = SuggestTrackRequest {
+            limit: 50,
+            listened_tracks_ids,
+            track_to_analysed,
+        };
+
+        let suggestions: TrackSuggestionResponse = self.post_json(&endpoint, &body).await?;
+
+        suggestions
+            .tracks
+            .items
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Api {
+                message: "No track suggestions returned".to_string(),
+            })
+    }
+
     pub async fn artist(&self, artist_id: u32) -> Result<ArtistPage> {
         let app_id = &self.app_id;
 
@@ -925,6 +972,27 @@ impl Client {
             })?;
 
         let item = serde_json::from_str::<T>(response.as_str()).map_err(|error| {
+            Error::DeserializeJSON {
+                message: error.to_string(),
+            }
+        })?;
+
+        Ok(item)
+    }
+
+    async fn post_json<TResponse, TBody>(&self, endpoint: &str, body: &TBody) -> Result<TResponse>
+    where
+        TResponse: serde::de::DeserializeOwned,
+        TBody: serde::Serialize + ?Sized,
+    {
+        let response = self
+            .make_post_json_call(endpoint, body)
+            .await
+            .map_err(|error| Error::Api {
+                message: error.to_string(),
+            })?;
+
+        let item = serde_json::from_str::<TResponse>(response.as_str()).map_err(|error| {
             Error::DeserializeJSON {
                 message: error.to_string(),
             }
@@ -1000,6 +1068,25 @@ impl Client {
             .request(Method::POST, endpoint)
             .headers(headers)
             .form(&params)
+            .send()
+            .await?;
+
+        handle_response(response).await
+    }
+
+    async fn make_post_json_call<TBody>(&self, endpoint: &str, body: &TBody) -> Result<String>
+    where
+        TBody: serde::Serialize + ?Sized,
+    {
+        let headers = client_headers(&self.app_id, Some(&self.user_token));
+
+        tracing::debug!("calling {} endpoint, with JSON body", endpoint);
+
+        let response = self
+            .http_client
+            .request(Method::POST, endpoint)
+            .headers(headers)
+            .json(body)
             .send()
             .await?;
 

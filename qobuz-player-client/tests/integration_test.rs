@@ -20,6 +20,14 @@ async fn get_client() -> Option<Client> {
 }
 
 #[tokio::test]
+async fn track_suggestion() {
+    let client = get_client().await.unwrap();
+    let queue = vec![20808551, 20808552, 20808553, 20808554, 20808555];
+
+    let _suggestion = client.suggest_track(queue, None, None).await.unwrap();
+}
+
+#[tokio::test]
 async fn discover_page() {
     let client = get_client().await.unwrap();
 

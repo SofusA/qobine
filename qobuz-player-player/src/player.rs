@@ -49,6 +49,7 @@ pub struct Player {
     sample_rate_change_delay: Option<Duration>,
     active: Sender<bool>,
     active_rx: Receiver<bool>,
+    auto_play: bool,
 }
 
 impl Player {
@@ -100,6 +101,7 @@ impl Player {
             sample_rate_change_delay,
             active,
             active_rx,
+            auto_play: true,
         })
     }
 
@@ -240,7 +242,22 @@ impl Player {
         Ok(())
     }
 
-    async fn broadcast_tracklist(&self, tracklist: Tracklist) -> AppResult<()> {
+    async fn broadcast_tracklist(&self, mut tracklist: Tracklist) -> AppResult<()> {
+        if self.auto_play {
+            let queue = tracklist.queue();
+            let tracks_remaining = queue.len() - tracklist.current_position();
+
+            if tracks_remaining == 1 {
+                let suggestion = self
+                    .client
+                    .suggest_track(queue.iter().map(|x| x.track.id).collect())
+                    .await?;
+
+                tracklist.set_list_type(TracklistType::Tracks);
+                tracklist.push_track(suggestion);
+            }
+        }
+
         self.database.set_tracklist(&tracklist).await?;
         self.tracklist_tx.send(tracklist)?;
         Ok(())

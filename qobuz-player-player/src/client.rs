@@ -394,6 +394,14 @@ impl Client {
         Ok(suggested_albums)
     }
 
+    pub async fn suggest_track(&self, queue_track_ids: Vec<u32>) -> Result<Track> {
+        let client = self.get_client().await?;
+        let suggestion = client.suggest_track(queue_track_ids, None, None).await?;
+        let audio_quality = self.max_audio_quality.read().await;
+
+        Ok(parse_track(suggestion, &audio_quality))
+    }
+
     pub async fn playlist(&self, id: u32) -> Result<Playlist> {
         if let Some(cache) = self.playlist_cache.get(&id).await {
             return Ok(cache);

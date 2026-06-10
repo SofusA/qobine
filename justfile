@@ -1,5 +1,5 @@
 init-database:
-    cargo sqlx db create && cargo sqlx migrate run --source qobuz-player-controls/migrations
+    cargo sqlx db create && cargo sqlx migrate run --source qobuz-player-player/migrations
 
 [working-directory: 'qobuz-player-web']
 build-styles:
