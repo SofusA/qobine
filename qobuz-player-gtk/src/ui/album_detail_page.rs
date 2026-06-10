@@ -5,9 +5,8 @@ use gtk::{gio, prelude::*};
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use qobuz_player_controls::{
-    TracklistReceiver, client::Client, controls::Controls, tracklist::PlayingEntity,
-};
+use qobuz_player_controls::{TracklistReceiver, controls::Controls, tracklist::PlayingEntity};
+use qobuz_player_player::client::Client;
 
 use crate::{
     UiEventSender,

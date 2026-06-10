@@ -1,13 +1,16 @@
 use axum::response::{Html, IntoResponse, Response};
 use futures::try_join;
 use qobuz_player_controls::{
-    AppResult, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
-    client::Client,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
-    database::Database,
     models::{Favorites, Track},
-    notification::{Notification, NotificationBroadcast},
     tracklist::{Tracklist, TracklistType},
+};
+use qobuz_player_player::{
+    AppResult,
+    client::Client,
+    database::Database,
+    notification::{Notification, NotificationBroadcast},
 };
 use qobuz_player_rfid::RfidState;
 use serde_json::json;

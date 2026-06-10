@@ -3,11 +3,12 @@ use std::time::Duration;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use qobuz_player_controls::{
-    AppResult, Status,
+    Status,
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
 use qobuz_player_disconnect_server::DisconnectServerEvent;
+use qobuz_player_player::AppResult;
 use reqwest::Client;
 use tokio::sync::{mpsc, watch};
 

@@ -5,7 +5,7 @@ use axum::{
     extract::{Query, State},
     routing::get,
 };
-use qobuz_player_controls::client::GenrePlaylistSlug;
+use qobuz_player_player::client::GenrePlaylistSlug;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::try_join;

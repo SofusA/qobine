@@ -8,12 +8,15 @@ use axum::{
 };
 use futures::stream::Stream;
 use qobuz_player_controls::{
-    AppResult, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
-    client::Client,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
+    models::{Album, AlbumSimple},
+};
+use qobuz_player_player::{
+    AppResult,
+    client::Client,
     database::Database,
     error::Error,
-    models::{Album, AlbumSimple},
     notification::{Notification, NotificationBroadcast},
 };
 use qobuz_player_rfid::RfidState;
@@ -365,7 +368,7 @@ type ResponseResult = Result<axum::response::Response, axum::response::Response>
 #[allow(clippy::result_large_err)]
 fn ok_or_send_error_toast<T>(
     state: &AppState,
-    value: AppResult<T, qobuz_player_controls::error::Error>,
+    value: AppResult<T, Error>,
 ) -> AppResult<T, axum::response::Response> {
     match value {
         Ok(value) => Ok(value),
@@ -376,7 +379,7 @@ fn ok_or_send_error_toast<T>(
 #[allow(clippy::result_large_err)]
 fn ok_or_error_page<T>(
     state: &AppState,
-    value: AppResult<T, qobuz_player_controls::error::Error>,
+    value: AppResult<T, Error>,
 ) -> AppResult<T, axum::response::Response> {
     match value {
         Ok(value) => Ok(value),
@@ -393,7 +396,7 @@ fn ok_or_error_page<T>(
 #[allow(clippy::result_large_err, unused)]
 fn ok_or_broadcast<T>(
     broadcast: &NotificationBroadcast,
-    value: AppResult<T, qobuz_player_controls::error::Error>,
+    value: AppResult<T, Error>,
 ) -> AppResult<T, axum::response::Response> {
     match value {
         Ok(value) => Ok(value),

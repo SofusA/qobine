@@ -3,10 +3,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 use gtk::{gio, glib, prelude::*};
 use gtk4 as gtk;
 
-use qobuz_player_controls::{
-    client::{Client, GenrePlaylistSlug},
-    models::{AlbumSimple, Genre, PlaylistSimple, PlaylistTag},
-};
+use qobuz_player_controls::models::{AlbumSimple, Genre, PlaylistSimple, PlaylistTag};
+use qobuz_player_player::client::{Client, GenrePlaylistSlug};
 
 use crate::ui::{
     album_detail_page::AlbumHeaderInfo, album_scroller, playlist_detail_page::PlaylistHeaderInfo,

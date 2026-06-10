@@ -6,9 +6,10 @@ use mpris_server::{
     zbus::{self, fdo},
 };
 use qobuz_player_controls::{
-    AppResult, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    VolumeReceiver, controls::Controls, error::Error, models::Track,
+    ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    controls::Controls, models::Track,
 };
+use qobuz_player_player::{AppResult, error::Error};
 
 struct MprisPlayer {
     controls: Controls,

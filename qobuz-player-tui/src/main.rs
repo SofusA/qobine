@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc};
 use clap::Parser;
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use qobuz_player_controls::StatusReceiver;
-use qobuz_player_controls::{
+use qobuz_player_player::{
     AppResult, database::Database, error::Error, notification::NotificationBroadcast,
 };
 

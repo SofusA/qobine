@@ -1,6 +1,10 @@
-use crate::{
-    controls::{NewQueueItem, StreamingConfiguration},
+use qobuz_player_controls::{
+    ExitReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    controls::{ControlCommand, Controls, NewQueueItem, StreamingConfiguration},
     models::{Album, Track, TrackStatus},
+    tracklist::{
+        AlbumTracklist, PlaylistTracklist, QueueItem, TopTracklist, Tracklist, TracklistType,
+    },
 };
 use rand::seq::SliceRandom;
 use tokio::{
@@ -12,22 +16,15 @@ use tokio::{
     time::sleep,
 };
 
-use crate::{
-    AppResult, ExitReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    VolumeReceiver,
-    controls::{ControlCommand, Controls},
-    database::Database,
-    downloader::{DownloadResult, Downloader},
-    notification::{Notification, NotificationBroadcast},
-    sink::QueryTrackResult,
-    tracklist::{QueueItem, TracklistType},
-};
 use std::{sync::Arc, time::Duration};
 
 use crate::{
+    AppResult,
     client::Client,
-    sink::Sink,
-    tracklist::{self, Tracklist},
+    database::Database,
+    downloader::{DownloadResult, Downloader},
+    notification::{Notification, NotificationBroadcast},
+    sink::{QueryTrackResult, Sink},
 };
 
 const INTERVAL_MS: u64 = 500;
@@ -428,7 +425,7 @@ impl Player {
             .count();
 
         let mut tracklist = Tracklist::new(
-            TracklistType::Album(tracklist::AlbumTracklist {
+            TracklistType::Album(AlbumTracklist {
                 title: album.title,
                 id: album.id,
                 image: Some(album.image),
@@ -447,7 +444,7 @@ impl Player {
             tracks.iter().take(index).filter(|t| !t.available).count();
 
         let mut tracklist = Tracklist::new(
-            TracklistType::TopTracks(tracklist::TopTracklist {
+            TracklistType::TopTracks(TopTracklist {
                 artist_name: artist.name,
                 id: artist_id,
                 image: artist.image,
@@ -509,7 +506,7 @@ impl Player {
         }
 
         let mut tracklist = Tracklist::new(
-            TracklistType::Playlist(tracklist::PlaylistTracklist {
+            TracklistType::Playlist(PlaylistTracklist {
                 title: playlist.title,
                 id: playlist.id,
                 image: playlist.image,

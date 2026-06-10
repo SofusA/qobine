@@ -13,12 +13,15 @@ use core::fmt;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
 use futures::StreamExt;
 use qobuz_player_controls::{
-    AppResult, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    client::Client,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver,
     controls::Controls,
     models::{AlbumSimple, Artist, Track},
-    notification::{Notification, NotificationBroadcast},
     tracklist::{Tracklist, TracklistType},
+};
+use qobuz_player_player::{
+    AppResult,
+    client::Client,
+    notification::{Notification, NotificationBroadcast},
 };
 use ratatui::{DefaultTerminal, widgets::*};
 use ratatui_image::protocol::StatefulProtocol;

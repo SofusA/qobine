@@ -4,8 +4,9 @@ use std::{
 };
 
 use qobuz_player_client::stream::flac_source_stream::SeekableStreamReader;
+use qobuz_player_controls::models::Track;
 
-use crate::{AppResult, client::Client, database::Database, models::Track};
+use crate::{AppResult, client::Client, database::Database};
 
 pub enum DownloadResult {
     Cached(PathBuf),

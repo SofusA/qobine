@@ -7,13 +7,12 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 
-use qobuz_player_controls::ExitSender;
-use qobuz_player_controls::VolumeReceiver;
-use qobuz_player_controls::client::Client;
 use qobuz_player_controls::controls::Controls;
-use qobuz_player_controls::database::Database;
 use qobuz_player_controls::models::PlaylistSimple;
 use qobuz_player_controls::tracklist::Tracklist;
+use qobuz_player_controls::{ExitSender, VolumeReceiver};
+use qobuz_player_player::client::Client;
+use qobuz_player_player::database::Database;
 use tokio::sync::mpsc;
 
 use crate::ui::albums_page::{AlbumsPage, new_albums_page};

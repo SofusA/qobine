@@ -1,13 +1,12 @@
 use std::time::{Duration, SystemTime};
 
 use qobuz_player_controls::{
-    AppResult, AudioQuality, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    VolumeReceiver,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{Controls, NewQueueItem},
-    error::Error,
     tracklist::Tracklist,
 };
 
+use qobuz_player_player::{AppResult, AudioQuality, error::Error};
 use qonductor::{
     ActivationState, BufferState, Command, DeviceConfig, DeviceSession, Notification, PlayingState,
     SessionEvent, SessionManager,

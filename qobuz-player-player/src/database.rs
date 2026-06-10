@@ -1,5 +1,6 @@
-use crate::{AppResult, AudioQuality, Error, Tracklist};
+use crate::{AppResult, AudioQuality, Error};
 use qobuz_player_client::client::OAuthResult;
+use qobuz_player_controls::tracklist::Tracklist;
 use serde_json::to_string;
 use sqlx::types::Json;
 use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};

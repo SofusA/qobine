@@ -32,3 +32,4 @@ parking_lot.workspace = true
 
 [dev-dependencies]
 qobuz-player-controls = { version = "*", path = "../qobuz-player-controls" }
+qobuz-player-player = { version = "*", path = "../qobuz-player-player" }

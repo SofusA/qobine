@@ -5,9 +5,8 @@ use gtk4 as gtk;
 use gtk4::{gio, prelude::*};
 use libadwaita as adw;
 
-use qobuz_player_controls::{
-    TracklistReceiver, client::Client, controls::Controls, tracklist::PlayingEntity,
-};
+use qobuz_player_controls::{TracklistReceiver, controls::Controls, tracklist::PlayingEntity};
+use qobuz_player_player::client::Client;
 
 use crate::ui::set_picture_from_url;
 use crate::{

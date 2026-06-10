@@ -7,7 +7,8 @@ use axum::{
     routing::{get, post, put},
 };
 use axum_extra::extract::Form;
-use qobuz_player_controls::{error::Error, notification::Notification, tracklist::PlayingEntity};
+use qobuz_player_controls::tracklist::PlayingEntity;
+use qobuz_player_player::{database::ReferenceType, error::Error, notification::Notification};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -222,7 +223,7 @@ async fn link(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> impl I
     };
     qobuz_player_rfid::link(
         rfid_state,
-        qobuz_player_controls::database::ReferenceType::Playlist(id),
+        ReferenceType::Playlist(id),
         state.broadcast.clone(),
     )
     .await;

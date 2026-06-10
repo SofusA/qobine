@@ -1,9 +1,8 @@
 use qobuz_player_controls::{
-    AppResult,
-    client::Client,
     controls::Controls,
     models::{Album, Artist, ArtistPage, Playlist, PlaylistSimple, Track},
 };
+use qobuz_player_player::{AppResult, client::Client};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,

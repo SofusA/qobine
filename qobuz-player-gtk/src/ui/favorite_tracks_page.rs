@@ -6,9 +6,9 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use qobuz_player_controls::client::Client;
 use qobuz_player_controls::controls::Controls;
 use qobuz_player_controls::models::{PlaylistSimple, Track};
+use qobuz_player_player::client::Client;
 
 use crate::UiEventSender;
 use crate::ui::build_track_row;

@@ -3,8 +3,7 @@ use std::{rc::Rc, sync::Arc};
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-
-use qobuz_player_controls::client::Client;
+use qobuz_player_player::client::Client;
 
 use crate::ui::albums_page::AlbumsPage;
 use crate::ui::albums_page::new_albums_page;

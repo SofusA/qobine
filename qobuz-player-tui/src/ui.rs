@@ -1,5 +1,5 @@
 use image::load_from_memory;
-use qobuz_player_controls::notification::Notification;
+use qobuz_player_player::notification::Notification;
 use ratatui::{layout::Flex, prelude::*, widgets::*};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use tui_input::Input;

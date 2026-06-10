@@ -11,12 +11,9 @@ use axum::{
     routing::{get, post, put},
 };
 use axum_extra::extract::Form;
-use qobuz_player_controls::{
-    AppResult,
-    client::Client,
-    database::ReferenceType,
-    models::{AlbumSimple, Artist, Playlist, Track},
-    notification::Notification,
+use qobuz_player_controls::models::{AlbumSimple, Artist, Playlist, Track};
+use qobuz_player_player::{
+    AppResult, client::Client, database::ReferenceType, notification::Notification,
 };
 use qobuz_player_rfid::{LinkAlbumRfid, LinkPlaylistRfid, handle_play_scan};
 use serde::Deserialize;

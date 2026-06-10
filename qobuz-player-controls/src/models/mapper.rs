@@ -83,7 +83,7 @@ pub fn parse_album_simple(
     }
 }
 
-fn extract_year(date_str: &str) -> u32 {
+pub fn extract_year(date_str: &str) -> u32 {
     let format = format_description!("[year]-[month]-[day]");
     let date = time::Date::parse(date_str, &format).expect("failed to parse date");
     date.year() as u32
@@ -389,7 +389,7 @@ pub fn parse_track(value: qobuz_models::track::Track, max_audio_quality: &AudioQ
     }
 }
 
-fn hifi_available(track_has_hires_available: bool, max_audio_quality: &AudioQuality) -> bool {
+pub fn hifi_available(track_has_hires_available: bool, max_audio_quality: &AudioQuality) -> bool {
     if !track_has_hires_available {
         return false;
     }

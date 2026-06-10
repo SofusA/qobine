@@ -3,9 +3,11 @@ use std::sync::Arc;
 use app::{App, get_current_state_without_image};
 use favorites::FavoritesState;
 use qobuz_player_controls::{
-    AppResult, ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver,
+    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
+};
+use qobuz_player_player::{
+    AppResult,
     client::Client,
-    controls::Controls,
     database::{Configuration, Database},
     notification::NotificationBroadcast,
 };

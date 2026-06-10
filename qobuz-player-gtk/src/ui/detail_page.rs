@@ -5,7 +5,8 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 use gtk::gio;
-use qobuz_player_controls::{AppResult, client::Client, controls::Controls};
+use qobuz_player_controls::controls::Controls;
+use qobuz_player_player::{AppResult, client::Client};
 
 use crate::{UiEvent, UiEventSender};
 

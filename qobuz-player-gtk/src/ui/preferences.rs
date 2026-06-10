@@ -8,12 +8,12 @@ use gtk4 as gtk;
 
 use adw::prelude::*;
 use libadwaita as adw;
-use qobuz_player_controls::AudioQuality;
 use qobuz_player_controls::ExitSender;
 use qobuz_player_controls::VolumeReceiver;
 use qobuz_player_controls::controls::Controls;
-use qobuz_player_controls::database::Configuration;
-use qobuz_player_controls::database::Database;
+use qobuz_player_player::AudioQuality;
+use qobuz_player_player::database::Configuration;
+use qobuz_player_player::database::Database;
 use tokio::sync::mpsc;
 
 use crate::UiEventSender;

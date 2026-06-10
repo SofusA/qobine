@@ -6,11 +6,11 @@ use libadwaita as adw;
 use adw::NavigationPage;
 use gtk::{gdk, gio, prelude::*};
 use qobuz_player_controls::{
-    client::Client,
     controls::Controls,
     models::{AlbumSimple, Artist, PlaylistSimple, Track},
     tracklist::PlayingEntity,
 };
+use qobuz_player_player::client::Client;
 
 use crate::{
     UiEventSender,

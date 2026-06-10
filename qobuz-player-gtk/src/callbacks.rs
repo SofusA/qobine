@@ -1,6 +1,7 @@
 use gtk4::glib;
 use libadwaita as adw;
-use qobuz_player_controls::{TracklistReceiver, client::Client, controls::Controls};
+use qobuz_player_controls::{TracklistReceiver, controls::Controls};
+use qobuz_player_player::client::Client;
 use std::{
     rc::{Rc, Weak},
     sync::Arc,

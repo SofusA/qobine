@@ -1,22 +1,21 @@
 use std::{path::PathBuf, sync::Mutex};
 
-use crate::{
-    database::Credentials,
-    models::{
-        Album, AlbumSimple, ArtistPage, DiscoverPage, Favorites, Genre, Playlist, PlaylistSimple,
-        SearchResults, Track,
-        mapper::{
-            parse_album, parse_album_simple, parse_artist, parse_artist_page, parse_discover,
-            parse_genre, parse_playlist, parse_playlist_simple, parse_search_results, parse_track,
-        },
-    },
-};
+use crate::database::Credentials;
 use futures::future::join_all;
 use moka::future::Cache;
 use qobuz_player_client::{
     client::{AudioQuality, OAuthResult, ReleaseType, browser_oauth_login},
     qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
+};
+use qobuz_player_controls::models::{
+    Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Favorites, Genre, Playlist,
+    PlaylistSimple, SearchResults, Track,
+    mapper::{
+        extract_year, hifi_available, parse_album, parse_album_simple, parse_artist,
+        parse_artist_page, parse_discover, parse_genre, parse_playlist, parse_playlist_simple,
+        parse_search_results, parse_track,
+    },
 };
 use time::Duration;
 use tokio::{
@@ -287,11 +286,61 @@ impl Client {
             singles
                 .items
                 .into_iter()
-                .map(|x| parse_album_simple(x, &audio_quality))
+                .map(|x| {
+                    let max_audio_quality: &AudioQuality = &audio_quality;
+                    let artist = x.artists.and_then(|vec| vec.into_iter().next());
+                    let (artist_id, artist_name) = artist.map_or((0, "Unknown".into()), |artist| {
+                        (artist.id as u32, artist.name.unwrap_or("Unknown".into()))
+                    });
+
+                    AlbumSimple {
+                        id: x.id,
+                        title: x.title,
+                        artist: Artist {
+                            id: artist_id,
+                            name: artist_name,
+                            ..Default::default()
+                        },
+                        hires_available: hifi_available(
+                            x.rights.hires_streamable,
+                            max_audio_quality,
+                        ),
+                        explicit: x.parental_warning,
+                        available: x.rights.streamable,
+                        image: x.image.large,
+                        duration_seconds: x.duration,
+                        release_year: extract_year(&x.dates.original),
+                    }
+                })
                 .collect(),
             live.items
                 .into_iter()
-                .map(|x| parse_album_simple(x, &audio_quality))
+                .map(|x| {
+                    let max_audio_quality: &AudioQuality = &audio_quality;
+                    let artist = x.artists.and_then(|vec| vec.into_iter().next());
+                    let (artist_id, artist_name) = artist.map_or((0, "Unknown".into()), |artist| {
+                        (artist.id as u32, artist.name.unwrap_or("Unknown".into()))
+                    });
+
+                    AlbumSimple {
+                        id: x.id,
+                        title: x.title,
+                        artist: Artist {
+                            id: artist_id,
+                            name: artist_name,
+                            ..Default::default()
+                        },
+                        hires_available: hifi_available(
+                            x.rights.hires_streamable,
+                            max_audio_quality,
+                        ),
+                        explicit: x.parental_warning,
+                        available: x.rights.streamable,
+                        image: x.image.large,
+                        duration_seconds: x.duration,
+                        release_year: extract_year(&x.dates.original),
+                    }
+                })
                 .collect(),
             compilations
                 .items

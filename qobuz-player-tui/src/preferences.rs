@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use qobuz_player_controls::{
-    AudioQuality, ExitSender,
-    controls::Controls,
+use qobuz_player_controls::{ExitSender, controls::Controls};
+use qobuz_player_player::{
+    AudioQuality,
     database::{Configuration, Database},
 };
 use ratatui::{

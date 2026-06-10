@@ -1,7 +1,8 @@
 use futures::future::try_join_all;
-use qobuz_player_controls::client::{Client, GenrePlaylistSlug};
-use qobuz_player_controls::error::Error;
-use qobuz_player_controls::{AppResult, controls::Controls};
+use qobuz_player_controls::controls::Controls;
+use qobuz_player_player::AppResult;
+use qobuz_player_player::client::{Client, GenrePlaylistSlug};
+use qobuz_player_player::error::Error;
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,

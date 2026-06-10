@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 
-use qobuz_player_controls::{
-    AppResult, client::Client, models::Artist, notification::Notification,
-};
+use qobuz_player_controls::models::Artist;
+use qobuz_player_player::{AppResult, client::Client, notification::Notification};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,

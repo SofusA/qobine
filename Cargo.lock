@@ -4138,6 +4138,7 @@ version = "1.0.0"
 dependencies = [
  "clap",
  "qobuz-player-controls",
+ "qobuz-player-player",
  "time",
  "tokio",
  "tokio_schedule",
@@ -4161,6 +4162,7 @@ dependencies = [
  "open",
  "parking_lot",
  "qobuz-player-controls",
+ "qobuz-player-player",
  "regex",
  "reqwest 0.12.28",
  "serde",
@@ -4182,6 +4184,7 @@ dependencies = [
  "qobuz-player-cli",
  "qobuz-player-controls",
  "qobuz-player-gpio",
+ "qobuz-player-player",
  "qonductor",
  "tokio",
  "tracing",
@@ -4191,22 +4194,10 @@ dependencies = [
 name = "qobuz-player-controls"
 version = "1.0.0"
 dependencies = [
- "dirs",
- "futures",
- "libc",
- "moka",
- "parking_lot",
  "qobuz-player-client",
- "rand 0.10.1",
- "reqwest 0.12.28",
- "rodio",
  "serde",
- "serde_json",
- "snafu",
- "sqlx",
  "time",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4220,6 +4211,7 @@ dependencies = [
  "qobuz-player-cli",
  "qobuz-player-controls",
  "qobuz-player-disconnect-server",
+ "qobuz-player-player",
  "reqwest 0.12.28",
  "serde_json",
  "tokio",
@@ -4234,6 +4226,7 @@ dependencies = [
  "axum",
  "futures",
  "qobuz-player-controls",
+ "qobuz-player-player",
  "serde",
  "serde_json",
  "tokio",
@@ -4265,6 +4258,7 @@ dependencies = [
  "qobuz-player-cli",
  "qobuz-player-controls",
  "qobuz-player-mpris",
+ "qobuz-player-player",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -4278,7 +4272,31 @@ version = "1.0.0"
 dependencies = [
  "mpris-server",
  "qobuz-player-controls",
+ "qobuz-player-player",
  "tokio",
+]
+
+[[package]]
+name = "qobuz-player-player"
+version = "1.0.0"
+dependencies = [
+ "dirs",
+ "futures",
+ "libc",
+ "moka",
+ "parking_lot",
+ "qobuz-player-client",
+ "qobuz-player-controls",
+ "rand 0.10.1",
+ "reqwest 0.12.28",
+ "rodio",
+ "serde",
+ "serde_json",
+ "snafu",
+ "sqlx",
+ "time",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4291,6 +4309,7 @@ dependencies = [
  "qobuz-player-controls",
  "qobuz-player-disconnect",
  "qobuz-player-gpio",
+ "qobuz-player-player",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -4311,6 +4330,7 @@ dependencies = [
  "qobuz-player-connect",
  "qobuz-player-controls",
  "qobuz-player-mpris",
+ "qobuz-player-player",
  "ratatui",
  "ratatui-image",
  "reqwest 0.12.28",
@@ -4334,6 +4354,7 @@ dependencies = [
  "qobuz-player-controls",
  "qobuz-player-disconnect",
  "qobuz-player-gpio",
+ "qobuz-player-player",
  "qobuz-player-rfid",
  "rust-embed",
  "serde",

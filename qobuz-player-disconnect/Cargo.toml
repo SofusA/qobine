@@ -8,6 +8,7 @@ description.workspace = true
 
 [dependencies]
 qobuz-player-controls = { version = "*", path = "../qobuz-player-controls" }
+qobuz-player-player = { version = "*", path = "../qobuz-player-player" }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }
 qobuz-player-disconnect-server = { version = "*", path = "../qobuz-player-disconnect-server" }
 

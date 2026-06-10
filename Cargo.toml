@@ -10,7 +10,9 @@ members = [
   "qobuz-player-connect",
   "qobuz-player-cli",
   "qobuz-player-gtk",
-  "qobuz-player-disconnect-server", "qobuz-player-disconnect",
+  "qobuz-player-disconnect-server",
+  "qobuz-player-disconnect",
+  "qobuz-player-player"
 ]
 resolver = "2"
 

@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand};
-use qobuz_player_controls::{
+use qobuz_player_player::{
     AppResult, AudioQuality, client::Client, database::Database,
     notification::NotificationBroadcast, player::Player,
 };

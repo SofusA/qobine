@@ -1,5 +1,5 @@
 use qobuz_player_client::client::{Client, ReleaseType};
-use qobuz_player_controls::database::{Credentials, Database};
+use qobuz_player_player::database::{Credentials, Database};
 
 async fn get_token() -> Option<Credentials> {
     let database = Database::new().await.ok()?;

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
-use qobuz_player_controls::{
+use qobuz_player_player::{
     AppResult, database::Database, error::Error, notification::NotificationBroadcast,
 };
 

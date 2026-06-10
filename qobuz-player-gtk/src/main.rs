@@ -4,7 +4,7 @@ use qobuz_player_controls::StatusReceiver;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 
-use qobuz_player_controls::{
+use qobuz_player_player::{
     AppResult,
     client::{Client, get_app_id},
     database::Database,

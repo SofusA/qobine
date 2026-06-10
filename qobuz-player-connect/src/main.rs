@@ -4,13 +4,13 @@ use qobuz_player_cli::{
     ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
+use qobuz_player_player::{
+    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
+};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use clap::Parser;
-use qobuz_player_controls::{
-    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
-};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]

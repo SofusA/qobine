@@ -1,24 +1,12 @@
-use crate::{error::Error, tracklist::Tracklist};
-
 use std::time::Duration;
+
 use tokio::sync::{broadcast, watch};
 
-pub use qobuz_player_client::client::AudioQuality;
+use crate::tracklist::Tracklist;
 
-pub mod client;
 pub mod controls;
-pub mod database;
-mod downloader;
-pub mod error;
 pub mod models;
-pub mod notification;
-pub mod player;
-mod simple_cache;
-mod sink;
-mod stderr_redirect;
 pub mod tracklist;
-
-pub type AppResult<T, E = Error> = std::result::Result<T, E>;
 
 pub type PositionReceiver = watch::Receiver<Duration>;
 pub type VolumeReceiver = watch::Receiver<f32>;
@@ -31,14 +19,6 @@ pub enum Status {
     Buffering,
     #[default]
     Paused,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub enum Notification {
-    Error(String),
-    Warning(String),
-    Success(String),
-    Info(String),
 }
 
 pub type ExitReceiver = broadcast::Receiver<bool>;

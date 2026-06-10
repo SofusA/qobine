@@ -1,4 +1,5 @@
-use qobuz_player_controls::{AppResult, client::Client, controls::Controls};
+use qobuz_player_controls::controls::Controls;
+use qobuz_player_player::{AppResult, client::Client};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,

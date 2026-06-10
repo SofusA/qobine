@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 qobuz-player-controls = { version = "*", path = "../qobuz-player-controls" }
+qobuz-player-player = { version = "*", path = "../qobuz-player-player" }
 qobuz-player-mpris = { version = "*", path = "../qobuz-player-mpris" }
 qobuz-player-connect = { version = "*", path = "../qobuz-player-connect" }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }

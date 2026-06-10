@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use qobuz_player_controls::{
-    AppResult, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
+use qobuz_player_player::AppResult;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use crate::client::DisconnectClient;

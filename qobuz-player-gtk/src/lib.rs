@@ -3,14 +3,15 @@ use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 use adw::{Application, prelude::*};
 use libadwaita::{self as adw, ApplicationWindow};
 use qobuz_player_controls::{
-    AppResult, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    VolumeReceiver,
+    ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    controls::Controls, tracklist::Tracklist,
+};
+use qobuz_player_player::{
+    AppResult,
     client::{Client, exchange_oauth_code},
-    controls::Controls,
     database::{Credentials, Database},
     error::Error,
     notification::{Notification, NotificationBroadcast},
-    tracklist::Tracklist,
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
 use webkit6::{WebView, prelude::*};

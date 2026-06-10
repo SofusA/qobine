@@ -2,7 +2,7 @@ use adw::prelude::*;
 use gtk::gdk;
 use gtk4 as gtk;
 use libadwaita as adw;
-use qobuz_player_controls::client::Client;
+use qobuz_player_player::client::Client;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

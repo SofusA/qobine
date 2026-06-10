@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use qobuz_player_client::stream::flac_source_stream::SeekableStreamReader;
+use qobuz_player_controls::VolumeReceiver;
 use rodio::cpal::traits::HostTrait;
 use rodio::queue::queue;
 use rodio::{Decoder, DeviceTrait, Player, Source};
@@ -14,9 +15,9 @@ use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
+use crate::AppResult;
 use crate::error::Error;
 use crate::stderr_redirect::silence_stderr;
-use crate::{AppResult, VolumeReceiver};
 
 pub struct Sink {
     sink: Option<Player>,

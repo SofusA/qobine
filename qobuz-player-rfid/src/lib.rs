@@ -1,10 +1,9 @@
-use qobuz_player_controls::{
-    AppResult, TracklistReceiver,
-    controls::Controls,
+use qobuz_player_controls::{TracklistReceiver, controls::Controls, tracklist::TracklistType};
+use qobuz_player_player::{
+    AppResult,
     database::{Database, ReferenceType},
     error::Error,
-    notification::NotificationBroadcast,
-    tracklist::TracklistType,
+    notification::{Notification, NotificationBroadcast},
 };
 use reqwest::{RequestBuilder, header::CONTENT_TYPE};
 use std::sync::Arc;
@@ -190,9 +189,9 @@ pub async fn link(state: RfidState, request: ReferenceType, broadcast: Arc<Notif
         ReferenceType::Playlist(_) => "playlist",
     };
 
-    broadcast.send(qobuz_player_controls::notification::Notification::Info(
-        format!("Scan rfid to link {type_string}"),
-    ));
+    broadcast.send(Notification::Info(format!(
+        "Scan rfid to link {type_string}"
+    )));
 
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -200,9 +199,7 @@ pub async fn link(state: RfidState, request: ReferenceType, broadcast: Arc<Notif
         let request_ongoing = state.link_request.lock().await.is_some();
 
         if request_ongoing {
-            broadcast.send(qobuz_player_controls::notification::Notification::Warning(
-                "Scan cancelled".to_string(),
-            ));
+            broadcast.send(Notification::Warning("Scan cancelled".to_string()));
             set_state(&state, None).await;
         }
     });
@@ -313,9 +310,7 @@ async fn submit_link(
 
         match request.send().await.and_then(|x| x.error_for_status()) {
             Ok(_) => {
-                broadcast.send(qobuz_player_controls::notification::Notification::Success(
-                    "Link completed".to_string(),
-                ));
+                broadcast.send(Notification::Success("Link completed".to_string()));
                 set_state(&state, None).await;
             }
             Err(err) => {
@@ -331,15 +326,11 @@ async fn submit_link(
 
     match database.add_rfid_reference(rfid_id, reference).await {
         Ok(_) => {
-            broadcast.send(qobuz_player_controls::notification::Notification::Success(
-                "Link completed".to_string(),
-            ));
+            broadcast.send(Notification::Success("Link completed".to_string()));
             set_state(&state, None).await;
         }
         Err(err) => {
-            broadcast.send(qobuz_player_controls::notification::Notification::Error(
-                err.to_string(),
-            ));
+            broadcast.send(Notification::Error(err.to_string()));
         }
     };
 }
