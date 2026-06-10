@@ -1,6 +1,9 @@
 # qobuz-player
 A tui Qobuz client.
 
+#### Keyboard Shortcuts
+Press <kbd>?</kbd> for an overview of all available keyboard shortcuts
+
 ## Installation
 ### Fonts
 The terminal ui needs a [nerdfont](https://www.nerdfonts.com/) to display icons for explicit and hi-resolution.
