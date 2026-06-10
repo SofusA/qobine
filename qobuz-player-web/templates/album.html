@@ -1,130 +1,126 @@
-@defer (base.html; playing_info=playing_info) {
-  <div class="flex flex-col gap-4">
-    <!-- Hero Section -->
-    <div
-      class="pt-safe-or-4 relative flex origin-top flex-col items-center gap-6 overflow-hidden bg-gray-900 pb-8 shadow-xl"
-    >
-      @defer (background-blur.html; image=album.image) {}
+<div class="flex flex-col gap-4">
+  <!-- Hero Section -->
+  <div
+    class="pt-safe-or-4 relative flex origin-top flex-col items-center gap-6 overflow-hidden bg-gray-900 pb-8 shadow-xl"
+  >
+    @defer (background-blur.html; image=album.image) {}
 
-      <div class="z-10 flex flex-col items-center gap-6 px-4 text-center">
-        <!-- Artwork -->
-        <div
-          class="aspect-square w-48 overflow-hidden rounded-lg shadow-2xl sm:w-64"
+    <div class="z-10 flex flex-col items-center gap-6 px-4 text-center">
+      <!-- Artwork -->
+      <div
+        class="aspect-square w-48 overflow-hidden rounded-lg shadow-2xl sm:w-64"
+      >
+        <img
+          src="{{ album.image }}"
+          alt="{{ album.title }}"
+          class="h-full w-full object-cover"
+        />
+      </div>
+
+      <!-- Info -->
+      <div class="flex flex-col gap-2">
+        <h1
+          class="text-3xl font-bold tracking-tight text-white drop-shadow-md md:text-4xl"
         >
-          <img
-            src="{{ album.image }}"
-            alt="{{ album.title }}"
-            class="h-full w-full object-cover"
-          />
-        </div>
-
-        <!-- Info -->
-        <div class="flex flex-col gap-2">
-          <h1
-            class="text-3xl font-bold tracking-tight text-white drop-shadow-md md:text-4xl"
-          >
-            {{ album.title }}
-          </h1>
-          <a
-            href="/artist/{{ album.artist.id }}"
-            class="text-xl font-medium text-gray-200 transition-colors hover:text-white hover:underline"
-          >
-            {{ album.artist.name }}
-          </a>
-          <div
-            class="flex flex-wrap justify-center gap-2 text-sm text-gray-400"
-          >
-            <span>{{ album.release_year }}</span>
-            <span>•</span>
-            <span>{{ duration }} minutes</span>
-            @defer (
-              info.html;
-              hires_available=album.hires_available;
-              explicit=album.explicit
-            ) {}
-          </div>
-        </div>
-
-        <div class="flex justify-center gap-4 *:h-12">
-          <button
-            class="btn btn-primary btn-play"
-            hx-swap="none"
-            hx-put="/album/{{ album.id }}/play"
-          >
-            <span class="size-6">
-              @defer (icons/play.html) {}
-            </span>
-            <span> Play </span>
-          </button>
-
+          {{ album.title }}
+        </h1>
+        <a
+          href="/artist/{{ album.artist.id }}"
+          class="text-xl font-medium text-gray-200 transition-colors hover:text-white hover:underline"
+        >
+          {{ album.artist.name }}
+        </a>
+        <div class="flex flex-wrap justify-center gap-2 text-sm text-gray-400">
+          <span>{{ album.release_year }}</span>
+          <span>•</span>
+          <span>{{ duration }} minutes</span>
           @defer (
-            toggle-favorite.html;
-            id=album.id;
-            is_favorite=is_favorite;
-            api="/album"
+            info.html;
+            hires_available=album.hires_available;
+            explicit=album.explicit
           ) {}
+        </div>
+      </div>
 
-          @if (rfid) {
-            <button
-              class="btn btn-secondary btn-icon"
-              hx-swap="none"
-              hx-put="{{ album.id }}/link"
-              title="Link RFID"
-            >
-              @defer (icons/link.html) {}
-            </button>
-          }
-          <div class="action-group btn btn-secondary btn-icon relative">
-            <span
-              class="pointer-events-none absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-white"
-            >
-              @defer (icons/ellipsis-horizontal.html) {}
-            </span>
-            <input type="hidden" name="id" value="{{ album.id }}" />
-            <select
-              name="action"
-              class="absolute inset-0 z-10 size-full cursor-pointer appearance-none opacity-0"
-              hx-trigger="change"
-              hx-put="/album/action"
-              hx-swap="none"
-              hx-include="closest .action-group"
-              hx-on::after-request="this.value=''"
-            >
-              <option value="" disabled hidden selected>Choose action</option>
-              <option value="add_to_queue">Add to queue</option>
-              <option value="play_next">Play next</option>
-            </select>
-          </div>
+      <div class="flex justify-center gap-4 *:h-12">
+        <button
+          class="btn btn-primary btn-play"
+          hx-swap="none"
+          hx-put="/album/{{ album.id }}/play"
+        >
+          <span class="size-6">
+            @defer (icons/play.html) {}
+          </span>
+          <span> Play </span>
+        </button>
+
+        @defer (
+          toggle-favorite.html;
+          id=album.id;
+          is_favorite=is_favorite;
+          api="/album"
+        ) {}
+
+        @if (rfid) {
+          <button
+            class="btn btn-secondary btn-icon"
+            hx-swap="none"
+            hx-put="{{ album.id }}/link"
+            title="Link RFID"
+          >
+            @defer (icons/link.html) {}
+          </button>
+        }
+        <div class="action-group btn btn-secondary btn-icon relative">
+          <span
+            class="pointer-events-none absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-white"
+          >
+            @defer (icons/ellipsis-horizontal.html) {}
+          </span>
+          <input type="hidden" name="id" value="{{ album.id }}" />
+          <select
+            name="action"
+            class="absolute inset-0 z-10 size-full cursor-pointer appearance-none opacity-0"
+            hx-trigger="change"
+            hx-put="/album/action"
+            hx-swap="none"
+            hx-include="closest .action-group"
+            hx-on::after-request="this.value=''"
+          >
+            <option value="" disabled hidden selected>Choose action</option>
+            <option value="add_to_queue">Add to queue</option>
+            <option value="play_next">Play next</option>
+          </select>
         </div>
       </div>
     </div>
-
-    <!-- Tracklist -->
-    <div class="animate-in fade-in slide-in-from-bottom-4 px-4 duration-300">
-      <div class="surface overflow-hidden">
-        @defer (
-          album-tracks.html;
-          album=album;
-          playing_info=playing_info;
-          click=click
-        ) {}
-      </div>
-    </div>
-
-    @if (suggested_albums) {
-      <div class="flex flex-col gap-4 px-4 pb-4">
-        <h3 class="text-xl font-bold text-white">Album suggestions</h3>
-        @defer (list-albums-vertical.html; albums=suggested_albums) {}
-      </div>
-    }
-    @if (album.description) {
-      <div class="px-4">
-        @defer (
-          description.html;
-          description=album.description;
-          title=album.title
-        ) {}
-      </div>
-    }
   </div>
-}
+
+  <!-- Tracklist -->
+  <div class="animate-in fade-in slide-in-from-bottom-4 px-4 duration-300">
+    <div class="surface overflow-hidden">
+      @defer (
+        album-tracks.html;
+        album=album;
+        playing_info=playing_info;
+        click=click
+      ) {}
+    </div>
+  </div>
+
+  @if (suggested_albums) {
+    <div class="flex flex-col gap-4 px-4 pb-4">
+      <h3 class="text-xl font-bold text-white">Album suggestions</h3>
+      @defer (list-albums-vertical.html; albums=suggested_albums) {}
+    </div>
+  }
+  @if (album.description) {
+    <div class="px-4">
+      @defer (
+        description.html;
+        description=album.description;
+        title=album.title
+      ) {}
+    </div>
+  }
+</div>

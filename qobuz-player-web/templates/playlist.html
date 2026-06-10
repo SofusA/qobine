@@ -1,152 +1,146 @@
-@defer (base.html; playing_info=playing_info) {
-  <div class="relative flex flex-col gap-8">
-    <!-- Hero Section -->
+<div class="relative flex flex-col gap-8">
+  <!-- Hero Section -->
+  <div
+    class="pt-safe-or-4 animate-hero-scroll relative flex origin-top flex-col items-center gap-6 overflow-hidden bg-gray-900 pb-8 shadow-xl"
+  >
+    <!-- Background Blur -->
     <div
-      class="pt-safe-or-4 animate-hero-scroll relative flex origin-top flex-col items-center gap-6 overflow-hidden bg-gray-900 pb-8 shadow-xl"
+      class="absolute inset-0 z-10 scale-125 bg-cover bg-center bg-no-repeat opacity-30 blur-3xl"
+      style="@if(playlist.image){background-image: url({{ playlist.image }});}"
+    ></div>
+
+    <div
+      class="relative z-10 flex flex-col items-center gap-6 px-4 text-center"
     >
-      <!-- Background Blur -->
+      <!-- Artwork -->
       <div
-        class="absolute inset-0 z-10 scale-125 bg-cover bg-center bg-no-repeat opacity-30 blur-3xl"
-        style="@if(playlist.image){background-image: url({{
-          playlist.image
-        }});}"
-      ></div>
-
-      <div
-        class="relative z-10 flex flex-col items-center gap-6 px-4 text-center"
+        class="aspect-square w-48 overflow-hidden rounded-lg shadow-2xl sm:w-64"
       >
-        <!-- Artwork -->
-        <div
-          class="aspect-square w-48 overflow-hidden rounded-lg shadow-2xl sm:w-64"
-        >
-          @if (playlist.image) {
-            <img
-              src="{{ playlist.image }}"
-              alt="{{ playlist.title }}"
-              class="h-full w-full object-cover"
-            />
-          } @else {
-            <div
-              class="flex h-full w-full items-center justify-center bg-gray-800 text-gray-600"
-            >
-              @defer (icons/musical-note.html) {}
-            </div>
-          }
-        </div>
-
-        <!-- Info -->
-        <div class="flex flex-col gap-2">
-          <h1
-            class="text-3xl font-bold tracking-tight text-white drop-shadow-md md:text-4xl"
-          >
-            {{ playlist.title }}
-          </h1>
+        @if (playlist.image) {
+          <img
+            src="{{ playlist.image }}"
+            alt="{{ playlist.title }}"
+            class="h-full w-full object-cover"
+          />
+        } @else {
           <div
-            class="flex flex-wrap justify-center gap-2 text-sm text-gray-400"
+            class="flex h-full w-full items-center justify-center bg-gray-800 text-gray-600"
           >
-            <span>{{ playlist.owner.name }}</span>
-            <span>•</span>
-            <span>{{ playlist.tracks_count }} tracks</span>
-            <span>•</span>
-            <span>{{ duration }} minutes</span>
+            @defer (icons/musical-note.html) {}
           </div>
+        }
+      </div>
+
+      <!-- Info -->
+      <div class="flex flex-col gap-2">
+        <h1
+          class="text-3xl font-bold tracking-tight text-white drop-shadow-md md:text-4xl"
+        >
+          {{ playlist.title }}
+        </h1>
+        <div class="flex flex-wrap justify-center gap-2 text-sm text-gray-400">
+          <span>{{ playlist.owner.name }}</span>
+          <span>•</span>
+          <span>{{ playlist.tracks_count }} tracks</span>
+          <span>•</span>
+          <span>{{ duration }} minutes</span>
         </div>
+      </div>
 
-        <!-- Actions -->
-        <div class="flex justify-center gap-4 *:h-12">
+      <!-- Actions -->
+      <div class="flex justify-center gap-4 *:h-12">
+        <button
+          class="btn btn-primary btn-play"
+          hx-swap="none"
+          hx-put="/playlist/{{ playlist.id }}/play"
+        >
+          <span class="size-6">
+            @defer (icons/play.html) {}
+          </span>
+          <span> Play </span>
+        </button>
+
+        <button
+          class="btn btn-secondary btn-icon"
+          hx-swap="none"
+          hx-put="/playlist/{{ playlist.id }}/play/shuffle"
+          title="Shuffle"
+        >
+          @defer (icons/shuffle.html) {}
+        </button>
+
+        @if (!playlist.is_owned) {
+          @defer (
+            toggle-favorite.html;
+            id=playlist.id;
+            is_favorite=is_favorite;
+            api="/playlist"
+          ) {}
+        } @else {
           <button
-            class="btn btn-primary btn-play"
+            class="btn btn-danger btn-icon"
             hx-swap="none"
-            hx-put="/playlist/{{ playlist.id }}/play"
+            hx-delete="{{ playlist.id }}"
+            title="Delete Playlist"
+            confirm="Are you sure you want to delete this playlist?"
           >
-            <span class="size-6">
-              @defer (icons/play.html) {}
-            </span>
-            <span> Play </span>
+            @defer (icons/trash.html) {}
           </button>
-
+          <button
+            class="btn btn-secondary btn-icon"
+            hx-get="/playlist/{{ playlist.id }}/tracks/edit"
+            hx-target="#tracks"
+            title="Edit Playlist"
+          >
+            @defer (icons/pencil-square.html) {}
+          </button>
+        }
+        @if (rfid) {
           <button
             class="btn btn-secondary btn-icon"
             hx-swap="none"
-            hx-put="/playlist/{{ playlist.id }}/play/shuffle"
-            title="Shuffle"
+            hx-put="{{ playlist.id }}/link"
+            title="Link RFID"
           >
-            @defer (icons/shuffle.html) {}
+            @defer (icons/link.html) {}
           </button>
-
-          @if (!playlist.is_owned) {
-            @defer (
-              toggle-favorite.html;
-              id=playlist.id;
-              is_favorite=is_favorite;
-              api="/playlist"
-            ) {}
-          } @else {
-            <button
-              class="btn btn-danger btn-icon"
-              hx-swap="none"
-              hx-delete="{{ playlist.id }}"
-              title="Delete Playlist"
-              confirm="Are you sure you want to delete this playlist?"
-            >
-              @defer (icons/trash.html) {}
-            </button>
-            <button
-              class="btn btn-secondary btn-icon"
-              hx-get="/playlist/{{ playlist.id }}/tracks/edit"
-              hx-target="#tracks"
-              title="Edit Playlist"
-            >
-              @defer (icons/pencil-square.html) {}
-            </button>
-          }
-          @if (rfid) {
-            <button
-              class="btn btn-secondary btn-icon"
-              hx-swap="none"
-              hx-put="{{ playlist.id }}/link"
-              title="Link RFID"
-            >
-              @defer (icons/link.html) {}
-            </button>
-          }
-          <div class="action-group btn btn-secondary btn-icon relative">
-            <span
-              class="pointer-events-none absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-white"
-            >
-              @defer (icons/ellipsis-horizontal.html) {}
-            </span>
-            <input type="hidden" name="id" value="{{ playlist.id }}" />
-            <select
-              name="action"
-              class="absolute inset-0 z-10 size-full cursor-pointer appearance-none opacity-0"
-              hx-trigger="change"
-              hx-put="/playlist/action"
-              hx-swap="none"
-              hx-include="closest .action-group"
-              hx-on::after-request="this.value=''"
-            >
-              <option value="" disabled hidden selected>Choose action</option>
-              <option value="add_to_queue">Add to queue</option>
-              <option value="play_next">Play next</option>
-            </select>
-          </div>
+        }
+        <div class="action-group btn btn-secondary btn-icon relative">
+          <span
+            class="pointer-events-none absolute inset-0 flex items-center justify-center text-gray-400 group-hover:text-white"
+          >
+            @defer (icons/ellipsis-horizontal.html) {}
+          </span>
+          <input type="hidden" name="id" value="{{ playlist.id }}" />
+          <select
+            name="action"
+            class="absolute inset-0 z-10 size-full cursor-pointer appearance-none opacity-0"
+            hx-trigger="change"
+            hx-put="/playlist/action"
+            hx-swap="none"
+            hx-include="closest .action-group"
+            hx-on::after-request="this.value=''"
+          >
+            <option value="" disabled hidden selected>Choose action</option>
+            <option value="add_to_queue">Add to queue</option>
+            <option value="play_next">Play next</option>
+          </select>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Tracklist -->
-    <div class="animate-in fade-in slide-in-from-bottom-4 px-4 duration-300">
-      <div class="surface overflow-hidden">
-        @defer (
-          playlist-tracks.html;
-          playing_info=playing_info;
-          playlist=playlist;
-          click=click;
-          playing_index=playing_index;
-          use_playing_index=use_playing_index
-        ) {}
-      </div>
+  <!-- Tracklist -->
+  <div class="animate-in fade-in slide-in-from-bottom-4 px-4 duration-300">
+    <div class="surface overflow-hidden">
+      @defer (
+        playlist-tracks.html;
+        playing_info=playing_info;
+        playlist=playlist;
+        click=click;
+        playing_index=playing_index;
+        use_playing_index=use_playing_index
+      ) {}
     </div>
   </div>
-}
+</div>

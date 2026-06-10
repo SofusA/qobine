@@ -1,6 +1,6 @@
 <div
   hx-get="/controls"
-  hx-swap="morph:outerHTML"
+  hx-swap="outerHTML"
   hx-trigger="tracklist"
   data-sse="tracklist"
   hx-target="#player-controls"
@@ -11,12 +11,6 @@
       <div
         class="relative flex items-center justify-between gap-2 rounded-md bg-gray-900/70 p-2 backdrop-blur-md"
       >
-        <a
-          href="/now-playing"
-          hx-target="body"
-          class="absolute inset-0 z-0 rounded-md"
-        ></a>
-
         <div
           class="pointer-events-none relative z-10 flex w-full items-center gap-2 overflow-hidden"
         >
@@ -28,7 +22,7 @@
           ></div>
           <a
             href="{{ playing_info.entity_link }}"
-            hx-target="body"
+            hx-target="unset"
             class="pointer-events-auto flex flex-wrap gap-2 overflow-hidden leading-none hover:underline"
           >
             <span class="truncate">{{ playing_info.entity_title }}</span>

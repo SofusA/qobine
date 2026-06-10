@@ -1,9 +1,17 @@
 @defer (base.html; active_page="NowPlaying"; playing_info=playing_info) {
-  @defer (
-    now-playing-content.html;
-    playing_info=playing_info;
-    position_string=position_string;
-    duration_string=duration_string
+  <div
+    hx-get="/now-playing/content"
+    hx-trigger="tracklist"
+    data-sse="tracklist"
+    hx-target="#now-playing"
+    hx-swap="outerHTML"
+  >
+    @defer (
+      now-playing-content.html;
+      playing_info=playing_info;
+      position_string=position_string;
+      duration_string=duration_string
     disconnect_state=disconnect_state
-  ) {}
+    ) {}
+  </div>
 }

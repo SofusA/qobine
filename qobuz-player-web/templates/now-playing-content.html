@@ -1,10 +1,6 @@
 <div
+  id="now-playing"
   class="pb-safe-offset-14 fixed inset-0 z-0 flex flex-col overflow-hidden"
-  hx-get="/now-playing/content"
-  hx-trigger="tracklist"
-  data-sse="tracklist"
-  hx-target="this"
-  hx-swap="morph:outerHTML"
 >
   @defer (background-blur.html; image=playing_info.cover_image) {}
 
@@ -45,7 +41,7 @@
         </div>
         <a
           href="{{ playing_info.artist_link }}"
-          hx-target="body"
+          hx-target="unset"
           class="truncate text-base font-medium text-gray-400 transition-colors hover:text-white sm:text-lg"
         >
           {{ playing_info.artist_name }}
@@ -55,7 +51,7 @@
         >
           <a
             href="{{ playing_info.entity_link }}"
-            hx-target="body"
+            hx-target="unset"
             class="truncate transition-colors hover:text-gray-300"
           >
             {{ playing_info.entity_title }}

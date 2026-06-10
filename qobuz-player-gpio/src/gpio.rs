@@ -1,4 +1,4 @@
-use qobuz_player_controls::{AppResult, StatusReceiver, error::Error};
+use qobuz_player_controls::{AppResult, Status, StatusReceiver, error::Error};
 use rppal::gpio::Gpio;
 use tokio::sync::watch;
 
@@ -6,7 +6,7 @@ const GPIO: u8 = 23;
 
 pub async fn init(
     mut status_receiver: StatusReceiver,
-    active_receiver: watch::Receiver<bool>,
+    mut active_receiver: watch::Receiver<bool>,
 ) -> AppResult<()> {
     let mut pin = Gpio::new()
         .or(Err(Error::GpioUnavailable { pin: GPIO }))?
@@ -16,24 +16,51 @@ pub async fn init(
     tracing::info!("Pin claimed");
 
     loop {
-        if status_receiver.changed().await.is_ok() {
-            let status = status_receiver.borrow_and_update();
-            let is_active = *active_receiver.borrow();
-            if !is_active {
-                continue;
+        tokio::select! {
+            result = status_receiver.changed() => {
+                if result.is_err() {
+                    break;
+                }
+
+                update_gpio(
+                    &mut pin,
+                    *status_receiver.borrow_and_update(),
+                    *active_receiver.borrow(),
+                );
             }
 
-            match *status {
-                qobuz_player_controls::Status::Paused => {
-                    pin.set_low();
-                    tracing::info!("Gpio low");
+            result = active_receiver.changed() => {
+                if result.is_err() {
+                    break;
                 }
-                qobuz_player_controls::Status::Playing
-                | qobuz_player_controls::Status::Buffering => {
-                    pin.set_high();
-                    tracing::info!("Gpio high");
-                }
+
+                update_gpio(
+                    &mut pin,
+                    *status_receiver.borrow(),
+                    *active_receiver.borrow_and_update(),
+                );
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn update_gpio(pin: &mut rppal::gpio::OutputPin, status: Status, is_active: bool) {
+    if !is_active {
+        pin.set_low();
+        tracing::info!("Gpio low");
+        return;
+    }
+
+    match status {
+        Status::Paused => {
+            pin.set_low();
+            tracing::info!("Gpio low");
+        }
+        Status::Playing | Status::Buffering => {
+            pin.set_high();
+            tracing::info!("Gpio high");
         }
     }
 }
