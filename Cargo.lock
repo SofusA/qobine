@@ -4241,6 +4241,7 @@ name = "qobuz-player-gpio"
 version = "1.0.0"
 dependencies = [
  "qobuz-player-controls",
+ "qobuz-player-player",
  "rppal",
  "tokio",
  "tracing",

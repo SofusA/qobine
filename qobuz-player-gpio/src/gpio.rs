@@ -1,4 +1,5 @@
-use qobuz_player_controls::{AppResult, Status, StatusReceiver, error::Error};
+use qobuz_player_controls::{Status, StatusReceiver};
+use qobuz_player_player::{AppResult, error::Error};
 use rppal::gpio::Gpio;
 use tokio::sync::watch;
 
