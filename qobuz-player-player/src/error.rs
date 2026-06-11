@@ -28,7 +28,10 @@ pub enum Error {
         message: String,
     },
     PoisonError,
-    SendError,
+    #[snafu(display("{message}"))]
+    SendError {
+        message: String,
+    },
     #[snafu(display("Unable to init mpris. Is address already taken?"))]
     MprisInitError,
     #[snafu(display("Unable to set mpris property: {property}"))]
@@ -92,8 +95,10 @@ impl From<sqlx::Error> for Error {
 }
 
 impl<T> From<tokio::sync::watch::error::SendError<T>> for Error {
-    fn from(_: tokio::sync::watch::error::SendError<T>) -> Self {
-        Error::SendError
+    fn from(source: tokio::sync::watch::error::SendError<T>) -> Self {
+        Error::SendError {
+            message: source.to_string(),
+        }
     }
 }
 

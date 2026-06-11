@@ -26,15 +26,17 @@ enum PreferenceFocus {
     CacheTimeToLive,
     AudioQuality,
     FileBasedStreaming,
+    AutoPlay,
     Logout,
 }
 
 impl PreferenceFocus {
-    const ALL: [PreferenceFocus; 5] = [
+    const ALL: [PreferenceFocus; 6] = [
         PreferenceFocus::CacheDirectory,
         PreferenceFocus::CacheTimeToLive,
         PreferenceFocus::AudioQuality,
         PreferenceFocus::FileBasedStreaming,
+        PreferenceFocus::AutoPlay,
         PreferenceFocus::Logout,
     ];
 
@@ -120,6 +122,7 @@ impl PreferencesState {
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Min(0),
             ])
             .split(inner);
@@ -128,7 +131,8 @@ impl PreferencesState {
         self.render_cache_ttl(frame, rows[1]);
         self.render_audio_quality(frame, rows[2]);
         self.render_file_based_streaming(frame, rows[3]);
-        self.render_logout(frame, rows[4]);
+        self.render_auto_play(frame, rows[4]);
+        self.render_logout(frame, rows[5]);
     }
 
     fn render_cache_directory(&mut self, frame: &mut Frame, area: Rect) {
@@ -234,6 +238,30 @@ impl PreferencesState {
             Block::default()
                 .borders(Borders::ALL)
                 .title("File based streaming"),
+        );
+
+        frame.render_widget(paragraph, area);
+    }
+
+    fn render_auto_play(&self, frame: &mut Frame, area: Rect) {
+        let focused = self.focus == Some(PreferenceFocus::AutoPlay);
+
+        let style = if focused {
+            HIGHLIGHT_TEXT_STYLE
+        } else {
+            Style::default()
+        };
+
+        let value = if self.configuration.auto_play {
+            "enabled"
+        } else {
+            "disabled"
+        };
+
+        let paragraph = Paragraph::new(format!("[ {} ]", value)).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Add similar tracks to empty queue"),
         );
 
         frame.render_widget(paragraph, area);
@@ -355,6 +383,13 @@ impl PreferencesState {
                 self.configuration.use_file_based_streaming = new_value;
             }
 
+            PreferenceFocus::AutoPlay => {
+                let new_value = !self.configuration.auto_play;
+
+                controls.set_auto_play(new_value);
+                self.configuration.auto_play = new_value;
+            }
+
             _ => {}
         }
     }
@@ -381,6 +416,13 @@ impl PreferencesState {
 
                 controls.set_use_file_based_streaming(new_value);
                 self.configuration.use_file_based_streaming = new_value;
+            }
+
+            PreferenceFocus::AutoPlay => {
+                let new_value = !self.configuration.auto_play;
+
+                controls.set_auto_play(new_value);
+                self.configuration.auto_play = new_value;
             }
 
             _ => {}

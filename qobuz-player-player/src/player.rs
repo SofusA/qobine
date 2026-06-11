@@ -51,6 +51,7 @@ pub struct Player {
     active: Sender<bool>,
     active_rx: Receiver<bool>,
     auto_play: Sender<bool>,
+    auto_play_rx: Receiver<bool>,
 }
 
 impl Player {
@@ -68,7 +69,7 @@ impl Player {
         preferred_device_id: Option<String>,
     ) -> AppResult<Self> {
         let (volume, volume_receiver) = watch::channel(volume);
-        let (auto_play, _) = watch::channel(enable_auto_play);
+        let (auto_play, auto_play_rx) = watch::channel(enable_auto_play);
 
         let sink = Sink::new(volume_receiver, preferred_device_id)?;
 
@@ -106,6 +107,7 @@ impl Player {
             active,
             active_rx,
             auto_play,
+            auto_play_rx,
         })
     }
 
@@ -122,7 +124,7 @@ impl Player {
     }
 
     pub fn auto_play(&self) -> AutoPlayReceiver {
-        self.auto_play.subscribe()
+        self.auto_play_rx.clone()
     }
 
     pub fn position(&self) -> PositionReceiver {
