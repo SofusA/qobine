@@ -121,7 +121,15 @@ fn preferences_page(
         audio_cache_ttl_sender,
         &configuration,
     ));
-    page.add(&audio_group(controls, volume_receiver, &configuration));
+
+    page.add(&audio_group(
+        controls.clone(),
+        volume_receiver,
+        &configuration,
+    ));
+
+    page.add(&queue_group(controls, &configuration));
+
     page.add(&logout_group(exit_sender, database));
 
     page
@@ -233,7 +241,6 @@ fn cache_ttl_row(
             3 => 2160,
             _ => 0,
         };
-        println!("changed to: {hours}");
         audio_cache_ttl_sender.send(hours).unwrap();
     });
 
@@ -313,6 +320,22 @@ fn audio_group(
     volume.set_activatable_widget(Some(&scale));
 
     group.add(&volume);
+    group
+}
+
+fn queue_group(controls: Controls, configuration: &Configuration) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Queue");
+
+    let auto_play = adw::SwitchRow::new();
+    auto_play.set_title("Add similar tracks to empty queue");
+    auto_play.set_active(configuration.auto_play);
+
+    auto_play.connect_active_notify(move |row| {
+        controls.set_auto_play(row.is_active());
+    });
+
+    group.add(&auto_play);
     group
 }
 
