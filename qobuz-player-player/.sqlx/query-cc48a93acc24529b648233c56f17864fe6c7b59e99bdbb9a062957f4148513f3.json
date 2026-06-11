@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n             update configuration\n             set use_file_based_streaming=?1\n             where rowid = 1\n             ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "cc48a93acc24529b648233c56f17864fe6c7b59e99bdbb9a062957f4148513f3"
+}

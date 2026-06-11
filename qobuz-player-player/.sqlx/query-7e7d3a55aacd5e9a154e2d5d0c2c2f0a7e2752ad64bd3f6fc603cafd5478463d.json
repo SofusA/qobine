@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n             update configuration\n             set volume=?1\n             where rowid = 1\n             ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7e7d3a55aacd5e9a154e2d5d0c2c2f0a7e2752ad64bd3f6fc603cafd5478463d"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n             update configuration\n             set cache_directory=?1\n             where rowid = 1\n             ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "9c5048df09d971895e4c17978ced71618e34de0173f494775156065b24c23a05"
+}

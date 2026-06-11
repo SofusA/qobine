@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "\n             select\n                 cache_directory,\n                 cache_ttl_hours,\n                 volume,\n                 max_audio_quality,\n                 use_file_based_streaming,\n                 disconnect_server_url,\n                 disconnect_password,\n                 device_name,\n                 enable_disconnect,\n                 auto_play\n             from configuration where rowid = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "cache_directory",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "cache_ttl_hours",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "volume",
+        "ordinal": 2,
+        "type_info": "Float"
+      },
+      {
+        "name": "max_audio_quality",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "use_file_based_streaming",
+        "ordinal": 4,
+        "type_info": "Bool"
+      },
+      {
+        "name": "disconnect_server_url",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "disconnect_password",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "device_name",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "enable_disconnect",
+        "ordinal": 8,
+        "type_info": "Bool"
+      },
+      {
+        "name": "auto_play",
+        "ordinal": 9,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "75718f77687d644d08e41cd56753a25cf4db0408e68686258e8addf0fd0ea438"
+}

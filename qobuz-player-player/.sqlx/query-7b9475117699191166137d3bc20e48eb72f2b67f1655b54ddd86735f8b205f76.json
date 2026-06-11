@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n             update configuration\n             set auto_play=?1\n             where rowid = 1\n             ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "7b9475117699191166137d3bc20e48eb72f2b67f1655b54ddd86735f8b205f76"
+}
