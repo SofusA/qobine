@@ -20,8 +20,17 @@ impl App {
 
         self.render_inner(frame);
 
-        if matches!(self.app_state, AppState::Help) {
-            render_help(frame);
+        match self.app_state {
+            AppState::Normal | AppState::Popup(_) => {}
+            AppState::Help => {
+                render_help(frame);
+            }
+            AppState::ConnectPopup(selected) => {
+                let available_devices: Vec<String> =
+                    self.connect_available_devices.borrow().to_vec();
+                let active_device: String = self.connect_active_device.borrow().to_string();
+                render_connect(frame, available_devices, active_device, selected);
+            }
         }
 
         self.render_notifications(frame, area);
@@ -195,6 +204,60 @@ pub fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
     horizontal[1]
 }
 
+fn render_connect(
+    frame: &mut Frame,
+    available_devices: Vec<String>,
+    active_device: String,
+    selected_device: usize,
+) {
+    let title = "Select output Connect device";
+
+    let items: Vec<ListItem> = available_devices
+        .iter()
+        .map(|device| {
+            if *device == active_device {
+                ListItem::new(Line::from(vec![
+                    Span::raw(device.clone()),
+                    Span::styled(" (active)", Style::new().dim()),
+                ]))
+            } else {
+                ListItem::new(device.clone())
+            }
+        })
+        .collect();
+
+    let content_width = available_devices
+        .iter()
+        .map(|d| {
+            if *d == active_device {
+                d.len() + " (active)".len()
+            } else {
+                d.len()
+            }
+        })
+        .max()
+        .unwrap_or(0);
+
+    let width = std::cmp::max(content_width, title.len());
+
+    let area = center(
+        frame.area(),
+        Constraint::Length(width as u16 + 6),
+        Constraint::Length(items.len() as u16 + 2),
+    );
+
+    let list = List::new(items)
+        .block(block(Some(title)))
+        .highlight_style(HIGHLIGHT_STYLE)
+        .highlight_symbol("❯ ");
+
+    let mut state = ListState::default();
+    state.select(Some(selected_device));
+
+    frame.render_widget(Clear, area);
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
 fn render_help(frame: &mut Frame) {
     let rows = [
         ["Toggle focus mode", "F"],
@@ -222,6 +285,7 @@ fn render_help(frame: &mut Frame) {
         ["Move playlist track down", "d"],
         ["Selected info", "i"],
         ["Currently playing album info", "I"],
+        ["Select Connect device (if configured)", "c"],
         ["Exit", "q"],
     ];
 

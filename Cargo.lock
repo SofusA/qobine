@@ -4137,7 +4137,6 @@ name = "qobuz-player-cli"
 version = "1.0.0"
 dependencies = [
  "clap",
- "qobuz-player-controls",
  "qobuz-player-player",
  "time",
  "tokio",
@@ -4226,7 +4225,6 @@ dependencies = [
  "axum",
  "futures",
  "qobuz-player-controls",
- "qobuz-player-player",
  "serde",
  "serde_json",
  "tokio",
@@ -4316,7 +4314,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4331,6 +4328,7 @@ dependencies = [
  "qobuz-player-cli",
  "qobuz-player-connect",
  "qobuz-player-controls",
+ "qobuz-player-disconnect",
  "qobuz-player-mpris",
  "qobuz-player-player",
  "ratatui",

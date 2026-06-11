@@ -16,6 +16,7 @@ qobuz-player-player = { version = "*", path = "../qobuz-player-player" }
 qobuz-player-mpris = { version = "*", path = "../qobuz-player-mpris" }
 qobuz-player-connect = { version = "*", path = "../qobuz-player-connect" }
 qobuz-player-cli = { version = "*", path = "../qobuz-player-cli" }
+qobuz-player-disconnect = { version = "*", path = "../qobuz-player-disconnect" }
 
 ratatui.workspace = true
 crossterm.workspace = true

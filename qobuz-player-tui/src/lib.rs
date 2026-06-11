@@ -5,15 +5,13 @@ use favorites::FavoritesState;
 use qobuz_player_controls::{
     ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use qobuz_player_player::{
-    AppResult,
-    client::Client,
-    database::{Configuration, Database},
-    notification::NotificationBroadcast,
+    AppResult, client::Client, database::Database, notification::NotificationBroadcast,
 };
 use queue::QueueState;
 use ratatui::{prelude::*, widgets::*};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use ui::center;
 
 mod app;
@@ -39,9 +37,12 @@ pub async fn init(
     status_receiver: StatusReceiver,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
-    initial_configuration: Configuration,
     disable_tui_album_cover: bool,
     database: Arc<Database>,
+    connect_available_devices: watch::Receiver<Vec<String>>,
+    connect_active_device: watch::Receiver<String>,
+    set_connect_active_device: mpsc::UnboundedSender<String>,
+    disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) -> AppResult<()> {
     let mut terminal = ratatui::init();
 
@@ -57,10 +58,13 @@ pub async fn init(
     let (now_playing, current_image_url) =
         get_current_state_without_image(&tracklist_value, status_value);
 
+    let initial_configuration = database.get_configuration().await?;
+
     let mut app = App {
         broadcast,
         notifications: Default::default(),
         controls,
+        database,
         now_playing,
         full_screen: false,
         position: position_receiver,
@@ -81,10 +85,13 @@ pub async fn init(
             exit_sender.clone(),
             audio_cache_ttl_sender,
             initial_configuration,
-            database,
         ),
         client,
         favorite_ids: Default::default(),
+        connect_available_devices,
+        connect_active_device,
+        set_connect_active_device,
+        disconnect_client_config_sender,
     };
 
     app.update_favorites().await;

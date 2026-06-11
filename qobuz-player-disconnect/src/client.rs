@@ -156,7 +156,7 @@ impl DisconnectClient {
 
     pub async fn connect_and_listen(
         &mut self,
-        mut set_active_device_receiver: mpsc::UnboundedReceiver<String>,
+        set_active_device_receiver: &mut mpsc::UnboundedReceiver<String>,
     ) -> AppResult<()> {
         let url = format!(
             "{}/stream?secret={}&device_id={}",

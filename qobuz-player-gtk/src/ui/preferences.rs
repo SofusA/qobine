@@ -11,6 +11,7 @@ use libadwaita as adw;
 use qobuz_player_controls::ExitSender;
 use qobuz_player_controls::VolumeReceiver;
 use qobuz_player_controls::controls::Controls;
+use qobuz_player_disconnect::DisconnectClientConfig;
 use qobuz_player_player::AudioQuality;
 use qobuz_player_player::database::Configuration;
 use qobuz_player_player::database::Database;
@@ -40,6 +41,8 @@ pub fn build_preferences_menu(
     let quit_action = gio::SimpleAction::new("exit", None);
 
     quit_action.connect_activate({
+        let ui_event_sender = ui_event_sender.clone();
+
         move |_, _| {
             if let Err(error) = ui_event_sender.send(crate::UiEvent::Exit) {
                 tracing::error!("Error sending ui event: {error}");
@@ -63,6 +66,8 @@ pub fn build_preferences_menu(
             exit_sender,
             #[strong]
             audio_cache_ttl_sender,
+            #[strong]
+            ui_event_sender,
             move |_, _| {
                 show_preferences_dialog(
                     &app,
@@ -71,6 +76,7 @@ pub fn build_preferences_menu(
                     volume_receiver.clone(),
                     exit_sender.clone(),
                     audio_cache_ttl_sender.clone(),
+                    ui_event_sender.clone(),
                 );
             }
         )
@@ -88,6 +94,7 @@ fn show_preferences_dialog(
     volume_receiver: VolumeReceiver,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
+    ui_event_sender: UiEventSender,
 ) {
     let dialog = adw::PreferencesDialog::new();
 
@@ -98,6 +105,7 @@ fn show_preferences_dialog(
         volume_receiver,
         exit_sender,
         audio_cache_ttl_sender,
+        ui_event_sender,
     ));
     dialog.present(app.active_window().as_ref());
 }
@@ -109,6 +117,7 @@ fn preferences_page(
     volume_receiver: VolumeReceiver,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
+    ui_event_sender: UiEventSender,
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
     page.set_title("Preferences");
@@ -130,7 +139,8 @@ fn preferences_page(
 
     page.add(&queue_group(controls, &configuration));
 
-    page.add(&logout_group(exit_sender, database));
+    page.add(&logout_group(exit_sender, database.clone()));
+    page.add(&disconnect_group(&configuration, ui_event_sender, database));
 
     page
 }
@@ -358,5 +368,212 @@ fn logout_group(exit_sender: ExitSender, database: Arc<Database>) -> adw::Prefer
     });
 
     group.add(&logout);
+    group
+}
+
+fn disconnect_group(
+    configuration: &Configuration,
+    ui_event_sender: UiEventSender,
+    database: Arc<Database>,
+) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    group.set_title("Disconnect");
+
+    let enabled = adw::SwitchRow::new();
+    enabled.set_title("Enable disconnect");
+    enabled.set_active(configuration.enable_disconnect);
+
+    let server_row = adw::EntryRow::new();
+    server_row.set_title("Server URL");
+    server_row.set_text(
+        configuration
+            .disconnect_server_url
+            .as_deref()
+            .unwrap_or_default(),
+    );
+
+    let password_row = adw::EntryRow::new();
+    password_row.set_title("Password");
+    password_row.set_text(
+        configuration
+            .disconnect_password
+            .as_deref()
+            .unwrap_or_default(),
+    );
+
+    let device_row = adw::EntryRow::new();
+    device_row.set_title("Device name");
+    device_row.set_text(configuration.device_name.as_deref().unwrap_or_default());
+
+    let save = adw::ButtonRow::new();
+    save.set_title("Save disconnect configuration");
+    save.add_css_class("suggested-action");
+    save.set_sensitive(false);
+
+    let saved_state = std::rc::Rc::new(std::cell::RefCell::new(
+        match (
+            configuration.enable_disconnect,
+            configuration.disconnect_server_url.as_deref(),
+            configuration.disconnect_password.as_deref(),
+            configuration.device_name.as_deref(),
+        ) {
+            (true, Some(server_url), Some(password), Some(device_name)) => {
+                Some(DisconnectClientConfig {
+                    server_url: server_url.to_string(),
+                    password: password.to_string(),
+                    device_name: device_name.to_string(),
+                })
+            }
+            _ => None,
+        },
+    ));
+
+    let validate = clone!(
+        #[weak]
+        enabled,
+        #[weak]
+        server_row,
+        #[weak]
+        password_row,
+        #[weak]
+        device_row,
+        #[weak]
+        save,
+        #[strong]
+        saved_state,
+        move || {
+            let active = enabled.is_active();
+
+            server_row.set_sensitive(active);
+            password_row.set_sensitive(active);
+            device_row.set_sensitive(active);
+
+            if !active {
+                save.set_sensitive(saved_state.borrow().is_some());
+                return;
+            }
+
+            let server_url = server_row.text().to_string();
+            let password = password_row.text().to_string();
+            let device_name = device_row.text().to_string();
+
+            let valid = !server_url.is_empty() && !password.is_empty() && !device_name.is_empty();
+
+            server_row.set_css_classes(if server_url.is_empty() {
+                &["error"]
+            } else {
+                &[]
+            });
+
+            password_row.set_css_classes(if password.is_empty() { &["error"] } else { &[] });
+
+            device_row.set_css_classes(if device_name.is_empty() {
+                &["error"]
+            } else {
+                &[]
+            });
+
+            if !valid {
+                save.set_sensitive(false);
+                return;
+            }
+
+            let current = Some(DisconnectClientConfig {
+                server_url,
+                password,
+                device_name,
+            });
+
+            save.set_sensitive(*saved_state.borrow() != current);
+        }
+    );
+
+    enabled.connect_active_notify({
+        let validate = validate.clone();
+        move |_| validate()
+    });
+
+    server_row.connect_changed({
+        let validate = validate.clone();
+        move |_| validate()
+    });
+
+    password_row.connect_changed({
+        let validate = validate.clone();
+        move |_| validate()
+    });
+
+    device_row.connect_changed({
+        let validate = validate.clone();
+        move |_| validate()
+    });
+
+    save.connect_activated(clone!(
+        #[weak]
+        enabled,
+        #[weak]
+        server_row,
+        #[weak]
+        password_row,
+        #[weak]
+        device_row,
+        #[strong]
+        saved_state,
+        #[strong]
+        ui_event_sender,
+        #[strong]
+        database,
+        move |_| {
+            let server_url = server_row.text().to_string();
+            let password = password_row.text().to_string();
+            let device_name = device_row.text().to_string();
+            let enabled = enabled.is_active();
+
+            let config = if enabled {
+                Some(DisconnectClientConfig {
+                    server_url,
+                    password,
+                    device_name,
+                })
+            } else {
+                None
+            };
+
+            *saved_state.borrow_mut() = config.clone();
+
+            let _ = ui_event_sender.send(crate::UiEvent::DisconnectClientConfig(config.clone()));
+
+            glib::MainContext::default().spawn_local({
+                let database = database.clone();
+                let config = config.clone();
+
+                async move {
+                    // TODO: Show notification
+                    if let Some(config) = config {
+                        _ = database
+                            .set_disconnect_config(
+                                &config.server_url,
+                                &config.password,
+                                &config.device_name,
+                            )
+                            .await;
+
+                        _ = database.set_disconnect_enabled(true).await;
+                    } else {
+                        _ = database.set_disconnect_enabled(false).await;
+                    }
+                }
+            });
+        }
+    ));
+
+    validate();
+
+    group.add(&enabled);
+    group.add(&server_row);
+    group.add(&password_row);
+    group.add(&device_row);
+    group.add(&save);
+
     group
 }

@@ -6,6 +6,7 @@ use qobuz_player_controls::{
     ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls, tracklist::Tracklist,
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use qobuz_player_player::{
     AppResult,
     client::{Client, exchange_oauth_code},
@@ -44,9 +45,10 @@ pub fn init(
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     broadcast: Arc<NotificationBroadcast>,
-    _connect_available_devices: Option<watch::Receiver<Vec<String>>>,
-    _connect_active_device: Option<watch::Receiver<String>>,
-    _set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
+    connect_available_devices: watch::Receiver<Vec<String>>,
+    connect_active_device: watch::Receiver<String>,
+    set_connect_active_device: mpsc::UnboundedSender<String>,
+    disconnect_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) -> AppResult<()> {
     libadwaita::init().unwrap();
 
@@ -105,7 +107,11 @@ pub fn init(
                 audio_cache_ttl_sender.clone(),
                 ui_sender.clone(),
                 ui_receiver,
-                broadcast.clone()
+                broadcast.clone(),
+                connect_available_devices.clone(),
+                connect_active_device.clone(),
+                set_connect_active_device.clone(),
+                disconnect_config_sender.clone(),
             );
         }
     });
@@ -164,6 +170,10 @@ fn build_ui(
     ui_sender: mpsc::UnboundedSender<UiEvent>,
     ui_receiver: mpsc::UnboundedReceiver<UiEvent>,
     broadcast: Arc<NotificationBroadcast>,
+    connect_available_devices: watch::Receiver<Vec<String>>,
+    connect_active_device: watch::Receiver<String>,
+    set_connect_active_device: mpsc::UnboundedSender<String>,
+    disconnect_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -219,7 +229,13 @@ fn build_ui(
         .build();
     app_nav.add(&root_page);
 
-    let now_playing = NowPlayingBar::new(controls, on_open_album, on_open_artist, on_open_playlist);
+    let now_playing = NowPlayingBar::new(
+        controls,
+        set_connect_active_device,
+        on_open_album,
+        on_open_artist,
+        on_open_playlist,
+    );
 
     let toast_overlay = adw::ToastOverlay::new();
 
@@ -239,12 +255,15 @@ fn build_ui(
     now_playing.update(&tracklist_value);
     shell.tracklist_updated(&tracklist_value);
 
-    setup_tracklist_listener(
+    setup_listener(
         ui_sender,
         ui_receiver,
         tracklist_receiver,
         status_receiver,
         position_receiver,
+        disconnect_config_sender,
+        connect_available_devices,
+        connect_active_device,
         broadcast,
         now_playing,
         shell,
@@ -257,12 +276,15 @@ fn build_ui(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn setup_tracklist_listener(
+fn setup_listener(
     sender: mpsc::UnboundedSender<UiEvent>,
     mut receiver: mpsc::UnboundedReceiver<UiEvent>,
     mut tracklist_receiver: TracklistReceiver,
     mut status_receiver: StatusReceiver,
     mut position_receiver: PositionReceiver,
+    disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    mut connect_available_devices: watch::Receiver<Vec<String>>,
+    mut connect_active_device: watch::Receiver<String>,
     broadcast: Arc<NotificationBroadcast>,
     now_playing_bar: NowPlayingBar,
     shell: AppShell,
@@ -289,6 +311,18 @@ fn setup_tracklist_listener(
                 }
 
                 Ok(_) = position_receiver.changed() => {
+                    let position = *position_receiver.borrow_and_update();
+                    sender.send(UiEvent::Position(position)).unwrap();
+                }
+
+                Ok(_) = connect_available_devices.changed() => {
+                    let connect_available_devices = connect_available_devices.borrow_and_update().to_vec();
+                    let connect_active_device = connect_active_device.borrow().to_string();
+
+                    sender.send(UiEvent::Connect((connect_available_devices, connect_active_device ))).unwrap();
+                }
+
+                Ok(_) = connect_active_device.changed() => {
                     let position = *position_receiver.borrow_and_update();
                     sender.send(UiEvent::Position(position)).unwrap();
                 }
@@ -339,12 +373,10 @@ fn setup_tracklist_listener(
                 UiEvent::FavoritesChanged => {
                     shell.reload();
                 }
-
                 UiEvent::Toast(message) => {
                     let toast = adw::Toast::builder().title(&message).timeout(3).build();
                     toast_overlay.add_toast(toast);
                 }
-
                 UiEvent::Exit => {
                     if let Some(app) = window.application() {
                         app.quit();
@@ -352,6 +384,12 @@ fn setup_tracklist_listener(
 
                     window.close();
                     break;
+                }
+                UiEvent::DisconnectClientConfig(disconnect_client_config) => {
+                    _ = disconnect_client_config_sender.send(disconnect_client_config);
+                }
+                UiEvent::Connect(devices) => {
+                    now_playing_bar.set_output_devices(devices.0, devices.1);
                 }
             }
         }
@@ -366,6 +404,8 @@ enum UiEvent {
     FavoritesChanged,
     Exit,
     Toast(String),
+    DisconnectClientConfig(Option<DisconnectClientConfig>),
+    Connect((Vec<String>, String)),
 }
 
 fn oauth_login_window(

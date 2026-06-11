@@ -3,8 +3,9 @@ use qobuz_player_cli::{
     ConnectArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up_mut,
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
@@ -149,6 +150,67 @@ pub async fn run() -> AppResult<()> {
         ttl_rx,
     );
 
+    let disconnect_client_config = if configuration.enable_disconnect
+        && let Some(server_url) = configuration.disconnect_server_url
+        && let Some(password) = configuration.disconnect_password
+        && let Some(device_name) = configuration.device_name
+    {
+        Some(DisconnectClientConfig {
+            server_url,
+            password,
+            device_name,
+        })
+    } else {
+        None
+    };
+
+    let (config_tx, config_rx) = watch::channel(disconnect_client_config);
+
+    let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
+    let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+    let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+
+    {
+        let position_receiver = player.position();
+        let tracklist_receiver = player.tracklist();
+        let volume_receiver = player.volume();
+        let status_receiver = player.status();
+        let controls = player.controls();
+        let active_sender = player.active_sender();
+        let auto_play_receiver = player.auto_play();
+
+        let tracklist_sender = player.tracklist_sender();
+        let position_sender = player.position_sender();
+        let status_sender = player.status_sender();
+        let volume_sender = player.volume_sender();
+        let auto_play_sender = player.auto_play_sender();
+
+        tokio::spawn(async move {
+            if let Err(e) = qobuz_player_disconnect::init(
+                config_rx,
+                controls,
+                tracklist_sender,
+                position_sender,
+                volume_sender,
+                auto_play_sender,
+                status_sender,
+                active_sender,
+                available_devices_tx,
+                active_device_tx,
+                position_receiver,
+                tracklist_receiver,
+                status_receiver,
+                volume_receiver,
+                auto_play_receiver,
+                set_active_device_rx,
+            )
+            .await
+            {
+                error_exit(e);
+            }
+        });
+    }
+
     tokio::spawn(async move {
         if let Err(e) = qobuz_player_tui::init(
             client,
@@ -159,9 +221,12 @@ pub async fn run() -> AppResult<()> {
             status_receiver,
             exit_sender,
             ttl_tx,
-            configuration,
             args.disable_album_cover,
             database,
+            available_devices_rx,
+            active_device_rx,
+            set_active_device_tx,
+            config_tx,
         )
         .await
         {

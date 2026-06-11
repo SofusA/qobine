@@ -113,6 +113,46 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_disconnect_config(
+        &self,
+        server_url: &str,
+        password: &str,
+        device_name: &str,
+    ) -> AppResult<()> {
+        sqlx::query!(
+            r#"
+        UPDATE configuration
+        SET
+            disconnect_server_url = ?,
+            disconnect_password = ?,
+            device_name = ?
+        WHERE rowid = 1
+        "#,
+            server_url,
+            password,
+            device_name
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_disconnect_enabled(&self, enable: bool) -> AppResult<()> {
+        sqlx::query!(
+            r#"
+        UPDATE configuration
+        SET enable_disconnect= ?
+        WHERE rowid = 1
+        "#,
+            enable,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn set_auto_play(&self, auto_play: bool) -> AppResult<()> {
         sqlx::query!(
             r#"

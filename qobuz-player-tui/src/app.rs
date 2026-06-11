@@ -18,15 +18,20 @@ use qobuz_player_controls::{
     models::{AlbumSimple, Artist, Track},
     tracklist::{Tracklist, TracklistType},
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use qobuz_player_player::{
     AppResult,
     client::Client,
+    database::Database,
     notification::{Notification, NotificationBroadcast},
 };
 use ratatui::{DefaultTerminal, widgets::*};
 use ratatui_image::protocol::StatefulProtocol;
 use std::{collections::HashSet, io, sync::Arc, time::Instant};
-use tokio::time::{self, Duration};
+use tokio::{
+    sync::{mpsc, watch},
+    time::{self, Duration},
+};
 
 #[derive(Default)]
 pub struct NotificationList {
@@ -55,6 +60,7 @@ impl NotificationList {
 pub struct App {
     pub client: Arc<Client>,
     pub controls: Controls,
+    pub database: Arc<Database>,
     pub position: PositionReceiver,
     pub tracklist: TracklistReceiver,
     pub status: StatusReceiver,
@@ -75,6 +81,10 @@ pub struct App {
     pub disable_tui_album_cover: bool,
     pub current_image_url: Option<String>,
     pub favorite_ids: FavoriteIds,
+    pub connect_available_devices: watch::Receiver<Vec<String>>,
+    pub connect_active_device: watch::Receiver<String>,
+    pub set_connect_active_device: mpsc::UnboundedSender<String>,
+    pub disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 }
 
 #[derive(Default)]
@@ -90,6 +100,7 @@ pub enum AppState {
     Normal,
     Popup(Vec<Popup>),
     Help,
+    ConnectPopup(usize),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -426,6 +437,19 @@ impl App {
                     self.app_state = AppState::Help;
                     self.should_draw = true;
                 }
+                KeyCode::Char('c') => {
+                    let enable_connect = self
+                        .database
+                        .get_configuration()
+                        .await
+                        .map(|x| x.enable_disconnect)
+                        .unwrap_or(false);
+
+                    if enable_connect {
+                        self.app_state = AppState::ConnectPopup(0);
+                        self.should_draw = true;
+                    }
+                }
                 KeyCode::Char('I') => {
                     if let Some(album_id) = self
                         .now_playing
@@ -581,6 +605,44 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
+                    AppState::ConnectPopup(selected_device) => {
+                        match key_event.code {
+                            KeyCode::Enter => {
+                                let available_devices = self.connect_available_devices.borrow();
+                                let selected_device_string =
+                                    available_devices.get(*selected_device);
+
+                                if let Some(selected_device_string) = selected_device_string
+                                    && let Err(err) = self
+                                        .set_connect_active_device
+                                        .send(selected_device_string.clone())
+                                {
+                                    self.broadcast
+                                        .send_error(format!("Unable to select device: {err}"));
+                                };
+
+                                self.app_state = AppState::Normal;
+                            }
+                            KeyCode::Left | KeyCode::Up => {
+                                if 0 < *selected_device {
+                                    *selected_device = selected_device.saturating_sub(1);
+                                }
+                            }
+                            KeyCode::Right | KeyCode::Down => {
+                                let available_devices =
+                                    self.connect_available_devices.borrow().len();
+
+                                if *selected_device < available_devices - 1 {
+                                    *selected_device = selected_device.saturating_add(1);
+                                }
+                            }
+                            _ => {
+                                self.app_state = AppState::Normal;
+                            }
+                        }
+                        self.should_draw = true;
+                        return Ok(());
+                    }
                     AppState::Popup(popups) => {
                         if key_event.code == KeyCode::Esc {
                             _ = popups.pop();
@@ -669,9 +731,15 @@ impl App {
                             )
                             .await
                     }
-                    Tab::Preferences => {
-                        Ok(self.preferences.handle_events(event, &self.controls).await)
-                    }
+                    Tab::Preferences => Ok(self
+                        .preferences
+                        .handle_events(
+                            event,
+                            &self.controls,
+                            &self.database,
+                            &self.disconnect_client_config_sender,
+                        )
+                        .await),
                 };
 
                 self.handle_output(key_event.code, screen_output).await;

@@ -5,6 +5,7 @@ use qobuz_player_cli::{
     default_audio_cache, default_audio_quality, get_client, handle_shared_commands,
     parse_disconnect_args, spawn_clean_up,
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use qobuz_player_rfid::RfidState;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -111,12 +112,16 @@ pub async fn run() -> AppResult<()> {
         active_device_rx,
         set_active_device_tx,
         set_active_device_rx,
-    ) = if disconnect_args.is_some() {
+        config_rx,
+    ) = if let Some(disconnect_args) = disconnect_args.as_ref() {
         let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
-
         let (active_device_tx, active_device_rx) = watch::channel(Default::default());
-
         let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+        let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {
+            server_url: disconnect_args.server_url.clone(),
+            password: disconnect_args.password.clone(),
+            device_name: disconnect_args.device_name.clone(),
+        }));
 
         (
             Some(available_devices_tx),
@@ -125,9 +130,10 @@ pub async fn run() -> AppResult<()> {
             Some(active_device_rx),
             Some(set_active_device_tx),
             Some(set_active_device_rx),
+            Some(config_rx),
         )
     } else {
-        (None, None, None, None, None, None)
+        (None, None, None, None, None, None, None)
     };
 
     {
@@ -208,12 +214,12 @@ pub async fn run() -> AppResult<()> {
     }
 
     if let (
-        Some(disconnect_args),
+        Some(config_rx),
         Some(available_devices_tx),
         Some(active_device_tx),
         Some(set_active_device_rx),
     ) = (
-        disconnect_args,
+        config_rx,
         available_devices_tx,
         active_device_tx,
         set_active_device_rx,
@@ -234,9 +240,7 @@ pub async fn run() -> AppResult<()> {
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(
-                &disconnect_args.server_url,
-                &disconnect_args.password,
-                &disconnect_args.device_name,
+                config_rx,
                 controls,
                 tracklist_sender,
                 position_sender,

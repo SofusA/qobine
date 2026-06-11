@@ -2,6 +2,7 @@ use qobuz_player_cli::{
     DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
+use qobuz_player_disconnect::DisconnectClientConfig;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -85,6 +86,12 @@ pub async fn run() -> AppResult<()> {
     let (active_device_sender, _) = watch::channel(Default::default());
     let (_, active_device_receiver) = mpsc::unbounded_channel();
 
+    let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {
+        server_url: args.server_url,
+        password: args.password,
+        device_name: args.device_name,
+    }));
+
     {
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
@@ -102,9 +109,7 @@ pub async fn run() -> AppResult<()> {
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(
-                &args.server_url,
-                &args.password,
-                &args.device_name,
+                config_rx,
                 controls,
                 tracklist_sender,
                 position_sender,

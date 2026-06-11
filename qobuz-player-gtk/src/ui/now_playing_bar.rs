@@ -1,4 +1,4 @@
-use std::{rc::Rc, time::Duration};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use gtk4 as gtk;
 use libadwaita as adw;
@@ -9,6 +9,7 @@ use qobuz_player_controls::{
     controls::Controls,
     tracklist::{Tracklist, TracklistType},
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::ui::{
     album_detail_page::AlbumHeaderInfo, artist_detail_page::ArtistHeaderInfo, clickable_tile,
@@ -26,6 +27,11 @@ pub struct NowPlayingBar {
     progress_scale: gtk::Scale,
     progress_current_label: gtk::Label,
     progress_total_label: gtk::Label,
+
+    output_button: gtk::Button,
+    available_devices: Rc<RefCell<Vec<String>>>,
+    active_device: Rc<RefCell<String>>,
+
     on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
     on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
     on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
@@ -34,10 +40,14 @@ pub struct NowPlayingBar {
 impl NowPlayingBar {
     pub fn new(
         controls: Controls,
+        set_connect_active_device: UnboundedSender<String>,
         on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
         on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
         on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
     ) -> Self {
+        let available_devices = Rc::new(RefCell::new(Vec::<String>::new()));
+        let active_device = Rc::new(RefCell::new(String::new()));
+
         let title_label = gtk::Label::builder()
             .halign(gtk::Align::Fill)
             .ellipsize(gtk::pango::EllipsizeMode::End)
@@ -61,6 +71,87 @@ impl NowPlayingBar {
 
         track_info_box.append(&title_label);
         track_info_box.append(&subtitle_box);
+
+        let connect_button = gtk::Button::builder()
+            .icon_name("audio-speakers-symbolic")
+            .tooltip_text("Connect")
+            .css_classes(vec!["flat"])
+            .visible(false)
+            .valign(gtk::Align::Center)
+            .build();
+
+        let dialog_available_devices = available_devices.clone();
+        let dialog_active_device = active_device.clone();
+        let dialog_sender = set_connect_active_device.clone();
+
+        connect_button.connect_clicked(move |button| {
+            let devices = dialog_available_devices.borrow().clone();
+            let active = dialog_active_device.borrow().clone();
+
+            if devices.is_empty() {
+                return;
+            }
+
+            let dialog = adw::Dialog::builder()
+                .title("Connect")
+                .content_width(360)
+                .content_height(420)
+                .build();
+
+            let toolbar_view = adw::ToolbarView::new();
+            let header_bar = adw::HeaderBar::new();
+
+            toolbar_view.add_top_bar(&header_bar);
+
+            let list = gtk::ListBox::builder()
+                .selection_mode(gtk::SelectionMode::None)
+                .css_classes(vec!["boxed-list"])
+                .build();
+
+            for device in devices {
+                let row = adw::ActionRow::builder()
+                    .title(&device)
+                    .activatable(true)
+                    .build();
+
+                if device == active {
+                    let check = gtk::Image::from_icon_name("object-select-symbolic");
+                    row.add_suffix(&check);
+                }
+
+                let row_device = device.clone();
+                let row_sender = dialog_sender.clone();
+                let row_active_device = dialog_active_device.clone();
+                let row_dialog = dialog.clone();
+
+                row.connect_activated(move |_| {
+                    *row_active_device.borrow_mut() = row_device.clone();
+                    let _ = row_sender.send(row_device.clone());
+                    row_dialog.close();
+                });
+
+                list.append(&row);
+            }
+
+            let group = adw::PreferencesGroup::builder()
+                .title("Select output device")
+                .build();
+            group.add(&list);
+
+            let content = gtk::Box::builder()
+                .orientation(gtk::Orientation::Vertical)
+                .margin_start(12)
+                .margin_end(12)
+                .margin_top(12)
+                .margin_bottom(12)
+                .build();
+
+            content.append(&group);
+
+            toolbar_view.set_content(Some(&content));
+            dialog.set_child(Some(&toolbar_view));
+            dialog.present(Some(button));
+        });
 
         let controls_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -92,6 +183,7 @@ impl NowPlayingBar {
         controls_box.append(&prev_button);
         controls_box.append(&play_button);
         controls_box.append(&next_button);
+        controls_box.append(&connect_button);
 
         let progress_current_label = gtk::Label::builder()
             .label("0:00")
@@ -178,10 +270,22 @@ impl NowPlayingBar {
             progress_scale,
             progress_current_label,
             progress_total_label,
+            output_button: connect_button,
+            available_devices,
+            active_device,
             on_open_album,
             on_open_artist,
             on_open_playlist,
         }
+    }
+
+    pub fn set_output_devices(&self, available_devices: Vec<String>, active_device: String) {
+        let has_devices = !available_devices.is_empty();
+
+        *self.available_devices.borrow_mut() = available_devices;
+        *self.active_device.borrow_mut() = active_device.clone();
+
+        self.output_button.set_visible(has_devices);
     }
 
     pub fn update(&self, tracklist: &Tracklist) {
