@@ -42,6 +42,9 @@ pub enum ControlCommand {
     SetVolume {
         volume: f32,
     },
+    SetAutoPlay {
+        enable: bool,
+    },
     AddTracksToQueue {
         ids: Vec<u32>,
     },
@@ -161,6 +164,10 @@ impl Controls {
 
     pub fn set_volume(&self, volume: f32) {
         self.send(ControlCommand::SetVolume { volume });
+    }
+
+    pub fn set_auto_play(&self, enable: bool) {
+        self.send(ControlCommand::SetAutoPlay { enable });
     }
 
     pub fn seek(&self, time: Duration) {

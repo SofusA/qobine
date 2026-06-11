@@ -35,7 +35,7 @@ body {
   }
 
   .btn-primary {
-    @apply bg-blue-600 text-white shadow-sm hover:bg-blue-700 hover:shadow-md active:bg-blue-800;
+    @apply border border-blue-600 bg-blue-600 text-white shadow-sm hover:bg-blue-700 hover:shadow-md active:bg-blue-800;
   }
 
   .btn-secondary {

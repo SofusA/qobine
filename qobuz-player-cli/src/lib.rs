@@ -298,11 +298,7 @@ pub async fn create_player(
     output_device_id: Option<String>,
 ) -> AppResult<Player> {
     let tracklist = database.get_tracklist().await.unwrap_or_default();
-    let volume = database
-        .get_configuration()
-        .await
-        .map(|x| x.volume)
-        .unwrap_or(1.0);
+    let configuration = database.get_configuration().await?;
 
     let state_change_delay = state_change_delay_ms.map(Duration::from_millis);
     let sample_rate_change_delay = sample_rate_change_delay_ms.map(Duration::from_millis);
@@ -310,7 +306,8 @@ pub async fn create_player(
     let player = Player::new(
         tracklist,
         client,
-        volume,
+        configuration.volume,
+        configuration.auto_play,
         broadcast,
         audio_cache,
         database,

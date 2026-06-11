@@ -113,6 +113,21 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_auto_play(&self, auto_play: bool) -> AppResult<()> {
+        sqlx::query!(
+            r#"
+             update configuration
+             set auto_play=?1
+             where rowid = 1
+             "#,
+            auto_play
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
         let directory = directory
             .canonicalize()

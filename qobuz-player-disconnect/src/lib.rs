@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use qobuz_player_controls::{
-    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
@@ -18,6 +18,7 @@ struct DisconnectState {
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
+    auto_play_receiver: AutoPlayReceiver,
     controls_rx: broadcast::Receiver<ControlCommand>,
 }
 
@@ -51,6 +52,10 @@ impl DisconnectState {
                     let volume = *self.volume_receiver.borrow_and_update();
                     self.client.set_volume(&volume).await.unwrap();
                 }
+                Ok(_) = self.auto_play_receiver.changed() => {
+                    let auto_play = *self.auto_play_receiver.borrow_and_update();
+                    self.client.set_auto_play(&auto_play).await.unwrap();
+                }
                 Ok(notification) = self.controls_rx.recv() => {
                     self.client.control(&notification).await.unwrap();
                 }
@@ -69,6 +74,7 @@ pub async fn init(
     tracklist_sender: watch::Sender<Tracklist>,
     position_sender: watch::Sender<Duration>,
     volume_sender: watch::Sender<f32>,
+    auto_play_sender: watch::Sender<bool>,
     status_sender: watch::Sender<Status>,
     active_sender: watch::Sender<bool>,
     available_devices_sender: watch::Sender<Vec<String>>,
@@ -78,6 +84,7 @@ pub async fn init(
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
+    auto_play_receiver: AutoPlayReceiver,
     set_active_device_receiver: mpsc::UnboundedReceiver<String>,
 ) -> AppResult<()> {
     let controls_rx = controls.subscribe();
@@ -89,6 +96,7 @@ pub async fn init(
         tracklist_sender,
         position_sender,
         volume_sender,
+        auto_play_sender,
         status_sender,
         active_sender,
         available_devices_sender,
@@ -101,6 +109,7 @@ pub async fn init(
         tracklist_receiver,
         status_receiver,
         volume_receiver,
+        auto_play_receiver,
         controls_rx,
     };
 

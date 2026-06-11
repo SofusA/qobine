@@ -90,6 +90,7 @@ pub async fn run() -> AppResult<()> {
         let tracklist_receiver = player.tracklist();
         let volume_receiver = player.volume();
         let status_receiver = player.status();
+        let auto_play_receiver = player.auto_play();
         let controls = player.controls();
 
         let tracklist_sender = player.tracklist_sender();
@@ -97,6 +98,7 @@ pub async fn run() -> AppResult<()> {
         let status_sender = player.status_sender();
         let volume_sender = player.volume_sender();
         let active_sender = player.active_sender();
+        let auto_play_sender = player.auto_play_sender();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(
@@ -107,6 +109,7 @@ pub async fn run() -> AppResult<()> {
                 tracklist_sender,
                 position_sender,
                 volume_sender,
+                auto_play_sender,
                 status_sender,
                 active_sender,
                 available_devices_tx,
@@ -115,6 +118,7 @@ pub async fn run() -> AppResult<()> {
                 tracklist_receiver,
                 status_receiver,
                 volume_receiver,
+                auto_play_receiver,
                 active_device_receiver,
             )
             .await

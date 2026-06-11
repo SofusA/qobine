@@ -29,6 +29,8 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/previous", put(previous))
         .route("/api/next", put(next))
         .route("/api/volume", post(set_volume))
+        .route("/api/enable-auto-play", post(enable_auto_play))
+        .route("/api/disable-auto-play", post(disable_auto_play))
         .route("/api/volume/up", put(set_volume_up))
         .route("/api/volume/down", put(set_volume_down))
         .route("/api/position", post(set_position))
@@ -185,6 +187,14 @@ async fn set_volume(
     let formatted_volume = volume as f32 / 100.0;
 
     state.controls.set_volume(formatted_volume);
+}
+
+async fn enable_auto_play(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    state.controls.set_auto_play(true);
+}
+
+async fn disable_auto_play(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    state.controls.set_auto_play(false);
 }
 
 async fn set_volume_up(State(state): State<Arc<AppState>>) -> impl IntoResponse {

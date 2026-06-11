@@ -1,0 +1,13 @@
+<button
+  id="autoplay"
+  class="btn @if(autoplay){btn-primary} @else {btn-secondary}"
+  hx-swap="none"
+  hx-post="/api/@if(autoplay){disable-auto-play}@else{enable-auto-play}"
+>
+  @if (autoplay) {
+    Disable
+  } @else {
+    Enable
+  }
+  auto add similar tracks
+</button>

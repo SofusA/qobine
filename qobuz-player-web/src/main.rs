@@ -143,6 +143,7 @@ pub async fn run() -> AppResult<()> {
         let active_device_rx = active_device_rx.clone();
         let connect_device_name = disconnect_args.as_ref().map(|x| x.device_name.clone());
         let set_active_device_tx = set_active_device_tx.clone();
+        let auto_play = player.auto_play();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_web::init(
@@ -151,6 +152,7 @@ pub async fn run() -> AppResult<()> {
                 tracklist_receiver,
                 volume_receiver,
                 status_receiver,
+                auto_play,
                 args.port,
                 args.web_secret,
                 rfid_state,
@@ -220,6 +222,7 @@ pub async fn run() -> AppResult<()> {
         let tracklist_receiver = player.tracklist();
         let volume_receiver = player.volume();
         let status_receiver = player.status();
+        let auto_play_receiver = player.auto_play();
         let controls = player.controls();
         let active_sender = player.active_sender();
 
@@ -227,6 +230,7 @@ pub async fn run() -> AppResult<()> {
         let position_sender = player.position_sender();
         let status_sender = player.status_sender();
         let volume_sender = player.volume_sender();
+        let auto_play_sender = player.auto_play_sender();
 
         tokio::spawn(async move {
             if let Err(e) = qobuz_player_disconnect::init(
@@ -237,6 +241,7 @@ pub async fn run() -> AppResult<()> {
                 tracklist_sender,
                 position_sender,
                 volume_sender,
+                auto_play_sender,
                 status_sender,
                 active_sender,
                 available_devices_tx,
@@ -245,6 +250,7 @@ pub async fn run() -> AppResult<()> {
                 tracklist_receiver,
                 status_receiver,
                 volume_receiver,
+                auto_play_receiver,
                 set_active_device_rx,
             )
             .await

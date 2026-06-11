@@ -22,6 +22,7 @@ pub struct DisconnectClient {
     tracklist_sender: watch::Sender<Tracklist>,
     position_sender: watch::Sender<Duration>,
     volume_sender: watch::Sender<f32>,
+    auto_play_sender: watch::Sender<bool>,
     status_sender: watch::Sender<Status>,
     active_sender: watch::Sender<bool>,
     available_devices_sender: watch::Sender<Vec<String>>,
@@ -38,6 +39,7 @@ impl DisconnectClient {
         tracklist_sender: watch::Sender<Tracklist>,
         position_sender: watch::Sender<Duration>,
         volume_sender: watch::Sender<f32>,
+        auto_play_sender: watch::Sender<bool>,
         status_sender: watch::Sender<Status>,
         active_sender: watch::Sender<bool>,
         available_devices_sender: watch::Sender<Vec<String>>,
@@ -54,6 +56,7 @@ impl DisconnectClient {
             tracklist_sender,
             position_sender,
             volume_sender,
+            auto_play_sender,
             status_sender,
             active_sender,
             available_devices_sender,
@@ -131,6 +134,16 @@ impl DisconnectClient {
         Ok(())
     }
 
+    pub async fn set_auto_play(&self, enable: &bool) -> AppResult<()> {
+        self.client
+            .post(self.device_url("/autoplay"))
+            .json(enable)
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn control(&self, command: &ControlCommand) -> AppResult<()> {
         self.client
             .post(self.device_url("/control"))
@@ -162,6 +175,7 @@ impl DisconnectClient {
         _ = self.status_sender.send(initial_state.playback_status);
         _ = self.volume_sender.send(initial_state.volume);
         _ = self.position_sender.send(initial_state.position);
+        _ = self.auto_play_sender.send(initial_state.auto_play);
 
         loop {
             tokio::select! {
@@ -228,6 +242,11 @@ impl DisconnectClient {
                                 DisconnectServerEvent::Volume(volume) => {
                                     tracing::info!("Volume update: {:?}", volume);
                                     _ = self.volume_sender.send(volume);
+                                }
+
+                                DisconnectServerEvent::AutoPlay(enable) => {
+                                    tracing::info!("Auto play update: {:?}", enable);
+                                    _ = self.auto_play_sender.send(enable);
                                 }
 
                                 DisconnectServerEvent::Control(control_command) => {

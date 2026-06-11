@@ -1,7 +1,7 @@
 use axum::response::{Html, IntoResponse, Response};
 use futures::try_join;
 use qobuz_player_controls::{
-    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
     models::{Favorites, Track},
     tracklist::{Tracklist, TracklistType},
@@ -31,6 +31,7 @@ pub struct AppState {
     pub tracklist_receiver: TracklistReceiver,
     pub status_receiver: StatusReceiver,
     pub volume_receiver: VolumeReceiver,
+    pub auto_play_receiver: AutoPlayReceiver,
     pub templates: watch::Receiver<Templates>,
     pub database: Arc<Database>,
     pub connect_device_name: Option<String>,

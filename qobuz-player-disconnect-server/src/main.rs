@@ -50,6 +50,7 @@ struct Group {
     playback_status: Status,
     position: Duration,
     volume: f32,
+    auto_play: bool,
 }
 
 #[derive(Deserialize)]
@@ -85,6 +86,7 @@ async fn main() {
         .route("/status", post(set_status))
         .route("/position", post(set_position))
         .route("/volume", post(set_volume))
+        .route("/autoplay", post(set_auto_play))
         .route("/control", post(control))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE_BYTES))
         .layer(from_fn_with_state(state.clone(), rate_limit_middleware))
@@ -211,6 +213,7 @@ async fn get_state(
         tracklist: group.tracklist.clone(),
         position: group.position,
         volume: group.volume,
+        auto_play: group.auto_play,
     };
 
     Ok(Json(state))
@@ -386,6 +389,34 @@ async fn set_volume(
     Ok(StatusCode::OK)
 }
 
+async fn set_auto_play(
+    State(state): State<AppState>,
+    Query(auth): Query<AuthQuery>,
+    Query(device): Query<DeviceRequest>,
+    Json(req): Json<bool>,
+) -> Result<StatusCode, StatusCode> {
+    info!("New set autoplay request");
+
+    let secret = sanitize_auth_query(auth)?;
+    let device_id = sanitize_device_request(device)?;
+
+    if !is_active_device(&state, &secret, &device_id).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let mut groups = state.groups.write().await;
+
+    let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
+
+    group.auto_play = req;
+
+    let _ = group.tx.send(DisconnectServerEvent::AutoPlay(req));
+
+    info!("auto_play updated {:?}", req);
+
+    Ok(StatusCode::OK)
+}
+
 struct Guard {
     secret: String,
     groups: Arc<RwLock<HashMap<String, Group>>>,
@@ -458,6 +489,7 @@ async fn stream_handler(
                 playback_status: Default::default(),
                 position: Default::default(),
                 volume: 1.0,
+                auto_play: false,
             }
         });
 
@@ -534,6 +566,7 @@ async fn map_event(
         DisconnectServerEvent::Tracklist(_)
         | DisconnectServerEvent::Status(_)
         | DisconnectServerEvent::Position(_)
+        | DisconnectServerEvent::AutoPlay(_)
         | DisconnectServerEvent::Volume(_) => !is_active_device,
 
         DisconnectServerEvent::ActiveDevice(_) | DisconnectServerEvent::AvailableDevices(_) => true,

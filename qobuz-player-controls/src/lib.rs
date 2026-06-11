@@ -10,6 +10,7 @@ pub mod tracklist;
 
 pub type PositionReceiver = watch::Receiver<Duration>;
 pub type VolumeReceiver = watch::Receiver<f32>;
+pub type AutoPlayReceiver = watch::Receiver<bool>;
 pub type StatusReceiver = watch::Receiver<Status>;
 pub type TracklistReceiver = watch::Receiver<Tracklist>;
 

@@ -17,6 +17,13 @@ function initSse() {
     }
   });
 
+  evtSource.addEventListener("autoplay", () => {
+    console.warn("auto play");
+    for (const el of document.querySelectorAll("[data-sse=autoplay]")) {
+      htmx.trigger(el, "autoplay");
+    }
+  });
+
   evtSource.addEventListener("tracklist", () => {
     for (const el of document.querySelectorAll("[data-sse=tracklist]")) {
       htmx.trigger(el, "tracklist");

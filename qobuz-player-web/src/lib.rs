@@ -8,7 +8,7 @@ use axum::{
 };
 use futures::stream::Stream;
 use qobuz_player_controls::{
-    PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
     models::{Album, AlbumSimple},
 };
@@ -51,6 +51,7 @@ pub async fn init(
     tracklist_receiver: TracklistReceiver,
     volume_receiver: VolumeReceiver,
     status_receiver: StatusReceiver,
+    auto_play_receiver: AutoPlayReceiver,
     port: u16,
     web_secret: Option<String>,
     rfid_state: Option<RfidState>,
@@ -73,6 +74,7 @@ pub async fn init(
         tracklist_receiver,
         volume_receiver,
         status_receiver,
+        auto_play_receiver,
         web_secret,
         rfid_state,
         broadcast,
@@ -96,6 +98,7 @@ async fn create_router(
     tracklist_receiver: TracklistReceiver,
     volume_receiver: VolumeReceiver,
     status_receiver: StatusReceiver,
+    auto_play_receiver: AutoPlayReceiver,
     web_secret: Option<String>,
     rfid_state: Option<RfidState>,
     broadcast: Arc<NotificationBroadcast>,
@@ -156,6 +159,7 @@ async fn create_router(
         position_receiver: position_receiver.clone(),
         tracklist_receiver: tracklist_receiver.clone(),
         volume_receiver: volume_receiver.clone(),
+        auto_play_receiver: auto_play_receiver.clone(),
         status_receiver: status_receiver.clone(),
         templates: templates_rx.clone(),
         database,
@@ -171,6 +175,7 @@ async fn create_router(
         position_receiver,
         tracklist_receiver,
         volume_receiver,
+        auto_play_receiver,
         status_receiver,
         connect_available_devices,
         connect_active_device,
@@ -205,6 +210,7 @@ async fn background_task(
     mut position: PositionReceiver,
     mut tracklist: TracklistReceiver,
     mut volume: VolumeReceiver,
+    mut auto_play: AutoPlayReceiver,
     mut status: StatusReceiver,
     mut available_devices: Option<watch::Receiver<Vec<String>>>,
     mut active_device: Option<watch::Receiver<String>>,
@@ -249,6 +255,15 @@ async fn background_task(
                 let event = ServerSentEvent {
                     event_name: "status".into(),
                     event_data: message_data.into(),
+                };
+                _ = tx.send(event);
+            }
+            Ok(_) = auto_play.changed() => {
+                let auto_play = auto_play.borrow_and_update();
+
+                let event = ServerSentEvent {
+                    event_name: "autoplay".into(),
+                    event_data: auto_play.to_string(),
                 };
                 _ = tx.send(event);
             }

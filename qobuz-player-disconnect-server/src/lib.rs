@@ -10,6 +10,7 @@ pub enum DisconnectServerEvent {
     Status(Status),
     Position(Duration),
     Volume(f32),
+    AutoPlay(bool),
     ActiveDevice(String),
     Control(ControlCommand),
     AvailableDevices(Vec<String>),
@@ -23,4 +24,5 @@ pub struct DisconnectState {
     pub tracklist: Tracklist,
     pub position: Duration,
     pub volume: f32,
+    pub auto_play: bool,
 }

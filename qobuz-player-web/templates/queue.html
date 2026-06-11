@@ -8,7 +8,7 @@
     class="flex flex-col gap-6 p-4"
   >
     <div
-      class="pt-safe-or-4 sticky top-0 z-10 flex flex-col gap-4 bg-black/80 pb-4 backdrop-blur-md"
+      class="pt-safe-or-4 sticky top-0 z-20 flex justify-between bg-black/80 pb-4 backdrop-blur-md"
     >
       <a
         hx-target="unset"
@@ -17,6 +17,15 @@
       >
         {{ playing_info.entity_title }}
       </a>
+      <div
+        data-sse="autoplay"
+        hx-trigger="autoplay"
+        hx-get="/queue/autoplay"
+        hx-target="#autoplay"
+        hx-swap="outerHTML"
+      >
+        @defer (queue-auto-play.html; autoplay=autoplay) {}
+      </div>
     </div>
 
     <div id="queue-list">
