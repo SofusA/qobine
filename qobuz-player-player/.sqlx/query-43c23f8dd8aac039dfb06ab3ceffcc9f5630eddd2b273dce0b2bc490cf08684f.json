@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE configuration\n        SET enable_disconnect= ?\n        WHERE rowid = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "43c23f8dd8aac039dfb06ab3ceffcc9f5630eddd2b273dce0b2bc490cf08684f"
+}

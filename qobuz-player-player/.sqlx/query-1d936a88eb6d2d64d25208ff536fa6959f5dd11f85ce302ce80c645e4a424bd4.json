@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE configuration\n        SET\n            disconnect_server_url = ?,\n            disconnect_password = ?,\n            device_name = ?\n        WHERE rowid = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "1d936a88eb6d2d64d25208ff536fa6959f5dd11f85ce302ce80c645e4a424bd4"
+}
