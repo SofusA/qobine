@@ -6,7 +6,7 @@ license-file.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "rfid-module"
+name = "qobuz-player-rfid"
 path = "src/main.rs"
 
 [features]

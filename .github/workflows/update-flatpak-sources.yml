@@ -27,7 +27,7 @@ jobs:
 
       - name: Download flatpak-cargo-generator
         run: |
-          mkdir -p qobuz-player-gtk/flatpak
+          mkdir -p gtk-module/flatpak
           curl -L \
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/refs/heads/master/cargo/flatpak-cargo-generator.py \
             -o flatpak-cargo-generator.py

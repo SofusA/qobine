@@ -35,14 +35,14 @@ jobs:
         with:
           node-version: 'latest'
           cache: npm
-          cache-dependency-path: qobuz-player-web/package-lock.json
+          cache-dependency-path: web-module/package-lock.json
 
       - name: Web install dependencies 
-        working-directory: qobuz-player-web
+        working-directory: web-module
         run: npm i
 
       - name: Web format check
-        working-directory: qobuz-player-web
+        working-directory: web-module
         run: npm run format:check
 
       - name: Check format
@@ -85,11 +85,11 @@ jobs:
           sudo apt-get install -y pkg-config libasound2-dev
 
       - name: Test 
-        run: cargo test --workspace --exclude qobuz-player-client --exclude qobuz-player-gtk
+        run: cargo test --workspace --exclude qobuz-client --exclude gtk-module
 
       - name: Build gpio 
         if: startsWith(matrix.os, 'ubuntu')
-        run: cargo build --workspace --features gpio --exclude qobuz-player-gtk
+        run: cargo build --workspace --features gpio --exclude gtk-module
 
   build-flatpak:
     name: "Flatpak ${{ matrix.variant.arch }}"

@@ -7,7 +7,7 @@ license-file.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "web-module"
+name = "qobuz-player-web"
 path = "src/main.rs"
 
 [features]

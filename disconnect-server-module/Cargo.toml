@@ -6,6 +6,10 @@ license-file.workspace = true
 repository.workspace = true
 description.workspace = true
 
+[[bin]]
+name = "disconnect-server"
+path = "src/main.rs"
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 
