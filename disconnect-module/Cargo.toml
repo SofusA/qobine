@@ -1,0 +1,24 @@
+[package]
+name = "disconnect-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+cli-module = { version = "*", path = "../cli-module" }
+disconnect-server-module = { version = "*", path = "../disconnect-server-module" }
+
+tokio.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+md5.workspace = true
+eventsource-stream.workspace = true
+
+# binary dependencies
+clap.workspace = true

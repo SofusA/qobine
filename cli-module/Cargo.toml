@@ -1,0 +1,16 @@
+[package]
+name = "cli-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[dependencies]
+player-module = { version = "*", path = "../player-module" }
+
+clap.workspace = true
+tokio.workspace = true
+tokio_schedule.workspace = true
+time.workspace = true
+tracing.workspace = true

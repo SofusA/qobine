@@ -1,0 +1,35 @@
+[package]
+name = "qobuz-client"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+time.workspace = true
+md5.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+snafu.workspace = true
+tracing.workspace = true
+url.workspace = true
+clap.workspace = true
+tokio.workspace = true
+axum.workspace = true
+open.workspace = true
+base64.workspace = true
+aes.workspace = true
+ctr.workspace = true
+cbc.workspace = true
+hkdf.workspace = true
+sha2.workspace = true
+stream-download.workspace = true
+bytes.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }

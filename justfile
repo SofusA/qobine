@@ -1,12 +1,12 @@
 init-database:
-    cargo sqlx db create && cargo sqlx migrate run --source qobuz-player-player/migrations
+    cargo sqlx db create && cargo sqlx migrate run --source player-module/migrations
 
-[working-directory: 'qobuz-player-web']
+[working-directory: 'web-module']
 build-styles:
     npm i
     npm run build
 
-[working-directory: 'qobuz-player-web']
+[working-directory: 'web-module']
 build-assets:
     npm i
     npm run build-assets

@@ -1,0 +1,34 @@
+[package]
+name = "gtk-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "gtk-module"
+path = "src/main.rs"
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+mpris-module = { version = "*", path = "../mpris-module" }
+cli-module = { version = "*", path = "../cli-module" }
+disconnect-module = { version = "*", path = "../disconnect-module" }
+
+gtk4 = { version = "0.11", features = ["gnome_50"] }
+libadwaita = {version = "0.9" , features = ["v1_9"] }
+glib = "0.22"
+webkit6 = "0.6"
+url = "2.5"
+
+tokio.workspace = true
+futures.workspace = true
+
+# binary dependencies
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(any(windows, target_os = "linux", target_os = "macos"))'.dependencies]
+keepawake = { workspace = true }

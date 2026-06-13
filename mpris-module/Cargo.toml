@@ -1,0 +1,13 @@
+[package]
+name = "mpris-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+
+mpris-server.workspace = true
+tokio.workspace = true

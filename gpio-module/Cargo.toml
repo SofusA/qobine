@@ -1,0 +1,17 @@
+[package]
+name = "gpio-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[features]
+gpio = ["rppal"]
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+
+tracing.workspace = true
+rppal = { workspace = true, optional = true }
+tokio.workspace = true

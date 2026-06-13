@@ -1,0 +1,27 @@
+[package]
+name = "connect-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "connect-module"
+path = "src/main.rs"
+
+[features]
+gpio = ["gpio-module/gpio"]
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+gpio-module = { version = "*", path = "../gpio-module", optional = true }
+cli-module = { version = "*", path = "../cli-module" }
+
+qonductor.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+# binary dependencies
+clap.workspace = true

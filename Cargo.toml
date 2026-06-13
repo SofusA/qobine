@@ -1,18 +1,18 @@
 [workspace]
 members = [
-  "qobuz-player-controls",
-  "qobuz-player-web",
-  "qobuz-player-mpris",
-  "qobuz-player-tui",
-  "qobuz-player-client",
-  "qobuz-player-gpio",
-  "qobuz-player-rfid",
-  "qobuz-player-connect",
-  "qobuz-player-cli",
-  "qobuz-player-gtk",
-  "qobuz-player-disconnect-server",
-  "qobuz-player-disconnect",
-  "qobuz-player-player"
+  "controls-module",
+  "web-module",
+  "mpris-module",
+  "tui-module",
+  "qobuz-client",
+  "gpio-module",
+  "rfid-module",
+  "connect-module",
+  "cli-module",
+  "gtk-module",
+  "disconnect-server-module",
+  "disconnect-module",
+  "player-module"
 ]
 resolver = "2"
 

@@ -1,0 +1,29 @@
+[package]
+name = "rfid-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rfid-module"
+path = "src/main.rs"
+
+[features]
+gpio = ["gpio-module/gpio"]
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+connect-module = { version = "*", path = "../connect-module" }
+disconnect-module = { version = "*", path = "../disconnect-module" }
+gpio-module = { version = "*", path = "../gpio-module", optional = true }
+cli-module = { version = "*", path = "../cli-module" }
+
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# binary dependencies
+clap.workspace = true

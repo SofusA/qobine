@@ -1,0 +1,34 @@
+[package]
+name = "tui-module"
+
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "qobuz-player"
+path = "src/main.rs"
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+mpris-module = { version = "*", path = "../mpris-module" }
+connect-module = { version = "*", path = "../connect-module" }
+cli-module = { version = "*", path = "../cli-module" }
+disconnect-module = { version = "*", path = "../disconnect-module" }
+
+ratatui.workspace = true
+crossterm.workspace = true
+futures.workspace = true
+ratatui-image.workspace = true
+tui-input.workspace = true
+image.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+
+# binary dependencies
+clap.workspace = true
+
+[target.'cfg(any(windows, target_os = "linux", target_os = "macos"))'.dependencies]
+keepawake = { workspace = true }

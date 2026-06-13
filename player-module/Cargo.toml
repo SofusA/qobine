@@ -1,0 +1,27 @@
+[package]
+name = "player-module"
+
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+qobuz-client = { version = "*", path = "../qobuz-client" }
+
+tokio.workspace = true
+rand.workspace = true
+tracing.workspace = true
+snafu.workspace = true
+serde.workspace = true
+moka.workspace = true
+time.workspace = true
+rodio.workspace = true
+reqwest.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+dirs.workspace = true
+parking_lot.workspace = true
+libc.workspace = true
+futures.workspace = true

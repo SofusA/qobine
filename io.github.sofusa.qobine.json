@@ -4,7 +4,7 @@
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
   "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
-  "command": "qobuz-player-gtk",
+  "command": "gtk-module",
 
   "finish-args": [
     "--share=network",
@@ -18,7 +18,7 @@
 
   "modules": [
     {
-      "name": "qobuz-player-gtk",
+      "name": "gtk-module",
       "buildsystem": "simple",
 
       "build-options": {
@@ -26,14 +26,14 @@
         "build-args": ["--share=network"],
 
         "env": {
-          "CARGO_HOME": "/run/build/qobuz-player-gtk/cargo"
+          "CARGO_HOME": "/run/build/gtk-module/cargo"
         }
       },
 
       "build-commands": [
-        "cargo build --locked --release --manifest-path qobuz-player-gtk/Cargo.toml",
+        "cargo build --locked --release --manifest-path gtk-module/Cargo.toml",
 
-        "install -Dm755 ./target/release/qobuz-player-gtk /app/bin/qobuz-player-gtk",
+        "install -Dm755 ./target/release/gtk-module /app/bin/gtk-module",
         "install -Dm644 flatpak/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sofusa.qobine.svg",
         "install -Dm644 flatpak/io.github.sofusa.qobine.desktop /app/share/applications/io.github.sofusa.qobine.desktop",
         "install -Dm644 flatpak/io.github.sofusa.qobine.metainfo.xml /app/share/metainfo/io.github.sofusa.qobine.metainfo.xml"

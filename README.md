@@ -12,26 +12,26 @@ The web interface is ideal for a setup with a single board computer, e.g. Raspbe
 
 ### Terminal UI
 ![TUI screenshot](/assets/qobuz-player.png)
-[More info](/qobuz-player-tui)
+[More info](/tui-module)
 
 ### GNOME player
-![GTK screenshot](/assets/qobuz-player-gtk.png)
-[More info](/qobuz-player-tui)
+![GTK screenshot](/assets/gtk-module.png)
+[More info](/tui-module)
 
 ### Web UI
-<img src="/assets/qobuz-player-webui.jpg?raw=true" width="240">
-[More info](/qobuz-player-web)
+<img src="/assets/web-moduleui.jpg?raw=true" width="240">
+[More info](/web-module)
 
 ### RFID player
 ![RFID player](/assets/rfid-player.gif?raw=true)
-[More info](/qobuz-player-rfid)
+[More info](/rfid-module)
 
 ## Connect
 ### Qobuz Connect
 There is initial support for Qobuz Connect in web, tui and rfid players, and a standalone minimal connect player.
 This can be enabled with the `--connect` flag.
 However this is currently very limited, experimental and full of bugs.
-[More info on Connect player](/qobuz-player-connect)
+[More info on Connect player](/connect-module)
 
 ### Qobine Disconnect
 The web player and the rfid player has support for custom self-hostable connect service, `Disconnect`, which allows activating and deactivating multiple running players.
@@ -39,7 +39,7 @@ This does **not** work with the official qobuz smartphone app or web player.
 
 This can be used if you are running multiple players in your home, but would like to control all players centrally on your smartphone through one web player instance.
 
-[More info on Disconnect](/qobuz-player-disconnect)
+[More info on Disconnect](/disconnect-module)
 
 ### Raspberry pi
 Web, rfid and connect connect players, support setting `GPIO 23` high when music is playing.
@@ -60,7 +60,7 @@ cargo build
 Linux dependencies: `alsa-sys-devel`, `just`, `sqlx-cli`, `npm`.
 1. Setup sqlx: `just create-env-file`. Only needed once. 
 2. Init sqlite database: `init-database`.
-3. Additional for webui development: In `qobuz-player-web`:
+3. Additional for webui development: In `web-module`:
   - `npm i`. Install npm dependencies. 
   - `npm run watch`. Watch for style changes. 
 

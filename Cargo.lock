@@ -848,6 +848,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
+name = "cli-module"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "player-module",
+ "time",
+ "tokio",
+ "tokio_schedule",
+ "tracing",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -908,6 +920,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "connect-module"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "cli-module",
+ "controls-module",
+ "gpio-module",
+ "player-module",
+ "qonductor",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -918,6 +944,16 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
+name = "controls-module"
+version = "1.0.0"
+dependencies = [
+ "qobuz-client",
+ "serde",
+ "time",
+ "tokio",
+]
 
 [[package]]
 name = "convert_case"
@@ -1377,6 +1413,41 @@ dependencies = [
  "option-ext",
  "redox_users",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "disconnect-module"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "cli-module",
+ "controls-module",
+ "disconnect-server-module",
+ "eventsource-stream",
+ "futures",
+ "md5",
+ "player-module",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "disconnect-server-module"
+version = "1.0.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "controls-module",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2132,6 +2203,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpio-module"
+version = "1.0.0"
+dependencies = [
+ "controls-module",
+ "player-module",
+ "rppal",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "graphene-rs"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2183,6 +2265,27 @@ dependencies = [
  "libc",
  "pango-sys",
  "system-deps",
+]
+
+[[package]]
+name = "gtk-module"
+version = "1.0.0"
+dependencies = [
+ "cli-module",
+ "controls-module",
+ "disconnect-module",
+ "futures",
+ "glib",
+ "gtk4",
+ "keepawake",
+ "libadwaita",
+ "mpris-module",
+ "player-module",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "webkit6",
 ]
 
 [[package]]
@@ -3273,6 +3376,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpris-module"
+version = "1.0.0"
+dependencies = [
+ "controls-module",
+ "mpris-server",
+ "player-module",
+ "tokio",
+]
+
+[[package]]
 name = "mpris-server"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3981,6 +4094,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "player-module"
+version = "1.0.0"
+dependencies = [
+ "controls-module",
+ "dirs",
+ "futures",
+ "libc",
+ "moka",
+ "parking_lot",
+ "qobuz-client",
+ "rand 0.10.1",
+ "reqwest 0.12.28",
+ "rodio",
+ "serde",
+ "serde_json",
+ "snafu",
+ "sqlx",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "png"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4133,19 +4269,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "qobuz-player-cli"
-version = "1.0.0"
-dependencies = [
- "clap",
- "qobuz-player-player",
- "time",
- "tokio",
- "tokio_schedule",
- "tracing",
-]
-
-[[package]]
-name = "qobuz-player-client"
+name = "qobuz-client"
 version = "1.0.0"
 dependencies = [
  "aes",
@@ -4154,14 +4278,14 @@ dependencies = [
  "bytes",
  "cbc",
  "clap",
+ "controls-module",
  "ctr",
  "futures",
  "hkdf 0.13.0",
  "md5",
  "open",
  "parking_lot",
- "qobuz-player-controls",
- "qobuz-player-player",
+ "player-module",
  "regex",
  "reqwest 0.12.28",
  "serde",
@@ -4173,198 +4297,6 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "qobuz-player-connect"
-version = "1.0.0"
-dependencies = [
- "clap",
- "qobuz-player-cli",
- "qobuz-player-controls",
- "qobuz-player-gpio",
- "qobuz-player-player",
- "qonductor",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "qobuz-player-controls"
-version = "1.0.0"
-dependencies = [
- "qobuz-player-client",
- "serde",
- "time",
- "tokio",
-]
-
-[[package]]
-name = "qobuz-player-disconnect"
-version = "1.0.0"
-dependencies = [
- "clap",
- "eventsource-stream",
- "futures",
- "md5",
- "qobuz-player-cli",
- "qobuz-player-controls",
- "qobuz-player-disconnect-server",
- "qobuz-player-player",
- "reqwest 0.12.28",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "qobuz-player-disconnect-server"
-version = "1.0.0"
-dependencies = [
- "async-stream",
- "axum",
- "futures",
- "qobuz-player-controls",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "qobuz-player-gpio"
-version = "1.0.0"
-dependencies = [
- "qobuz-player-controls",
- "qobuz-player-player",
- "rppal",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "qobuz-player-gtk"
-version = "1.0.0"
-dependencies = [
- "futures",
- "glib",
- "gtk4",
- "keepawake",
- "libadwaita",
- "qobuz-player-cli",
- "qobuz-player-controls",
- "qobuz-player-disconnect",
- "qobuz-player-mpris",
- "qobuz-player-player",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
- "webkit6",
-]
-
-[[package]]
-name = "qobuz-player-mpris"
-version = "1.0.0"
-dependencies = [
- "mpris-server",
- "qobuz-player-controls",
- "qobuz-player-player",
- "tokio",
-]
-
-[[package]]
-name = "qobuz-player-player"
-version = "1.0.0"
-dependencies = [
- "dirs",
- "futures",
- "libc",
- "moka",
- "parking_lot",
- "qobuz-player-client",
- "qobuz-player-controls",
- "rand 0.10.1",
- "reqwest 0.12.28",
- "rodio",
- "serde",
- "serde_json",
- "snafu",
- "sqlx",
- "time",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "qobuz-player-rfid"
-version = "1.0.0"
-dependencies = [
- "clap",
- "qobuz-player-cli",
- "qobuz-player-connect",
- "qobuz-player-controls",
- "qobuz-player-disconnect",
- "qobuz-player-gpio",
- "qobuz-player-player",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "qobuz-player-tui"
-version = "1.0.0"
-dependencies = [
- "clap",
- "crossterm",
- "futures",
- "image",
- "keepawake",
- "qobuz-player-cli",
- "qobuz-player-connect",
- "qobuz-player-controls",
- "qobuz-player-disconnect",
- "qobuz-player-mpris",
- "qobuz-player-player",
- "ratatui",
- "ratatui-image",
- "reqwest 0.12.28",
- "tokio",
- "tui-input",
-]
-
-[[package]]
-name = "qobuz-player-web"
-version = "1.0.0"
-dependencies = [
- "axum",
- "axum-extra",
- "clap",
- "filesentry",
- "futures",
- "mime",
- "mime_guess",
- "qobuz-player-cli",
- "qobuz-player-connect",
- "qobuz-player-controls",
- "qobuz-player-disconnect",
- "qobuz-player-gpio",
- "qobuz-player-player",
- "qobuz-player-rfid",
- "rust-embed",
- "serde",
- "serde_json",
- "skabelon",
- "time",
- "tokio",
- "tokio-stream",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -4944,6 +4876,23 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.5.0",
  "web-sys",
+]
+
+[[package]]
+name = "rfid-module"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "cli-module",
+ "connect-module",
+ "controls-module",
+ "disconnect-module",
+ "gpio-module",
+ "player-module",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6595,6 +6544,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "tui-module"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "cli-module",
+ "connect-module",
+ "controls-module",
+ "crossterm",
+ "disconnect-module",
+ "futures",
+ "image",
+ "keepawake",
+ "mpris-module",
+ "player-module",
+ "ratatui",
+ "ratatui-image",
+ "reqwest 0.12.28",
+ "tokio",
+ "tui-input",
+]
+
+[[package]]
 name = "tungstenite"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6963,6 +6934,35 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "web-module"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "clap",
+ "cli-module",
+ "connect-module",
+ "controls-module",
+ "disconnect-module",
+ "filesentry",
+ "futures",
+ "gpio-module",
+ "mime",
+ "mime_guess",
+ "player-module",
+ "rfid-module",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "skabelon",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
