@@ -4,12 +4,16 @@ use player_module::{
     database::{Database, ReferenceType},
     error::Error,
     notification::{Notification, NotificationBroadcast},
+    player::Player,
 };
 use reqwest::{RequestBuilder, header::CONTENT_TYPE};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt},
-    sync::{Mutex, mpsc},
+    sync::{
+        Mutex,
+        mpsc::{self, UnboundedSender},
+    },
 };
 
 #[derive(Debug, Clone, Default)]
@@ -18,7 +22,41 @@ pub struct RfidState {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn init(
+pub fn spawn_rfid(
+    player: &Player,
+    database: Arc<Database>,
+    broadcast: Arc<NotificationBroadcast>,
+    connect_device_name: Option<String>,
+    rfid_server_base_address: Option<String>,
+    rfid_server_secret: Option<String>,
+    state: RfidState,
+    set_active_device_tx: Option<UnboundedSender<String>>,
+) {
+    let controls = player.controls();
+    let tracklist_receiver = player.tracklist();
+
+    tokio::spawn(async move {
+        if let Err(error) = init(
+            state,
+            tracklist_receiver,
+            controls,
+            database,
+            broadcast,
+            rfid_server_base_address,
+            rfid_server_secret,
+            connect_device_name,
+            set_active_device_tx,
+        )
+        .await
+        {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    });
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn init(
     state: RfidState,
     tracklist_receiver: TracklistReceiver,
     controls: Controls,

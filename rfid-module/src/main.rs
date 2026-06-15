@@ -6,7 +6,7 @@ use cli_module::{
     parse_disconnect_args, spawn_clean_up,
 };
 use disconnect_module::DisconnectClientConfig;
-use rfid_module::RfidState;
+use rfid_module::{RfidState, spawn_rfid};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -124,31 +124,16 @@ pub async fn run() -> AppResult<()> {
         });
     }
 
-    {
-        let rfid_state = RfidState::default();
-        let controls = player.controls();
-        let database = database.clone();
-        let tracklist_receiver = player.tracklist();
-        let connect_device_name = disconnect_args.as_ref().map(|x| x.device_name.clone());
-
-        tokio::spawn(async move {
-            if let Err(e) = rfid_module::init(
-                rfid_state,
-                tracklist_receiver,
-                controls,
-                database,
-                broadcast,
-                args.rfid_config.rfid_server_base_address,
-                args.rfid_config.rfid_server_secret,
-                connect_device_name,
-                set_active_device_tx,
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
+    spawn_rfid(
+        &player,
+        database.clone(),
+        broadcast,
+        disconnect_args.as_ref().map(|x| x.device_name.clone()),
+        args.rfid_config.rfid_server_base_address,
+        args.rfid_config.rfid_server_secret,
+        RfidState::default(),
+        set_active_device_tx,
+    );
 
     if let (
         Some(config_rx),
