@@ -2,7 +2,7 @@ use cli_module::{
     DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
     default_audio_quality, error_exit, get_client, handle_shared_commands, spawn_clean_up,
 };
-use disconnect_module::DisconnectClientConfig;
+use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -90,46 +90,13 @@ pub async fn run() -> AppResult<()> {
         device_name: args.device_name,
     }));
 
-    {
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let auto_play_receiver = player.auto_play();
-        let controls = player.controls();
-
-        let tracklist_sender = player.tracklist_sender();
-        let position_sender = player.position_sender();
-        let status_sender = player.status_sender();
-        let volume_sender = player.volume_sender();
-        let active_sender = player.active_sender();
-        let auto_play_sender = player.auto_play_sender();
-
-        tokio::spawn(async move {
-            if let Err(e) = disconnect_module::init(
-                config_rx,
-                controls,
-                tracklist_sender,
-                position_sender,
-                volume_sender,
-                auto_play_sender,
-                status_sender,
-                active_sender,
-                available_devices_tx,
-                active_device_sender,
-                position_receiver,
-                tracklist_receiver,
-                status_receiver,
-                volume_receiver,
-                auto_play_receiver,
-                active_device_receiver,
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
+    spawn_disconnect(
+        &player,
+        config_rx,
+        available_devices_tx,
+        active_device_sender,
+        active_device_receiver,
+    );
 
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);
     player.player_loop(exit_receiver).await?;

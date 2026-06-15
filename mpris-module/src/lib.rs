@@ -12,7 +12,7 @@ use mpris_server::{
 use player_module::{AppResult, error::Error, player::Player};
 use tokio::sync::broadcast::Sender;
 
-pub fn launch_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: String) {
+pub fn spawn_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: String) {
     let position_receiver = player.position();
     let tracklist_receiver = player.tracklist();
     let volume_receiver = player.volume();
@@ -20,7 +20,7 @@ pub fn launch_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: Str
     let controls = player.controls();
     let exit_sender = exit_sender.clone();
     tokio::spawn(async move {
-        if let Err(e) = init(
+        if let Err(error) = init(
             position_receiver,
             tracklist_receiver,
             volume_receiver,
@@ -31,14 +31,10 @@ pub fn launch_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: Str
         )
         .await
         {
-            error_exit(e);
+            eprintln!("{error}");
+            std::process::exit(1);
         }
     });
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }
 
 struct MprisPlayer {

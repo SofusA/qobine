@@ -5,12 +5,59 @@ use controls_module::{
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
-use player_module::AppResult;
+use player_module::{AppResult, player::Player};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use crate::client::DisconnectClient;
 
 mod client;
+
+pub fn spawn_disconnect(
+    player: &Player,
+    client_config: watch::Receiver<Option<DisconnectClientConfig>>,
+    available_devices_sender: watch::Sender<Vec<String>>,
+    active_device_sender: watch::Sender<String>,
+    set_active_device_receiver: mpsc::UnboundedReceiver<String>,
+) {
+    let position_receiver = player.position();
+    let position_sender = player.position_sender();
+    let tracklist_receiver = player.tracklist();
+    let tracklist_sender = player.tracklist_sender();
+    let volume_receiver = player.volume();
+    let volume_sender = player.volume_sender();
+    let status_receiver = player.status();
+    let status_sender = player.status_sender();
+    let controls = player.controls();
+    let active_sender = player.active_sender();
+    let auto_play_sender = player.auto_play_sender();
+    let auto_play_receiver = player.auto_play();
+
+    tokio::spawn(async move {
+        if let Err(error) = init(
+            client_config,
+            controls,
+            tracklist_sender,
+            position_sender,
+            volume_sender,
+            auto_play_sender,
+            status_sender,
+            active_sender,
+            available_devices_sender,
+            active_device_sender,
+            position_receiver,
+            tracklist_receiver,
+            status_receiver,
+            volume_receiver,
+            auto_play_receiver,
+            set_active_device_receiver,
+        )
+        .await
+        {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    });
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DisconnectClientConfig {
@@ -183,7 +230,7 @@ impl DisconnectState {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn init(
+async fn init(
     client_config: watch::Receiver<Option<DisconnectClientConfig>>,
     controls: Controls,
 

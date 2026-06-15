@@ -5,7 +5,7 @@ use cli_module::{
     default_audio_cache, default_audio_quality, error_exit, get_client, handle_shared_commands,
     parse_disconnect_args, spawn_clean_up,
 };
-use disconnect_module::DisconnectClientConfig;
+use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
 use rfid_module::{RfidState, spawn_rfid};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -215,44 +215,13 @@ pub async fn run() -> AppResult<()> {
         active_device_tx,
         set_active_device_rx,
     ) {
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let auto_play_receiver = player.auto_play();
-        let controls = player.controls();
-        let active_sender = player.active_sender();
-
-        let tracklist_sender = player.tracklist_sender();
-        let position_sender = player.position_sender();
-        let status_sender = player.status_sender();
-        let volume_sender = player.volume_sender();
-        let auto_play_sender = player.auto_play_sender();
-
-        tokio::spawn(async move {
-            if let Err(e) = disconnect_module::init(
-                config_rx,
-                controls,
-                tracklist_sender,
-                position_sender,
-                volume_sender,
-                auto_play_sender,
-                status_sender,
-                active_sender,
-                available_devices_tx,
-                active_device_tx,
-                position_receiver,
-                tracklist_receiver,
-                status_receiver,
-                volume_receiver,
-                auto_play_receiver,
-                set_active_device_rx,
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
+        spawn_disconnect(
+            &player,
+            config_rx,
+            available_devices_tx,
+            active_device_tx,
+            set_active_device_rx,
+        );
     }
 
     if args.connect.connect {
@@ -284,9 +253,9 @@ pub async fn run() -> AppResult<()> {
 
     #[cfg(target_os = "linux")]
     if args.mpris {
-        use mpris_module::launch_mpris;
+        use mpris_module::spawn_mpris;
 
-        launch_mpris(&player, &exit_sender, "qobuz-player".to_string());
+        spawn_mpris(&player, &exit_sender, "qobuz-player".to_string());
     }
 
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);
