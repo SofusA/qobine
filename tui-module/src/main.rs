@@ -1,18 +1,18 @@
 use cli_module::{
     ConnectArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
-    default_audio_quality, get_client, handle_shared_commands, spawn_clean_up_mut,
+    default_audio_quality, error_exit, get_client, handle_shared_commands, spawn_clean_up_mut,
 };
 use disconnect_module::DisconnectClientConfig;
 use futures::executor::block_on;
+#[cfg(target_os = "linux")]
+use mpris_module::launch_mpris;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
-use player_module::{
-    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
-};
+use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -79,29 +79,7 @@ pub async fn run() -> AppResult<()> {
     .await?;
 
     #[cfg(target_os = "linux")]
-    {
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let controls = player.controls();
-        let exit_sender = exit_sender.clone();
-        tokio::spawn(async move {
-            if let Err(e) = mpris_module::init(
-                position_receiver,
-                tracklist_receiver,
-                volume_receiver,
-                status_receiver,
-                controls,
-                exit_sender,
-                "qobuz-player".to_string(),
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
+    launch_mpris(&player, &exit_sender, "qobuz-player".to_string());
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
@@ -237,11 +215,6 @@ pub async fn run() -> AppResult<()> {
     player.player_loop(exit_receiver).await?;
 
     Ok(())
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }
 
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]

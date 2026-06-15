@@ -2,7 +2,7 @@
 use cli_module::GpioArgs;
 use cli_module::{
     ConnectArgs, DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
-    default_audio_cache, default_audio_quality, get_client, handle_shared_commands,
+    default_audio_cache, default_audio_quality, error_exit, get_client, handle_shared_commands,
     parse_disconnect_args, spawn_clean_up,
 };
 use disconnect_module::DisconnectClientConfig;
@@ -11,9 +11,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
-use player_module::{
-    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
-};
+use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -29,6 +27,11 @@ struct Arguments {
     #[clap(long, default_value_t = false)]
     /// Enable rfid interface
     rfid: bool,
+
+    #[cfg(target_os = "linux")]
+    #[clap(long, default_value_t = false)]
+    /// Enable mpris interface
+    mpris: bool,
 
     #[clap(flatten)]
     rfid_config: RfidArgs,
@@ -75,7 +78,7 @@ pub async fn run() -> AppResult<()> {
         return Ok(());
     }
 
-    let (_, exit_receiver) = broadcast::channel(5);
+    let (exit_sender, exit_receiver) = broadcast::channel(5);
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
     let client = get_client(
@@ -291,13 +294,15 @@ pub async fn run() -> AppResult<()> {
         });
     }
 
+    #[cfg(target_os = "linux")]
+    if args.mpris {
+        use mpris_module::launch_mpris;
+
+        launch_mpris(&player, &exit_sender, "qobuz-player".to_string());
+    }
+
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);
     player.player_loop(exit_receiver).await?;
 
     Ok(())
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }

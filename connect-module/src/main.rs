@@ -2,11 +2,9 @@
 use cli_module::GpioArgs;
 use cli_module::{
     ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
-    default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
+    default_audio_quality, error_exit, get_client, handle_shared_commands, spawn_clean_up,
 };
-use player_module::{
-    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
-};
+use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -120,9 +118,4 @@ pub async fn run() -> AppResult<()> {
     player.player_loop(exit_receiver).await?;
 
     Ok(())
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }

@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use player_module::{
-    AppResult, AudioQuality, client::Client, database::Database,
+    AppResult, AudioQuality, client::Client, database::Database, error::Error,
     notification::NotificationBroadcast, player::Player,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -317,4 +317,9 @@ pub async fn create_player(
     )?;
 
     Ok(player)
+}
+
+pub fn error_exit(error: Error) {
+    eprintln!("{error}");
+    std::process::exit(1);
 }

@@ -2,7 +2,7 @@
 use cli_module::GpioArgs;
 use cli_module::{
     ConnectArgs, DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
-    default_audio_cache, default_audio_quality, get_client, handle_shared_commands,
+    default_audio_cache, default_audio_quality, error_exit, get_client, handle_shared_commands,
     parse_disconnect_args, spawn_clean_up,
 };
 use disconnect_module::DisconnectClientConfig;
@@ -11,9 +11,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use clap::Parser;
-use player_module::{
-    AppResult, database::Database, error::Error, notification::NotificationBroadcast,
-};
+use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -233,9 +231,4 @@ pub async fn run() -> AppResult<()> {
     player.player_loop(exit_receiver).await?;
 
     Ok(())
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }

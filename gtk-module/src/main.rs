@@ -1,7 +1,9 @@
-use cli_module::{create_player, spawn_clean_up_mut};
+use cli_module::{create_player, error_exit, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
 use disconnect_module::DisconnectClientConfig;
+#[cfg(target_os = "linux")]
+use mpris_module::launch_mpris;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -9,7 +11,6 @@ use player_module::{
     AppResult,
     client::{Client, get_app_id},
     database::Database,
-    error::Error,
     notification::NotificationBroadcast,
 };
 
@@ -54,29 +55,7 @@ pub async fn run() -> AppResult<()> {
     .await?;
 
     #[cfg(target_os = "linux")]
-    {
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let controls = player.controls();
-        let exit_sender = exit_sender.clone();
-        tokio::spawn(async move {
-            if let Err(e) = mpris_module::init(
-                position_receiver,
-                tracklist_receiver,
-                volume_receiver,
-                status_receiver,
-                controls,
-                exit_sender,
-                "io.github.sofusa.qobine".to_string(),
-            )
-            .await
-            {
-                error_exit(e);
-            }
-        });
-    }
+    launch_mpris(&player, &exit_sender, "io.github.sofusa.qobine".to_string());
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
@@ -182,11 +161,6 @@ pub async fn run() -> AppResult<()> {
     player.player_loop(exit_receiver).await?;
 
     Ok(())
-}
-
-fn error_exit(error: Error) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }
 
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]

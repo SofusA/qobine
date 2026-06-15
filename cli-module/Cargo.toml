@@ -8,6 +8,7 @@ description.workspace = true
 
 [dependencies]
 player-module = { version = "*", path = "../player-module" }
+mpris-module = { version = "*", path = "../mpris-module" }
 
 clap.workspace = true
 tokio.workspace = true

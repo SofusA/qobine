@@ -17,6 +17,7 @@ gpio = ["gpio-module/gpio"]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
 rfid-module = { version = "*", path = "../rfid-module" }
+mpris-module = { version = "*", path = "../mpris-module" }
 connect-module = { version = "*", path = "../connect-module" }
 gpio-module = { version = "*", path = "../gpio-module", optional = true }
 cli-module = { version = "*", path = "../cli-module" }

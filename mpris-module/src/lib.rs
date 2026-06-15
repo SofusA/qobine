@@ -9,7 +9,37 @@ use mpris_server::{
     Server, Time, TrackId, Volume,
     zbus::{self, fdo},
 };
-use player_module::{AppResult, error::Error};
+use player_module::{AppResult, error::Error, player::Player};
+use tokio::sync::broadcast::Sender;
+
+pub fn launch_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: String) {
+    let position_receiver = player.position();
+    let tracklist_receiver = player.tracklist();
+    let volume_receiver = player.volume();
+    let status_receiver = player.status();
+    let controls = player.controls();
+    let exit_sender = exit_sender.clone();
+    tokio::spawn(async move {
+        if let Err(e) = init(
+            position_receiver,
+            tracklist_receiver,
+            volume_receiver,
+            status_receiver,
+            controls,
+            exit_sender,
+            mpris_name,
+        )
+        .await
+        {
+            error_exit(e);
+        }
+    });
+}
+
+fn error_exit(error: Error) {
+    eprintln!("{error}");
+    std::process::exit(1);
+}
 
 struct MprisPlayer {
     controls: Controls,
@@ -212,7 +242,7 @@ impl PlayerInterface for MprisPlayer {
     }
 }
 
-pub async fn init(
+async fn init(
     position_receiver: PositionReceiver,
     mut tracklist_receiver: TracklistReceiver,
     mut volume_receiver: VolumeReceiver,
