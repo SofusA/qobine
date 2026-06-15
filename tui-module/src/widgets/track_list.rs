@@ -177,8 +177,8 @@ impl TrackList {
             }
 
             KeyCode::Char('S') => {
-                let ids = self.filter().iter().map(|x| x.id).collect();
-                controls.play_tracks(ids, true);
+                let tracks = self.filter().clone();
+                controls.play_tracks(tracks, true, 0);
                 Ok(Output::Consumed)
             }
 
@@ -207,10 +207,7 @@ impl TrackList {
 
                 match event_type {
                     TrackListEvent::Track => {
-                        let selected = self.items.filter().get(index);
-                        if let Some(selected) = selected {
-                            controls.play_track(selected.id);
-                        }
+                        controls.play_tracks(self.items.filter().to_vec(), false, index);
                     }
                     TrackListEvent::Album(id) => controls.play_album(&id, index),
                     TrackListEvent::Playlist(id, shuffle) => {

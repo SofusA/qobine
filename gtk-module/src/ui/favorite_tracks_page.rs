@@ -57,8 +57,7 @@ impl FavoriteTracksPage {
             let tracks = tracks.clone();
 
             move |_| {
-                let tracks = tracks.borrow().iter().map(|x| x.id).collect();
-                controls.play_tracks(tracks, false);
+                controls.play_tracks(tracks.borrow().to_vec(), false, 0);
             }
         });
 
@@ -67,8 +66,7 @@ impl FavoriteTracksPage {
             let tracks = tracks.clone();
 
             move |_| {
-                let tracks = tracks.borrow().iter().map(|x| x.id).collect();
-                controls.play_tracks(tracks, true);
+                controls.play_tracks(tracks.borrow().to_vec(), true, 0);
             }
         });
 
@@ -115,11 +113,7 @@ impl FavoriteTracksPage {
                 let idx = row.index();
 
                 if idx >= 0 {
-                    let tracks = tracks.borrow();
-
-                    if let Some(track) = tracks.get(idx as usize) {
-                        controls.play_track(track.id);
-                    }
+                    controls.play_tracks(tracks.borrow().to_vec(), false, idx as usize);
                 }
             }
         });

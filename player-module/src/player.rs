@@ -500,22 +500,25 @@ impl Player {
         self.new_queue(tracklist, true).await
     }
 
-    async fn play_tracks(&mut self, ids: Vec<u32>, shuffle: bool) -> AppResult<()> {
-        let mut tracks: Vec<_> = self
-            .client
-            .tracks(ids)
-            .await?
-            .into_iter()
-            .filter(|t| t.available)
-            .collect();
+    async fn play_tracks(
+        &mut self,
+        tracks: Vec<Track>,
+        shuffle: bool,
+        index: usize,
+    ) -> AppResult<()> {
+        let unstreamable_tracks_to_index = match shuffle {
+            true => 0,
+            false => tracks.iter().take(index).filter(|t| !t.available).count(),
+        };
+
+        let mut tracks: Vec<_> = tracks.into_iter().filter(|t| t.available).collect();
 
         if shuffle {
             tracks.shuffle(&mut rand::rng());
         }
 
         let mut tracklist = Tracklist::new(TracklistType::Tracks, tracks_to_queue_items(tracks));
-
-        tracklist.skip_to_track(0);
+        tracklist.skip_to_track(index - unstreamable_tracks_to_index);
         self.new_queue(tracklist, true).await
     }
 
@@ -678,8 +681,12 @@ impl Player {
             ControlCommand::Track { id } => {
                 self.play_track(id).await?;
             }
-            ControlCommand::Tracks { ids, shuffle } => {
-                self.play_tracks(ids, shuffle).await?;
+            ControlCommand::Tracks {
+                tracks,
+                shuffle,
+                index,
+            } => {
+                self.play_tracks(tracks, shuffle, index).await?;
             }
             ControlCommand::Next => {
                 self.next().await?;

@@ -24,6 +24,7 @@ pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
         .route("/favorites/{tab}", get(index))
         .route("/favorites/tracks/partial", get(tracks_partial))
         .route("/favorites/tracks/shuffle", put(shuffle_favorite_tracks))
+        .route("/favorites/tracks/play/{index}", put(play_favorite_track))
 }
 
 async fn index(State(state): State<Arc<AppState>>, Path(tab): Path<Tab>) -> ResponseResult {
@@ -46,9 +47,19 @@ async fn tracks_partial(State(state): State<Arc<AppState>>) -> ResponseResult {
 
 async fn shuffle_favorite_tracks(State(state): State<Arc<AppState>>) -> ResponseResult {
     let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
-    let track_ids = favorites.tracks.into_iter().map(|x| x.id).collect();
+    state.controls.play_tracks(favorites.tracks, true, 0);
 
-    state.controls.play_tracks(track_ids, true);
+    Ok(().into_response())
+}
+
+async fn play_favorite_track(
+    State(state): State<Arc<AppState>>,
+    Path(track_index): Path<usize>,
+) -> ResponseResult {
+    let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
+    state
+        .controls
+        .play_tracks(favorites.tracks, false, track_index);
 
     Ok(().into_response())
 }
