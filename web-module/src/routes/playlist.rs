@@ -55,10 +55,9 @@ async fn action(
     match req.action {
         Action::AddToQueue => {
             let playlist = ok_or_send_error_toast(&state, state.client.playlist(req.id).await)?;
-            let track_ids = playlist.tracks.into_iter().map(|x| x.id).collect();
+            let tracks = playlist.tracks;
 
-            state.controls.add_tracks_to_queue(track_ids);
-
+            state.controls.add_tracks_to_queue(tracks);
             Ok(state.send_toast(Notification::Success(format!(
                 "{} added to queue",
                 playlist.title
@@ -66,9 +65,9 @@ async fn action(
         }
         Action::PlayNext => {
             let playlist = ok_or_send_error_toast(&state, state.client.playlist(req.id).await)?;
-            let track_ids = playlist.tracks.into_iter().map(|x| x.id).collect();
+            let tracks = playlist.tracks;
 
-            state.controls.play_tracks_next(track_ids);
+            state.controls.play_tracks_next(tracks);
             Ok(state.send_toast(Notification::Success(format!(
                 "Playing {} next",
                 playlist.title

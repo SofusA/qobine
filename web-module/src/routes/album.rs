@@ -44,9 +44,9 @@ async fn action(
     match req.action {
         Action::AddToQueue => {
             let album_data = ok_or_send_error_toast(&state, state.get_album(&req.id).await)?;
-            let track_ids = album_data.album.tracks.into_iter().map(|x| x.id).collect();
+            let tracks = album_data.album.tracks;
 
-            state.controls.add_tracks_to_queue(track_ids);
+            state.controls.add_tracks_to_queue(tracks);
             Ok(state.send_toast(Notification::Success(format!(
                 "{} added to queue",
                 album_data.album.title
@@ -54,9 +54,9 @@ async fn action(
         }
         Action::PlayNext => {
             let album_data = ok_or_send_error_toast(&state, state.get_album(&req.id).await)?;
-            let track_ids = album_data.album.tracks.into_iter().map(|x| x.id).collect();
+            let tracks = album_data.album.tracks;
 
-            state.controls.play_tracks_next(track_ids);
+            state.controls.play_tracks_next(tracks);
 
             Ok(state.send_toast(Notification::Success(format!(
                 "Playing {} next",

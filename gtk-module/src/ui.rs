@@ -385,11 +385,12 @@ pub fn build_track_row(
     let add_to_queue_action = gio::SimpleAction::new("add-to-queue", None);
 
     add_to_queue_action.connect_activate({
-        let track_id = track.id;
         let controls = controls.clone();
+        let track = track.clone();
 
         move |_, _| {
-            controls.add_tracks_to_queue(vec![track_id]);
+            let track = track.clone();
+            controls.add_tracks_to_queue(vec![track]);
         }
     });
 
@@ -431,11 +432,12 @@ pub fn build_track_row(
     let play_next_action = gio::SimpleAction::new("play-next", None);
 
     play_next_action.connect_activate({
-        let track_id = track.id;
         let controls = controls.clone();
+        let track = track.clone();
 
         move |_, _| {
-            controls.play_tracks_next(vec![track_id]);
+            let track = track.clone();
+            controls.play_tracks_next(vec![track]);
         }
     });
 

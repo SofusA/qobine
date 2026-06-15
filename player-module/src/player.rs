@@ -574,11 +574,10 @@ impl Player {
         Ok(())
     }
 
-    async fn add_tracks_to_queue(&mut self, ids: Vec<u32>) -> AppResult<()> {
+    async fn add_tracks_to_queue(&mut self, tracks: Vec<Track>) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
         tracklist.set_list_type(TracklistType::Tracks);
 
-        let tracks = self.client.tracks(ids).await?;
         let track_titles: Vec<_> = tracks.iter().map(|x| x.title.clone()).collect();
         let track_titles = track_titles.join(", ");
 
@@ -593,11 +592,10 @@ impl Player {
         Ok(())
     }
 
-    async fn play_tracks_next(&mut self, ids: Vec<u32>) -> AppResult<()> {
+    async fn play_tracks_next(&mut self, mut tracks: Vec<Track>) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
         tracklist.set_list_type(TracklistType::Tracks);
 
-        let mut tracks = self.client.tracks(ids).await?;
         let track_titles: Vec<_> = tracks.iter().map(|x| x.title.clone()).collect();
         let track_titles = track_titles.join(", ");
 
@@ -724,11 +722,11 @@ impl Player {
             ControlCommand::SetAutoPlay { enable } => {
                 self.set_auto_play(enable).await?;
             }
-            ControlCommand::AddTracksToQueue { ids } => self.add_tracks_to_queue(ids).await?,
             ControlCommand::RemoveIndexFromQueue { index } => {
                 self.remove_index_from_queue(index).await?
             }
-            ControlCommand::PlayTracksNext { ids } => self.play_tracks_next(ids).await?,
+            ControlCommand::AddTracksToQueue { tracks } => self.add_tracks_to_queue(tracks).await?,
+            ControlCommand::PlayTracksNext { tracks } => self.play_tracks_next(tracks).await?,
             ControlCommand::ReorderQueue { new_order } => self.reorder_queue(new_order).await?,
             ControlCommand::NewQueue {
                 items,

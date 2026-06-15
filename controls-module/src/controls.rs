@@ -49,13 +49,13 @@ pub enum ControlCommand {
         enable: bool,
     },
     AddTracksToQueue {
-        ids: Vec<u32>,
+        tracks: Vec<Track>,
     },
     RemoveIndexFromQueue {
         index: usize,
     },
     PlayTracksNext {
-        ids: Vec<u32>,
+        tracks: Vec<Track>,
     },
     ReorderQueue {
         new_order: Vec<usize>,
@@ -146,16 +146,16 @@ impl Controls {
         });
     }
 
-    pub fn add_tracks_to_queue(&self, ids: Vec<u32>) {
-        self.send(ControlCommand::AddTracksToQueue { ids });
+    pub fn add_tracks_to_queue(&self, tracks: Vec<Track>) {
+        self.send(ControlCommand::AddTracksToQueue { tracks });
+    }
+
+    pub fn play_tracks_next(&self, tracks: Vec<Track>) {
+        self.send(ControlCommand::PlayTracksNext { tracks });
     }
 
     pub fn remove_index_from_queue(&self, index: usize) {
         self.send(ControlCommand::RemoveIndexFromQueue { index });
-    }
-
-    pub fn play_tracks_next(&self, ids: Vec<u32>) {
-        self.send(ControlCommand::PlayTracksNext { ids });
     }
 
     pub fn play_top_tracks(&self, artist_id: u32, index: usize) {

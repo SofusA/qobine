@@ -97,12 +97,14 @@ async fn track_action(
             Ok(state.send_toast(Notification::Info("Track removed from favorites".into())))
         }
         TrackAction::AddToQueue => {
-            state.controls.add_tracks_to_queue(vec![req.track_id]);
+            let track = ok_or_send_error_toast(&state, state.client.track(req.track_id).await)?;
+            state.controls.add_tracks_to_queue(vec![track]);
             state.send_sse("tracklist".into(), "Track added to queue".into());
             Ok(state.send_toast(Notification::Info("Track added to queue".into())))
         }
         TrackAction::PlayNext => {
-            state.controls.play_tracks_next(vec![req.track_id]);
+            let track = ok_or_send_error_toast(&state, state.client.track(req.track_id).await)?;
+            state.controls.play_tracks_next(vec![track]);
             state.send_sse("tracklist".into(), "Track queued next".into());
             Ok(state.send_toast(Notification::Info("Track queued next".into())))
         }

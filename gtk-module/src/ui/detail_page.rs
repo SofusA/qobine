@@ -4,7 +4,7 @@ use gtk4 as gtk;
 use libadwaita as adw;
 
 use adw::prelude::*;
-use controls_module::controls::Controls;
+use controls_module::{controls::Controls, models::Track};
 use gtk::gio;
 use player_module::{AppResult, client::Client};
 
@@ -83,7 +83,7 @@ pub fn build_detail_header(
                 let client = client.clone();
 
                 async move {
-                    match fetch_track_ids(&client, detail_type).await {
+                    match fetch_tracks(&client, detail_type).await {
                         Ok(tracks) => {
                             controls.add_tracks_to_queue(tracks);
                         }
@@ -112,7 +112,7 @@ pub fn build_detail_header(
                 let client = client.clone();
 
                 async move {
-                    match fetch_track_ids(&client, detail_type).await {
+                    match fetch_tracks(&client, detail_type).await {
                         Ok(tracks) => {
                             controls.play_tracks_next(tracks);
                         }
@@ -145,10 +145,14 @@ pub fn build_detail_header(
                 let detail_type = detail_type.clone();
 
                 async move {
-                    match fetch_track_ids(&client, detail_type).await {
+                    match fetch_tracks(&client, detail_type).await {
                         Ok(track_ids) => {
-                            if let Err(err) =
-                                client.playlist_add_track(playlist_id, &track_ids).await
+                            if let Err(err) = client
+                                .playlist_add_track(
+                                    playlist_id,
+                                    &track_ids.iter().map(|x| x.id).collect::<Vec<_>>(),
+                                )
+                                .await
                             {
                                 tracing::error!("Failed to add tracks to playlist: {err}");
                             }
@@ -309,31 +313,11 @@ pub fn build_detail_scaffold(
     }
 }
 
-async fn fetch_track_ids(client: &Client, favorite_button_type: DetailType) -> AppResult<Vec<u32>> {
+async fn fetch_tracks(client: &Client, favorite_button_type: DetailType) -> AppResult<Vec<Track>> {
     let tracks = match favorite_button_type {
-        DetailType::Album(id) => client
-            .album(&id)
-            .await?
-            .tracks
-            .into_iter()
-            .map(|x| x.id)
-            .collect(),
-
-        DetailType::Artist(id) => client
-            .artist_page(id)
-            .await?
-            .top_tracks
-            .into_iter()
-            .map(|x| x.id)
-            .collect(),
-
-        DetailType::Playlist(id) => client
-            .playlist(id)
-            .await?
-            .tracks
-            .into_iter()
-            .map(|x| x.id)
-            .collect(),
+        DetailType::Album(id) => client.album(&id).await?.tracks,
+        DetailType::Artist(id) => client.artist_page(id).await?.top_tracks,
+        DetailType::Playlist(id) => client.playlist(id).await?.tracks,
     };
 
     Ok(tracks)

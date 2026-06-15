@@ -122,14 +122,8 @@ impl AlbumList {
                 let selected = index.and_then(|index| self.items.filter().get(index));
 
                 if let Some(selected) = selected {
-                    let ids = client
-                        .album(&selected.id)
-                        .await?
-                        .tracks
-                        .into_iter()
-                        .map(|x| x.id)
-                        .collect();
-                    controls.add_tracks_to_queue(ids);
+                    let tracks = client.album(&selected.id).await?.tracks;
+                    controls.add_tracks_to_queue(tracks);
                 }
 
                 Ok(Output::Consumed)
@@ -140,14 +134,8 @@ impl AlbumList {
                 let selected = index.and_then(|index| self.items.filter().get(index));
 
                 if let Some(selected) = selected {
-                    let ids = client
-                        .album(&selected.id)
-                        .await?
-                        .tracks
-                        .into_iter()
-                        .map(|x| x.id)
-                        .collect();
-                    controls.play_tracks_next(ids);
+                    let tracks = client.album(&selected.id).await?.tracks;
+                    controls.play_tracks_next(tracks);
                 }
 
                 Ok(Output::Consumed)
