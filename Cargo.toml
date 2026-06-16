@@ -72,5 +72,5 @@ open = "5"
 mpris-server = "0.10"
 eventsource-stream = "0.2"
 async-stream = "0.3"
-tower-http = { version = "0.6", features = ["limit"] }
+tower-http = { version = "0.7", features = ["limit"] }
 futures-util = "0.3"
