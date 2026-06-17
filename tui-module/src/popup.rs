@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{Album, Artist, ArtistPage, Playlist, PlaylistSimple, Track},
+    models::{Album, Artist, Playlist, PlaylistSimple, Track},
 };
 use player_module::{AppResult, client::Client};
 use ratatui::{
@@ -13,9 +13,10 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
-    ui::{block, center, centered_rect_fixed, format_seconds, render_input, tab_bar},
+    ui::{block, center, centered_rect_fixed, fetch_image, format_seconds, render_input, tab_bar},
     widgets::{
         album_list::AlbumList,
+        artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
     },
@@ -27,6 +28,9 @@ pub struct ArtistPopupState {
     singles: AlbumList,
     live: AlbumList,
     compilations: AlbumList,
+    similar: ArtistList,
+    description: Option<String>,
+    image: Option<(StatefulProtocol, f32)>,
     selected_sub_tab: usize,
     top_tracks: TrackList,
     id: u32,
@@ -35,11 +39,7 @@ pub struct ArtistPopupState {
 enum SelectedArtistPopupSubtabMut<'a> {
     Albums(&'a mut AlbumList),
     TopTracks(&'a mut TrackList),
-}
-
-enum SelectedArtistPopupSubtab<'a> {
-    Albums(&'a AlbumList),
-    TopTracks(&'a TrackList),
+    Similar(&'a mut ArtistList),
 }
 
 struct Tab<'a> {
@@ -47,12 +47,15 @@ struct Tab<'a> {
     is_empty: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
 enum TabKind {
     Albums,
     TopTracks,
     Singles,
     Live,
     Compilations,
+    Similar,
+    About,
 }
 
 impl ArtistPopupState {
@@ -60,18 +63,48 @@ impl ArtistPopupState {
         let id = artist.id;
         let artist_page = client.artist_page(id).await?;
 
+        let image = match artist_page.image {
+            Some(url) => fetch_image(&url).await,
+            None => None,
+        };
+
         let state = Self {
             artist_name: artist.name.clone(),
             albums: AlbumList::new(artist_page.albums),
             singles: AlbumList::new(artist_page.singles),
             live: AlbumList::new(artist_page.live),
             compilations: AlbumList::new(artist_page.compilations),
+            similar: ArtistList::new(artist_page.similar_artists),
+            description: artist_page.description,
+            image,
             selected_sub_tab: 0,
             top_tracks: TrackList::new(artist_page.top_tracks),
             id: artist.id,
         };
 
         Ok(state)
+    }
+
+    fn stats_line(&self) -> String {
+        let counts = [
+            (self.albums.filter().len(), "albums"),
+            (self.singles.filter().len(), "singles"),
+            (self.live.filter().len(), "live"),
+            (self.compilations.filter().len(), "compilations"),
+        ];
+
+        counts
+            .iter()
+            .filter(|(count, _)| *count > 0)
+            .map(|(count, label)| format!("{count} {label}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    }
+
+    fn selected_tab_kind(&self) -> Option<TabKind> {
+        self.visible_tab_kinds()
+            .into_iter()
+            .nth(self.selected_sub_tab)
     }
 
     fn cycle_subtab_backwards(&mut self) {
@@ -102,15 +135,18 @@ impl ArtistPopupState {
         if !self.compilations.filter().is_empty() {
             tabs.push(TabKind::Compilations);
         }
+        if !self.similar.all_items().is_empty() {
+            tabs.push(TabKind::Similar);
+        }
+        if self.description.as_ref().is_some_and(|d| !d.is_empty()) {
+            tabs.push(TabKind::About);
+        }
 
         tabs
     }
 
     fn current_state_mut(&'_ mut self) -> Option<SelectedArtistPopupSubtabMut<'_>> {
-        let visible_tabs = self.visible_tab_kinds();
-        let tab = visible_tabs.get(self.selected_sub_tab)?;
-
-        match tab {
+        match self.selected_tab_kind()? {
             TabKind::Albums => Some(SelectedArtistPopupSubtabMut::Albums(&mut self.albums)),
             TabKind::TopTracks => Some(SelectedArtistPopupSubtabMut::TopTracks(
                 &mut self.top_tracks,
@@ -120,34 +156,25 @@ impl ArtistPopupState {
             TabKind::Compilations => {
                 Some(SelectedArtistPopupSubtabMut::Albums(&mut self.compilations))
             }
-        }
-    }
-
-    fn current_state(&self) -> Option<SelectedArtistPopupSubtab<'_>> {
-        let visible_tabs = self.visible_tab_kinds();
-        let tab = visible_tabs.get(self.selected_sub_tab)?;
-
-        match tab {
-            TabKind::Albums => Some(SelectedArtistPopupSubtab::Albums(&self.albums)),
-            TabKind::TopTracks => Some(SelectedArtistPopupSubtab::TopTracks(&self.top_tracks)),
-            TabKind::Singles => Some(SelectedArtistPopupSubtab::Albums(&self.singles)),
-            TabKind::Live => Some(SelectedArtistPopupSubtab::Albums(&self.live)),
-            TabKind::Compilations => Some(SelectedArtistPopupSubtab::Albums(&self.compilations)),
+            TabKind::Similar => Some(SelectedArtistPopupSubtabMut::Similar(&mut self.similar)),
+            TabKind::About => None,
         }
     }
 
     fn current_row_count(&self) -> usize {
-        let current_state = self.current_state();
-        match current_state {
-            Some(state) => match state {
-                SelectedArtistPopupSubtab::Albums(album_list) => album_list.filter().len(),
-                SelectedArtistPopupSubtab::TopTracks(track_list) => track_list.filter().len(),
-            },
+        match self.selected_tab_kind() {
+            Some(TabKind::Albums) => self.albums.filter().len(),
+            Some(TabKind::TopTracks) => self.top_tracks.filter().len(),
+            Some(TabKind::Singles) => self.singles.filter().len(),
+            Some(TabKind::Live) => self.live.filter().len(),
+            Some(TabKind::Compilations) => self.compilations.filter().len(),
+            Some(TabKind::Similar) => self.similar.all_items().len(),
+            Some(TabKind::About) => 12,
             None => 0,
         }
     }
 
-    fn tabs(&self) -> Vec<&str> {
+    fn tabs(&self) -> Vec<&'static str> {
         vec![
             Tab {
                 name: "Albums",
@@ -168,6 +195,14 @@ impl ArtistPopupState {
             Tab {
                 name: "Compilations",
                 is_empty: self.compilations.filter().is_empty(),
+            },
+            Tab {
+                name: "Similar",
+                is_empty: self.similar.all_items().is_empty(),
+            },
+            Tab {
+                name: "About",
+                is_empty: self.description.as_ref().is_none_or(|d| d.is_empty()),
             },
         ]
         .into_iter()
@@ -272,7 +307,6 @@ pub enum Popup {
     NewPlaylist(NewPlaylistPopupState),
     DeletePlaylist(DeletePlaylistPopupState),
     AlbumInfo(Album, bool, Option<(StatefulProtocol, f32)>),
-    ArtistInfo(ArtistPage, Option<(StatefulProtocol, f32)>),
     PlaylistInfo(Playlist, Option<(StatefulProtocol, f32)>),
     TrackInfo(Track, Option<(StatefulProtocol, f32)>),
 }
@@ -302,11 +336,12 @@ impl Popup {
             Popup::Artist(artist) => {
                 let visible_rows = (artist.current_row_count() + 1).min(15) as u16;
 
+                let header_height: u16 = 6;
                 let tabs_height: u16 = 2;
                 let border_height: u16 = 2;
                 let min_height: u16 = 4;
 
-                let popup_height = (visible_rows + border_height + tabs_height)
+                let popup_height = (visible_rows + border_height + tabs_height + header_height)
                     .clamp(min_height, frame.area().height.saturating_sub(2));
 
                 let popup_width = (frame.area().width * 75 / 100).max(30);
@@ -324,25 +359,69 @@ impl Popup {
 
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(tabs_height), Constraint::Min(1)])
+                    .constraints([
+                        Constraint::Length(header_height),
+                        Constraint::Length(tabs_height),
+                        Constraint::Min(1),
+                    ])
                     .split(inner);
 
-                frame.render_widget(tabs, chunks[0]);
+                let image_width = artist
+                    .image
+                    .as_ref()
+                    .map(|(_, ratio)| (*ratio * (header_height * 2) as f32) as u16)
+                    .unwrap_or(0);
 
-                if let Some(state) = artist.current_state_mut() {
+                let gap = if image_width > 0 { 2 } else { 0 };
+
+                let header = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Length(image_width),
+                        Constraint::Length(gap),
+                        Constraint::Min(1),
+                    ])
+                    .split(chunks[0]);
+
+                if let Some((protocol, _)) = artist.image.as_mut() {
+                    frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
+                }
+
+                let info = Text::from(vec![
+                    Line::from(artist.artist_name.clone()).style(Style::new().bold()),
+                    Line::from(""),
+                    Line::from(artist.stats_line()).style(Style::new().dim()),
+                ]);
+                frame.render_widget(Paragraph::new(info), header[2]);
+
+                frame.render_widget(tabs, chunks[1]);
+
+                let content = chunks[2];
+
+                if artist.selected_tab_kind() == Some(TabKind::About) {
+                    let description = artist.description.clone().unwrap_or_default();
+                    let paragraph = Paragraph::new(description).wrap(Wrap { trim: false });
+                    frame.render_widget(paragraph, content);
+                } else if let Some(state) = artist.current_state_mut() {
                     match state {
                         SelectedArtistPopupSubtabMut::Albums(album_list) => album_list.render(
-                            chunks[1],
+                            content,
                             frame.buffer_mut(),
                             true,
                             &favorite_ids.albums,
                         ),
                         SelectedArtistPopupSubtabMut::TopTracks(track_list) => track_list.render(
-                            chunks[1],
+                            content,
                             frame.buffer_mut(),
                             true,
                             true,
                             &favorite_ids.tracks,
+                        ),
+                        SelectedArtistPopupSubtabMut::Similar(artist_list) => artist_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            &favorite_ids.artists,
                         ),
                     }
                 }
@@ -436,9 +515,6 @@ impl Popup {
             Popup::AlbumInfo(album, currently_playing, image) => {
                 render_album_info(frame, album, *currently_playing, image);
             }
-            Popup::ArtistInfo(artist, image) => {
-                render_artist_info(frame, artist, image);
-            }
             Popup::PlaylistInfo(playlist, image) => {
                 render_playlist_info(frame, playlist, image);
             }
@@ -458,7 +534,6 @@ impl Popup {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self {
                 Popup::AlbumInfo(_, _, _) => Ok(Output::Consumed),
-                Popup::ArtistInfo(_, _) => Ok(Output::Consumed),
                 Popup::PlaylistInfo(_, _) => Ok(Output::Consumed),
                 Popup::TrackInfo(_, _) => Ok(Output::Consumed),
                 Popup::Album(album_state) => {
@@ -507,6 +582,11 @@ impl Popup {
                                             notifications,
                                             TrackListEvent::Artist(artist_id),
                                         )
+                                        .await
+                                }
+                                SelectedArtistPopupSubtabMut::Similar(artist_list) => {
+                                    artist_list
+                                        .handle_events(key_event.code, client, notifications)
                                         .await
                                 }
                             },
@@ -763,79 +843,6 @@ fn render_album_info(
     }
 
     if let Some(description) = &album.description {
-        let desc_lines = vec![Line::from(""), Line::from(description.clone())];
-        let desc_paragraph = Paragraph::new(Text::from(desc_lines)).wrap(Wrap { trim: false });
-        frame.render_widget(desc_paragraph, desc_area);
-    }
-}
-
-fn render_artist_info(
-    frame: &mut Frame,
-    artist: &ArtistPage,
-    image: &mut Option<(StatefulProtocol, f32)>,
-) {
-    let mut info_lines: Vec<Line> = Vec::new();
-
-    info_lines.push(Line::from(artist.name.clone()).style(Style::new().bold()));
-    info_lines.push(Line::from(""));
-    info_lines.push(Line::from(format!("Albums:  {}", artist.albums.len())));
-
-    let info_height = info_lines.len() as u16;
-
-    let box_width = frame.area().width - 20;
-    let inner_width = box_width.saturating_sub(2);
-
-    let desc_height = if let Some(description) = &artist.description {
-        let char_count = description.len() as u16;
-        let lines_needed = char_count.div_ceil(inner_width.max(1));
-        1 + lines_needed
-    } else {
-        0
-    };
-
-    let total_height = info_height + desc_height + 2;
-
-    let width = Constraint::Length(box_width);
-    let height = Constraint::Length(total_height);
-    let area = center(frame.area(), width, height);
-
-    let title = "Artist info";
-
-    let outer_block = block(Some(title));
-    let inner = outer_block.inner(area);
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(outer_block, area);
-
-    let extra_image_lines = 5;
-
-    let vertical = Layout::vertical([
-        Constraint::Length(info_height + extra_image_lines),
-        Constraint::Min(0),
-    ])
-    .split(inner);
-
-    let top_area = vertical[0];
-    let desc_area = vertical[1];
-
-    let image_width = if let Some((_, ratio)) = image {
-        (*ratio * (top_area.height * 2) as f32) as u16
-    } else {
-        0
-    };
-
-    let horizontal =
-        Layout::horizontal([Constraint::Min(1), Constraint::Length(image_width)]).split(top_area);
-
-    let info_paragraph = Paragraph::new(Text::from(info_lines));
-    frame.render_widget(info_paragraph, horizontal[0]);
-
-    if let Some((protocol, _)) = image {
-        let stateful_image = StatefulImage::default();
-        frame.render_stateful_widget(stateful_image, horizontal[1], protocol);
-    }
-
-    if let Some(description) = &artist.description {
         let desc_lines = vec![Line::from(""), Line::from(description.clone())];
         let desc_paragraph = Paragraph::new(Text::from(desc_lines)).wrap(Wrap { trim: false });
         frame.render_widget(desc_paragraph, desc_area);

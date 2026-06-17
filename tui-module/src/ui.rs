@@ -285,6 +285,7 @@ fn render_help(frame: &mut Frame) {
         ["Move playlist track down", "d"],
         ["Selected info", "i"],
         ["Currently playing album info", "I"],
+        ["Currently playing artist page", "G"],
         ["Select Connect device (if configured)", "c"],
         ["Exit", "q"],
     ];

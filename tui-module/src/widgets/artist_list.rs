@@ -13,7 +13,7 @@ use ratatui::{
 use crate::{
     app::{FavoriteAdd, FavoriteRemove, FilteredListState, NotificationList, Output},
     popup::{ArtistPopupState, Popup},
-    ui::{basic_list_table, fetch_image, mark_favorite},
+    ui::{basic_list_table, mark_favorite},
 };
 
 #[derive(Default)]
@@ -120,25 +120,7 @@ impl ArtistList {
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Char('i') => {
-                let index = self.items.state.selected();
-
-                let id = index
-                    .and_then(|index| self.items.filter().get(index))
-                    .map(|artist| artist.id);
-
-                if let Some(id) = id {
-                    let artist = client.artist_page(id).await?;
-                    let image = match artist.image.as_ref() {
-                        Some(x) => fetch_image(x).await,
-                        None => None,
-                    };
-                    return Ok(Output::Popup(Popup::ArtistInfo(artist, image)));
-                }
-                Ok(Output::Consumed)
-            }
-
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('i') => {
                 let index = self.items.state.selected();
                 let selected = index.and_then(|index| self.items.filter().get(index));
 
