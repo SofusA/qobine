@@ -8,7 +8,6 @@ use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    style::Styled,
     widgets::*,
 };
 
@@ -55,8 +54,12 @@ impl QueueState {
 
                     let mut spans = vec![Span::from(format!("{} ", index + 1))];
                     spans.extend(title.spans);
+                    let spans: Vec<Span> = spans
+                        .into_iter()
+                        .map(|span| span.patch_style(style))
+                        .collect();
 
-                    Row::new(vec![Line::from(spans).set_style(style)])
+                    Row::new(vec![Line::from(spans)])
                 })
                 .collect(),
             true,
