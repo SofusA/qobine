@@ -15,8 +15,8 @@ use crate::{
     app::{FavoriteAdd, FavoriteRemove, FilteredListState, NotificationList, Output},
     popup::{AlbumPopupState, Popup},
     ui::{
-        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, fetch_image, format_duration,
-        mark_explicit_and_hifi, mark_favorite,
+        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
+        mark_favorite,
     },
 };
 
@@ -141,24 +141,7 @@ impl AlbumList {
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Char('i') => {
-                let index = self.items.state.selected();
-
-                let id = index
-                    .and_then(|index| self.items.filter().get(index))
-                    .map(|album| album.id.clone());
-
-                if let Some(id) = id {
-                    let album = client.album(&id).await?;
-                    let image = fetch_image(&album.image).await;
-
-                    return Ok(Output::Popup(Popup::AlbumInfo(album, false, image)));
-                }
-
-                Ok(Output::Consumed)
-            }
-
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('i') => {
                 let index = self.items.state.selected();
 
                 let id = index
@@ -168,7 +151,9 @@ impl AlbumList {
                 if let Some(id) = id {
                     let album = client.album(&id).await?;
 
-                    return Ok(Output::Popup(Popup::Album(AlbumPopupState::new(album))));
+                    return Ok(Output::Popup(Popup::Album(
+                        AlbumPopupState::new(album, client).await,
+                    )));
                 }
 
                 Ok(Output::Consumed)

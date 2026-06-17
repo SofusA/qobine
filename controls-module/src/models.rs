@@ -45,6 +45,8 @@ pub struct Album {
     pub image_thumbnail: String,
     pub duration_seconds: u32,
     pub description: Option<String>,
+    pub bit_depth: u32,
+    pub sampling_rate: f32,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

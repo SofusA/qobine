@@ -3,7 +3,7 @@ use crate::{
     favorites::FavoritesState,
     genres::GenresState,
     now_playing::NowPlayingState,
-    popup::{Popup, TrackPopupState},
+    popup::{AlbumPopupState, Popup, TrackPopupState},
     preferences::PreferencesState,
     queue::QueueState,
     search::SearchState,
@@ -458,8 +458,7 @@ impl App {
                         .and_then(|t| t.album_id.clone())
                         && let Ok(album) = self.client.album(&album_id).await
                     {
-                        let image = fetch_image(&album.image).await;
-                        let popup = Popup::AlbumInfo(album, true, image);
+                        let popup = Popup::Album(AlbumPopupState::new(album, &self.client).await);
                         let mut popups = match std::mem::take(&mut self.app_state) {
                             AppState::Popup(popups) => popups,
                             _ => Vec::new(),
