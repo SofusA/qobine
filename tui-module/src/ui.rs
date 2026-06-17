@@ -284,8 +284,9 @@ fn render_help(frame: &mut Frame) {
         ["Move playlist track up", "u"],
         ["Move playlist track down", "d"],
         ["Selected info", "i"],
-        ["Currently playing album info", "I"],
+        ["Currently playing album page", "I"],
         ["Currently playing artist page", "G"],
+        ["Go to artist (album page)", "G"],
         ["Select Connect device (if configured)", "c"],
         ["Exit", "q"],
     ];

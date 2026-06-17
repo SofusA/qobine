@@ -7,6 +7,10 @@ pub struct Album {
     pub description: Option<String>,
     pub duration: Option<i64>,
     pub hires_streamable: bool,
+    #[serde(default)]
+    pub maximum_bit_depth: u32,
+    #[serde(default)]
+    pub maximum_sampling_rate: f32,
     pub id: String,
     pub image: Image,
     pub parental_warning: bool,
