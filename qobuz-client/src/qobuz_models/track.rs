@@ -23,6 +23,16 @@ pub struct Track {
     pub playlist_track_id: Option<u64>,
     #[serde(default)]
     pub favorited_at: Option<i64>,
+    #[serde(default)]
+    pub performers: Option<String>,
+    #[serde(default)]
+    pub copyright: Option<String>,
+    #[serde(default)]
+    pub maximum_bit_depth: u32,
+    #[serde(default)]
+    pub maximum_sampling_rate: f32,
+    #[serde(default)]
+    pub release_date_original: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

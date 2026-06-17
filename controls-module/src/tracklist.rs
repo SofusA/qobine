@@ -38,6 +38,7 @@ pub struct Tracklist {
     list_type: TracklistType,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum PlayingEntity {
     Track(Track),

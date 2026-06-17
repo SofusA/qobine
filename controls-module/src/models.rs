@@ -28,6 +28,11 @@ pub struct Track {
     pub album_title: Option<String>,
     pub album_id: Option<String>,
     pub playlist_track_id: Option<u64>,
+    pub bit_depth: u32,
+    pub sampling_rate: f32,
+    pub release_date: Option<String>,
+    pub performers: Option<String>,
+    pub copyright: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

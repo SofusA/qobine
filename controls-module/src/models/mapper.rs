@@ -112,6 +112,11 @@ pub fn parse_album(value: qobuz_models::album::Album, max_audio_quality: &AudioQ
                 album_title: Some(value.title.clone()),
                 album_id: Some(value.id.clone()),
                 playlist_track_id: None,
+                bit_depth: t.maximum_bit_depth,
+                sampling_rate: t.maximum_sampling_rate,
+                release_date: Some(value.release_date_original.clone()),
+                performers: t.performers,
+                copyright: t.copyright,
             })
             .collect()
     });
@@ -213,6 +218,11 @@ pub fn parse_artist_page(
                     album_title: Some(t.album.title),
                     album_id: Some(t.album.id),
                     playlist_track_id: None,
+                    bit_depth: 0,
+                    sampling_rate: 0.0,
+                    release_date: None,
+                    performers: None,
+                    copyright: None,
                 }
             })
             .collect(),
@@ -388,6 +398,16 @@ pub fn parse_track(value: qobuz_models::track::Track, max_audio_quality: &AudioQ
         album_title: value.album.as_ref().map(|a| a.title.clone()),
         album_id: value.album.as_ref().map(|a| a.id.clone()),
         playlist_track_id: value.playlist_track_id,
+        bit_depth: value.maximum_bit_depth,
+        sampling_rate: value.maximum_sampling_rate,
+        release_date: value.release_date_original.or_else(|| {
+            value
+                .album
+                .as_ref()
+                .map(|a| a.release_date_original.clone())
+        }),
+        performers: value.performers,
+        copyright: value.copyright,
     }
 }
 

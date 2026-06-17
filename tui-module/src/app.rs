@@ -491,6 +491,25 @@ impl App {
                         }
                     }
                 }
+                KeyCode::Char('i') => {
+                    if let Some(id) = self.now_playing.playing_track.as_ref().map(|t| t.id)
+                        && let Ok(track) = self.client.track(id).await
+                    {
+                        let image = match track.image.as_ref() {
+                            Some(x) => fetch_image(x).await,
+                            None => None,
+                        };
+
+                        let mut popups = match std::mem::take(&mut self.app_state) {
+                            AppState::Popup(popups) => popups,
+                            _ => Vec::new(),
+                        };
+
+                        popups.push(Popup::TrackInfo(track, image));
+                        self.app_state = AppState::Popup(popups);
+                        self.should_draw = true;
+                    }
+                }
                 KeyCode::Char('q') => {
                     self.should_draw = true;
                     self.exit()
