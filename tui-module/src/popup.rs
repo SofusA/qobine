@@ -619,12 +619,33 @@ impl Popup {
                     is_favorite,
                 );
 
-                let info = Text::from(vec![
-                    name,
-                    Line::from(""),
-                    Line::from(artist.stats_line()).style(Style::new().dim()),
-                ]);
-                frame.render_widget(Paragraph::new(info), header[2]);
+                let info_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Length(1),
+                        Constraint::Length(2),
+                        Constraint::Length(1),
+                        Constraint::Length(1),
+                        Constraint::Min(0),
+                    ])
+                    .split(header[2]);
+
+                frame.render_widget(Paragraph::new(name), info_chunks[0]);
+
+                if let Some(description) = &artist.description {
+                    let blurb = header_blurb(description, info_chunks[1].width);
+                    frame.render_widget(
+                        Paragraph::new(blurb)
+                            .style(Style::new().dim())
+                            .wrap(Wrap { trim: true }),
+                        info_chunks[1],
+                    );
+                }
+
+                frame.render_widget(
+                    Paragraph::new(artist.stats_line()).style(Style::new().dim()),
+                    info_chunks[3],
+                );
 
                 frame.render_widget(tabs, chunks[1]);
 
@@ -1037,6 +1058,43 @@ impl Popup {
             _ => Ok(Output::Consumed),
         }
     }
+}
+
+fn header_blurb(description: &str, width: u16) -> Line<'static> {
+    let normalized = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    let line = width as usize;
+    let capacity = line.saturating_mul(2);
+
+    if normalized.chars().count() <= capacity {
+        return Line::from(normalized);
+    }
+
+    let hint = " [see about]";
+    let effective = capacity.saturating_sub(hint.chars().count());
+
+    let sentence_end = normalized
+        .char_indices()
+        .enumerate()
+        .filter(|(char_pos, (_, c))| {
+            matches!(c, '.' | '!' | '?') && *char_pos >= line && *char_pos < effective
+        })
+        .map(|(_, (byte_idx, c))| byte_idx + c.len_utf8())
+        .last();
+
+    let head = if let Some(end) = sentence_end {
+        normalized[..end].to_string()
+    } else {
+        let truncated: String = normalized
+            .chars()
+            .take(effective.saturating_sub(1))
+            .collect();
+        format!("{}…", truncated.trim_end())
+    };
+
+    Line::from(vec![
+        Span::raw(head),
+        Span::styled(hint, Style::new().italic()),
+    ])
 }
 
 fn render_track_info(
