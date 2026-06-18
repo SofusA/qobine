@@ -150,24 +150,98 @@ fn sanitize_html(source: Option<String>) -> Option<String> {
     }
 
     let mut data = String::new();
+    let mut tag = String::new();
     let mut inside = false;
 
     for c in source.chars() {
         if c == '<' {
             inside = true;
+            tag.clear();
             continue;
         }
         if c == '>' {
             inside = false;
+            let name = tag
+                .split(|c: char| c.is_whitespace() || c == '/')
+                .find(|s| !s.is_empty())
+                .unwrap_or("");
+            if name.eq_ignore_ascii_case("br") || name.eq_ignore_ascii_case("p") {
+                let trailing_newlines = data.chars().rev().take_while(|&c| c == '\n').count();
+                if trailing_newlines < 2 {
+                    data.push('\n');
+                }
+            }
             continue;
         }
 
-        if !inside {
+        if inside {
+            tag.push(c);
+        } else {
             data.push(c);
         }
     }
 
-    Some(data.replace("&copy", "©"))
+    let data = decode_entities(data.trim());
+    if data.is_empty() {
+        return None;
+    }
+
+    Some(data)
+}
+
+fn decode_entities(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let after = &rest[amp..];
+
+        if let Some(semi) = after.find(';')
+            && let Some(decoded) = decode_entity(&after[1..semi])
+        {
+            out.push(decoded);
+            rest = &after[semi + 1..];
+            continue;
+        }
+
+        out.push('&');
+        rest = &after[1..];
+    }
+
+    out.push_str(rest);
+    out
+}
+
+fn decode_entity(entity: &str) -> Option<char> {
+    if let Some(num) = entity.strip_prefix('#') {
+        let code = match num.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+            None => num.parse().ok()?,
+        };
+        return char::from_u32(code);
+    }
+
+    Some(match entity {
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        "quot" => '"',
+        "apos" => '\'',
+        "nbsp" => ' ',
+        "copy" => '©',
+        "reg" => '®',
+        "hellip" => '…',
+        "mdash" => '—',
+        "ndash" => '–',
+        "laquo" => '«',
+        "raquo" => '»',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        _ => return None,
+    })
 }
 
 fn image_to_string(value: qobuz_models::artist_page::Image) -> String {
