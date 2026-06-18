@@ -269,7 +269,7 @@ impl AlbumPopupState {
         }
     }
 
-    fn detail_lines(&self, is_favorite: bool, is_artist_favorite: bool) -> Vec<Line<'static>> {
+    fn detail_lines(&self, is_favorite: bool, is_artist_favorite: bool) -> [Line<'static>; 3] {
         let title = mark_favorite(
             Line::from(Span::styled(self.title.clone(), Style::new().bold())),
             is_favorite,
@@ -308,7 +308,7 @@ impl AlbumPopupState {
             info.push(Span::styled("\u{f0b0c}", Style::new().dim()));
         }
 
-        vec![title, artist, Line::from(info)]
+        [title, artist, Line::from(info)]
     }
 
     fn selected_tab_kind(&self) -> Option<AlbumTabKind> {
@@ -524,10 +524,49 @@ impl Popup {
                     frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
                 }
 
-                frame.render_widget(
-                    Paragraph::new(album.detail_lines(is_favorite, is_artist_favorite)),
-                    header[2],
-                );
+                let [title, artist, misc] = album.detail_lines(is_favorite, is_artist_favorite);
+
+                let has_description = album.description.as_ref().is_some_and(|d| !d.is_empty());
+
+                let info_constraints = if has_description {
+                    vec![
+                        Constraint::Length(1),
+                        Constraint::Length(1),
+                        Constraint::Length(2),
+                        Constraint::Length(1),
+                        Constraint::Min(0),
+                    ]
+                } else {
+                    vec![
+                        Constraint::Length(1),
+                        Constraint::Length(1),
+                        Constraint::Length(1),
+                        Constraint::Min(0),
+                    ]
+                };
+
+                let info_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints(info_constraints)
+                    .split(header[2]);
+
+                frame.render_widget(Paragraph::new(title), info_chunks[0]);
+                frame.render_widget(Paragraph::new(artist), info_chunks[1]);
+
+                if has_description {
+                    if let Some(description) = &album.description {
+                        let blurb = header_blurb(description, info_chunks[2].width);
+                        frame.render_widget(
+                            Paragraph::new(blurb)
+                                .style(Style::new().dim())
+                                .wrap(Wrap { trim: true }),
+                            info_chunks[2],
+                        );
+                    }
+                    frame.render_widget(Paragraph::new(misc), info_chunks[3]);
+                } else {
+                    frame.render_widget(Paragraph::new(misc), info_chunks[2]);
+                }
 
                 frame.render_widget(tabs, chunks[1]);
 
