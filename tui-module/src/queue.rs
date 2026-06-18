@@ -14,7 +14,7 @@ use ratatui::{
 use crate::{
     app::{FavoriteAdd, FavoriteRemove, NotificationList, Output},
     popup::Popup,
-    ui::{basic_list_table, block, fetch_image, mark_explicit_and_hifi, mark_favorite},
+    ui::{basic_list_table, block, mark_explicit_and_hifi, mark_favorite},
 };
 
 pub struct QueueState {
@@ -185,11 +185,7 @@ impl QueueState {
 
                         if let Some(id) = id {
                             let track = client.track(id).await?;
-                            let image = match track.image.as_ref() {
-                                Some(x) => fetch_image(x).await,
-                                None => None,
-                            };
-                            return Ok(Output::Popup(Popup::TrackInfo(track, image, 0)));
+                            return Ok(Output::Popup(Popup::TrackInfo(track, None, 0)));
                         }
                         Ok(Output::Consumed)
                     }

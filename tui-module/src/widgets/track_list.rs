@@ -15,8 +15,8 @@ use crate::{
     app::{FavoriteAdd, FavoriteRemove, FilteredListState, NotificationList, Output},
     popup::Popup,
     ui::{
-        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, fetch_image, format_duration,
-        mark_explicit_and_hifi, mark_favorite,
+        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
+        mark_favorite,
     },
 };
 
@@ -192,13 +192,7 @@ impl TrackList {
 
                 if let Some(id) = id {
                     let track = client.track(id).await?;
-
-                    let image = match track.image.as_ref() {
-                        Some(x) => fetch_image(x).await,
-                        None => None,
-                    };
-
-                    return Ok(Output::Popup(Popup::TrackInfo(track, image, 0)));
+                    return Ok(Output::Popup(Popup::TrackInfo(track, None, 0)));
                 }
                 Ok(Output::Consumed)
             }

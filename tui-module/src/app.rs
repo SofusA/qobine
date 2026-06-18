@@ -26,7 +26,7 @@ use player_module::{
     notification::{Notification, NotificationBroadcast},
 };
 use ratatui::{DefaultTerminal, widgets::*};
-use ratatui_image::protocol::StatefulProtocol;
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{collections::HashSet, io, sync::Arc, time::Instant};
 use tokio::{
     sync::{mpsc, watch},
@@ -59,6 +59,7 @@ impl NotificationList {
 
 pub struct App {
     pub client: Arc<Client>,
+    pub picker: Picker,
     pub controls: Controls,
     pub database: Arc<Database>,
     pub position: PositionReceiver,
@@ -231,7 +232,7 @@ impl App {
         if let Some(image_url) = self.current_image_url.as_ref()
             && !self.disable_tui_album_cover
         {
-            let image = fetch_image(image_url).await;
+            let image = fetch_image(&self.picker, image_url).await;
             self.now_playing.image = image;
         };
 
@@ -266,8 +267,9 @@ impl App {
                     } else if !self.disable_tui_album_cover {
                         if let Some(url) = image_url.clone() {
                             let tx = image_tx.clone();
+                            let picker = self.picker.clone();
                             tokio::spawn(async move {
-                                let result = fetch_image(&url).await;
+                                let result = fetch_image(&picker, &url).await;
                                 let _ = tx.send(result).await;
                             });
                         }
@@ -406,6 +408,22 @@ impl App {
         self.favorites.filter.reset();
     }
 
+    async fn push_popup(&mut self, mut popup: Popup) {
+        if let Some(url) = popup.image_url() {
+            let image = fetch_image(&self.picker, &url).await;
+            popup.set_image(image);
+        }
+
+        let mut popups = match std::mem::take(&mut self.app_state) {
+            AppState::Popup(popups) => popups,
+            _ => Vec::new(),
+        };
+
+        popups.push(popup);
+        self.app_state = AppState::Popup(popups);
+        self.should_draw = true;
+    }
+
     async fn handle_output(&mut self, key_code: KeyCode, output: AppResult<Output>) {
         let output = match output {
             Ok(res) => res,
@@ -459,14 +477,7 @@ impl App {
                         && let Ok(album) = self.client.album(&album_id).await
                     {
                         let popup = Popup::Album(AlbumPopupState::new(album, &self.client).await);
-                        let mut popups = match std::mem::take(&mut self.app_state) {
-                            AppState::Popup(popups) => popups,
-                            _ => Vec::new(),
-                        };
-
-                        popups.push(popup);
-                        self.app_state = AppState::Popup(popups);
-                        self.should_draw = true;
+                        self.push_popup(popup).await;
                     }
                 }
                 KeyCode::Char('G') => {
@@ -480,14 +491,7 @@ impl App {
                         };
 
                         if let Ok(state) = ArtistPopupState::new(&artist, &self.client).await {
-                            let mut popups = match std::mem::take(&mut self.app_state) {
-                                AppState::Popup(popups) => popups,
-                                _ => Vec::new(),
-                            };
-
-                            popups.push(Popup::Artist(state));
-                            self.app_state = AppState::Popup(popups);
-                            self.should_draw = true;
+                            self.push_popup(Popup::Artist(state)).await;
                         }
                     }
                 }
@@ -495,19 +499,7 @@ impl App {
                     if let Some(id) = self.now_playing.playing_track.as_ref().map(|t| t.id)
                         && let Ok(track) = self.client.track(id).await
                     {
-                        let image = match track.image.as_ref() {
-                            Some(x) => fetch_image(x).await,
-                            None => None,
-                        };
-
-                        let mut popups = match std::mem::take(&mut self.app_state) {
-                            AppState::Popup(popups) => popups,
-                            _ => Vec::new(),
-                        };
-
-                        popups.push(Popup::TrackInfo(track, image, 0));
-                        self.app_state = AppState::Popup(popups);
-                        self.should_draw = true;
+                        self.push_popup(Popup::TrackInfo(track, None, 0)).await;
                     }
                 }
                 KeyCode::Char('q') => {
@@ -565,15 +557,7 @@ impl App {
                 _ => {}
             },
             Output::Popup(popup) => {
-                let mut popups = match std::mem::take(&mut self.app_state) {
-                    AppState::Popup(popups) => popups,
-                    _ => Vec::new(),
-                };
-
-                popups.push(popup);
-
-                self.app_state = AppState::Popup(popups);
-                self.should_draw = true;
+                self.push_popup(popup).await;
             }
             Output::PopPopupUpdateFavorites => {
                 if let AppState::Popup(popups) = &mut self.app_state {

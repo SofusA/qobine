@@ -12,10 +12,7 @@ use ratatui::{
 use crate::{
     app::{FilteredListState, NotificationList, Output},
     popup::{DeletePlaylistPopupState, NewPlaylistPopupState, PlaylistPopupState, Popup},
-    ui::{
-        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, fetch_image, format_duration,
-        mark_as_owned,
-    },
+    ui::{COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_owned},
 };
 
 #[derive(Default)]
@@ -169,12 +166,7 @@ impl PlaylistList {
 
                 if let Some(id) = id {
                     let playlist = client.playlist(id).await?;
-                    let image = match playlist.image.as_ref() {
-                        Some(x) => fetch_image(x).await,
-                        None => None,
-                    };
-
-                    return Ok(Output::Popup(Popup::PlaylistInfo(playlist, image)));
+                    return Ok(Output::Popup(Popup::PlaylistInfo(playlist, None)));
                 }
                 Ok(Output::Consumed)
             }

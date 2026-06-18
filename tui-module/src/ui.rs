@@ -472,15 +472,15 @@ pub fn format_seconds(seconds: u32) -> String {
     format!("{minutes:02}:{seconds:02}")
 }
 
-pub async fn fetch_image(image_url: &str) -> Option<(StatefulProtocol, f32)> {
+pub async fn fetch_image(picker: &Picker, image_url: &str) -> Option<(StatefulProtocol, f32)> {
     let client = reqwest::Client::new();
     let response = client.get(image_url).send().await.ok()?;
     let img_bytes = response.bytes().await.ok()?;
+    let picker = picker.clone();
 
     tokio::task::spawn_blocking(move || {
         let image = load_from_memory(&img_bytes).ok()?;
         let ratio = image.width() as f32 / image.height() as f32;
-        let picker = Picker::from_query_stdio().ok()?;
         Some((picker.new_resize_protocol(image), ratio))
     })
     .await

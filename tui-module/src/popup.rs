@@ -14,8 +14,8 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     ui::{
-        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, fetch_image, format_seconds,
-        mark_favorite, render_input, tab_bar,
+        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, mark_favorite,
+        render_input, tab_bar,
     },
     widgets::{
         album_list::AlbumList,
@@ -33,6 +33,7 @@ pub struct ArtistPopupState {
     compilations: AlbumList,
     similar: ArtistList,
     description: Option<String>,
+    image_url: Option<String>,
     image: Option<(StatefulProtocol, f32)>,
     selected_sub_tab: usize,
     top_tracks: TrackList,
@@ -66,11 +67,6 @@ impl ArtistPopupState {
         let id = artist.id;
         let artist_page = client.artist_page(id).await?;
 
-        let image = match artist_page.image {
-            Some(url) => fetch_image(&url).await,
-            None => None,
-        };
-
         let state = Self {
             artist_name: artist.name.clone(),
             albums: AlbumList::new(artist_page.albums),
@@ -79,7 +75,8 @@ impl ArtistPopupState {
             compilations: AlbumList::new(artist_page.compilations),
             similar: ArtistList::new(artist_page.similar_artists),
             description: artist_page.description,
-            image,
+            image_url: artist_page.image,
+            image: None,
             selected_sub_tab: 0,
             top_tracks: TrackList::new(artist_page.top_tracks),
             id: artist.id,
@@ -221,6 +218,7 @@ pub struct AlbumPopupState {
     tracks: TrackList,
     similar: AlbumList,
     description: Option<String>,
+    image_url: String,
     image: Option<(StatefulProtocol, f32)>,
     release_year: u32,
     total_tracks: u32,
@@ -248,7 +246,6 @@ enum SelectedAlbumPopupSubtabMut<'a> {
 
 impl AlbumPopupState {
     pub async fn new(album: Album, client: &Client) -> Self {
-        let image = fetch_image(&album.image).await;
         let similar = client.suggested_albums(&album.id).await.unwrap_or_default();
 
         Self {
@@ -257,7 +254,8 @@ impl AlbumPopupState {
             tracks: TrackList::new(album.tracks),
             similar: AlbumList::new(similar),
             description: album.description,
-            image,
+            image_url: album.image,
+            image: None,
             release_year: album.release_year,
             total_tracks: album.total_tracks,
             duration_seconds: album.duration_seconds,
@@ -469,6 +467,26 @@ pub enum Popup {
 }
 
 impl Popup {
+    pub fn image_url(&self) -> Option<String> {
+        match self {
+            Popup::Artist(state) => state.image_url.clone(),
+            Popup::Album(state) => Some(state.image_url.clone()),
+            Popup::PlaylistInfo(playlist, _) => playlist.image.clone(),
+            Popup::TrackInfo(track, _, _) => track.image.clone(),
+            _ => None,
+        }
+    }
+
+    pub fn set_image(&mut self, image: Option<(StatefulProtocol, f32)>) {
+        match self {
+            Popup::Artist(state) => state.image = image,
+            Popup::Album(state) => state.image = image,
+            Popup::PlaylistInfo(_, slot) => *slot = image,
+            Popup::TrackInfo(_, slot, _) => *slot = image,
+            _ => {}
+        }
+    }
+
     pub fn render(&mut self, frame: &mut Frame, favorite_ids: &FavoriteIds) {
         match self {
             Popup::Album(album) => {

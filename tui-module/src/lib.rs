@@ -11,6 +11,7 @@ use player_module::{
 };
 use queue::QueueState;
 use ratatui::{prelude::*, widgets::*};
+use ratatui_image::picker::Picker;
 use tokio::sync::{mpsc, watch};
 use ui::center;
 
@@ -45,6 +46,8 @@ pub async fn init(
     disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) -> AppResult<()> {
     let mut terminal = ratatui::init();
+
+    let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
 
     draw_loading_screen(&mut terminal);
 
@@ -87,6 +90,7 @@ pub async fn init(
             initial_configuration,
         ),
         client,
+        picker,
         favorite_ids: Default::default(),
         connect_available_devices,
         connect_active_device,
