@@ -198,7 +198,7 @@ impl TrackList {
                         None => None,
                     };
 
-                    return Ok(Output::Popup(Popup::TrackInfo(track, image)));
+                    return Ok(Output::Popup(Popup::TrackInfo(track, image, 0)));
                 }
                 Ok(Output::Consumed)
             }

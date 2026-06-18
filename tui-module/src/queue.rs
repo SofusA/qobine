@@ -186,7 +186,7 @@ impl QueueState {
                                 Some(x) => fetch_image(x).await,
                                 None => None,
                             };
-                            return Ok(Output::Popup(Popup::TrackInfo(track, image)));
+                            return Ok(Output::Popup(Popup::TrackInfo(track, image, 0)));
                         }
                         Ok(Output::Consumed)
                     }

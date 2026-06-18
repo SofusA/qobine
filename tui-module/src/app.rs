@@ -505,7 +505,7 @@ impl App {
                             _ => Vec::new(),
                         };
 
-                        popups.push(Popup::TrackInfo(track, image));
+                        popups.push(Popup::TrackInfo(track, image, 0));
                         self.app_state = AppState::Popup(popups);
                         self.should_draw = true;
                     }
