@@ -28,8 +28,8 @@ pub struct Track {
     pub album_title: Option<String>,
     pub album_id: Option<String>,
     pub playlist_track_id: Option<u64>,
-    pub bit_depth: u32,
-    pub sampling_rate: f32,
+    pub bit_depth: Option<u32>,
+    pub sampling_rate: Option<f32>,
     pub release_date: Option<String>,
     pub performers: Option<String>,
     pub copyright: Option<String>,
@@ -50,8 +50,8 @@ pub struct Album {
     pub image_thumbnail: String,
     pub duration_seconds: u32,
     pub description: Option<String>,
-    pub bit_depth: u32,
-    pub sampling_rate: f32,
+    pub bit_depth: Option<u32>,
+    pub sampling_rate: Option<f32>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

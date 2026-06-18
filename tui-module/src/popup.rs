@@ -227,8 +227,8 @@ pub struct AlbumPopupState {
     duration_seconds: u32,
     hires_available: bool,
     explicit: bool,
-    bit_depth: u32,
-    sampling_rate: f32,
+    bit_depth: Option<u32>,
+    sampling_rate: Option<f32>,
     selected_sub_tab: usize,
     id: String,
 }
@@ -295,9 +295,9 @@ impl AlbumPopupState {
         if self.hires_available {
             info.push(Span::styled(" · ", Style::new().dim()));
             info.push(Span::styled("\u{f0435}", Style::new().dim()));
-            if self.bit_depth > 0 {
+            if let (Some(bit_depth), Some(sampling_rate)) = (self.bit_depth, self.sampling_rate) {
                 info.push(Span::styled(
-                    format!(" {} bit - {}kHz", self.bit_depth, self.sampling_rate),
+                    format!(" {bit_depth} bit - {sampling_rate}kHz"),
                     Style::new().dim(),
                 ));
             }
@@ -1165,9 +1165,9 @@ fn render_track_info(
     if track.hires_available {
         meta.push(Span::styled(" · ", Style::new().dim()));
         meta.push(Span::styled("\u{f0435}", Style::new().dim()));
-        if track.bit_depth > 0 {
+        if let (Some(bit_depth), Some(sampling_rate)) = (track.bit_depth, track.sampling_rate) {
             meta.push(Span::styled(
-                format!(" {} bit - {}kHz", track.bit_depth, track.sampling_rate),
+                format!(" {bit_depth} bit - {sampling_rate}kHz"),
                 Style::new().dim(),
             ));
         }

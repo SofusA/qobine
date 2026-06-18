@@ -8,9 +8,9 @@ pub struct Album {
     pub duration: Option<i64>,
     pub hires_streamable: bool,
     #[serde(default)]
-    pub maximum_bit_depth: u32,
+    pub maximum_bit_depth: Option<u32>,
     #[serde(default)]
-    pub maximum_sampling_rate: f32,
+    pub maximum_sampling_rate: Option<f32>,
     pub id: String,
     pub image: Image,
     pub parental_warning: bool,

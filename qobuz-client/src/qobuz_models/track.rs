@@ -28,9 +28,9 @@ pub struct Track {
     #[serde(default)]
     pub copyright: Option<String>,
     #[serde(default)]
-    pub maximum_bit_depth: u32,
+    pub maximum_bit_depth: Option<u32>,
     #[serde(default)]
-    pub maximum_sampling_rate: f32,
+    pub maximum_sampling_rate: Option<f32>,
     #[serde(default)]
     pub release_date_original: Option<String>,
 }
