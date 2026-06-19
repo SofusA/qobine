@@ -1,7 +1,7 @@
 use controls_module::{ExitSender, controls::Controls};
 use disconnect_module::DisconnectClientConfig;
 use player_module::{
-    AudioQuality,
+    AudioQuality, RightTimerMode,
     database::{Configuration, Database},
 };
 use ratatui::{
@@ -26,6 +26,7 @@ enum PreferenceFocus {
     AudioQuality,
     FileBasedStreaming,
     AutoPlay,
+    RightTimer,
     DisconnectEnabled,
     DisconnectServerUrl,
     DisconnectPassword,
@@ -35,12 +36,13 @@ enum PreferenceFocus {
 }
 
 impl PreferenceFocus {
-    const ALL: [PreferenceFocus; 11] = [
+    const ALL: [PreferenceFocus; 12] = [
         PreferenceFocus::CacheDirectory,
         PreferenceFocus::CacheTimeToLive,
         PreferenceFocus::AudioQuality,
         PreferenceFocus::FileBasedStreaming,
         PreferenceFocus::AutoPlay,
+        PreferenceFocus::RightTimer,
         PreferenceFocus::DisconnectEnabled,
         PreferenceFocus::DisconnectServerUrl,
         PreferenceFocus::DisconnectPassword,
@@ -86,6 +88,24 @@ fn previous_audio_quality(current: AudioQuality) -> AudioQuality {
     }
 }
 
+fn next_right_timer(current: RightTimerMode) -> RightTimerMode {
+    match current {
+        RightTimerMode::TrackLength => RightTimerMode::TrackRemaining,
+        RightTimerMode::TrackRemaining => RightTimerMode::QueueRemaining,
+        RightTimerMode::QueueRemaining => RightTimerMode::QueueTotal,
+        RightTimerMode::QueueTotal => RightTimerMode::TrackLength,
+    }
+}
+
+fn previous_right_timer(current: RightTimerMode) -> RightTimerMode {
+    match current {
+        RightTimerMode::TrackLength => RightTimerMode::QueueTotal,
+        RightTimerMode::TrackRemaining => RightTimerMode::TrackLength,
+        RightTimerMode::QueueRemaining => RightTimerMode::TrackRemaining,
+        RightTimerMode::QueueTotal => RightTimerMode::QueueRemaining,
+    }
+}
+
 pub struct PreferencesState {
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
@@ -97,6 +117,7 @@ pub struct PreferencesState {
     audio_quality: AudioQuality,
     use_file_based_streaming: bool,
     auto_play: bool,
+    right_timer_mode: RightTimerMode,
 
     disconnect_enabled: bool,
     disconnect_server_url: Input,
@@ -116,6 +137,7 @@ impl PreferencesState {
         let audio_quality = configuration.max_audio_quality;
         let use_file_based_streaming = configuration.use_file_based_streaming;
         let auto_play = configuration.auto_play;
+        let right_timer_mode = configuration.right_timer_mode;
 
         let disconnect_enabled = configuration.enable_disconnect;
         let disconnect_server_url_value = configuration
@@ -152,12 +174,17 @@ impl PreferencesState {
             audio_quality,
             use_file_based_streaming,
             auto_play,
+            right_timer_mode,
             disconnect_enabled,
             disconnect_server_url: Input::default().with_value(disconnect_server_url_value),
             disconnect_password: Input::default().with_value(disconnect_password_value),
             disconnect_device_name: Input::default().with_value(disconnect_device_name_value),
             disconnect_saved_config,
         }
+    }
+
+    pub fn right_timer_mode(&self) -> RightTimerMode {
+        self.configuration.right_timer_mode
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
@@ -169,6 +196,7 @@ impl PreferencesState {
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
@@ -186,9 +214,10 @@ impl PreferencesState {
         self.render_audio_quality(frame, rows[2]);
         self.render_file_based_streaming(frame, rows[3]);
         self.render_auto_play(frame, rows[4]);
-        self.render_disconnect(frame, rows[5]);
-        self.render_save(frame, rows[6]);
-        self.render_logout(frame, rows[7]);
+        self.render_right_timer(frame, rows[5]);
+        self.render_disconnect(frame, rows[6]);
+        self.render_save(frame, rows[7]);
+        self.render_logout(frame, rows[8]);
     }
 
     fn render_cache_directory(&mut self, frame: &mut Frame, area: Rect) {
@@ -309,6 +338,26 @@ impl PreferencesState {
                 .borders(Borders::ALL)
                 .title("Add similar tracks to empty queue"),
         );
+
+        frame.render_widget(paragraph, area);
+    }
+
+    fn render_right_timer(&self, frame: &mut Frame, area: Rect) {
+        let focused = self.focus == Some(PreferenceFocus::RightTimer);
+
+        let style = if focused {
+            HIGHLIGHT_TEXT_STYLE
+        } else {
+            Style::default()
+        };
+
+        let paragraph = Paragraph::new(format!("< {} >", self.right_timer_mode.to_label_str()))
+            .style(style)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Player bar right timer"),
+            );
 
         frame.render_widget(paragraph, area);
     }
@@ -569,6 +618,10 @@ impl PreferencesState {
                 self.auto_play = !self.auto_play;
             }
 
+            PreferenceFocus::RightTimer => {
+                self.right_timer_mode = previous_right_timer(self.right_timer_mode);
+            }
+
             PreferenceFocus::DisconnectEnabled => {
                 self.disconnect_enabled = !self.disconnect_enabled;
             }
@@ -596,6 +649,10 @@ impl PreferencesState {
 
             PreferenceFocus::AutoPlay => {
                 self.auto_play = !self.auto_play;
+            }
+
+            PreferenceFocus::RightTimer => {
+                self.right_timer_mode = next_right_timer(self.right_timer_mode);
             }
 
             PreferenceFocus::DisconnectEnabled => {
@@ -656,6 +713,9 @@ impl PreferencesState {
         controls.set_auto_play(self.auto_play);
         self.configuration.auto_play = self.auto_play;
 
+        let _ = database.set_right_timer_mode(self.right_timer_mode).await;
+        self.configuration.right_timer_mode = self.right_timer_mode;
+
         let disconnect_config = self.disconnect_config();
 
         let _ = disconnect_client_config_sender.send(disconnect_config.clone());
@@ -697,6 +757,7 @@ impl PreferencesState {
             || self.audio_quality != self.configuration.max_audio_quality
             || self.use_file_based_streaming != self.configuration.use_file_based_streaming
             || self.auto_play != self.configuration.auto_play
+            || self.right_timer_mode != self.configuration.right_timer_mode
             || self.disconnect_has_unsaved_changes()
     }
 

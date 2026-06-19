@@ -39,6 +39,7 @@ impl App {
     fn render_inner(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let hide_album_cover = self.disable_tui_album_cover;
+        let right_timer_mode = self.preferences.right_timer_mode();
 
         if self.full_screen {
             let area = center(area, Constraint::Percentage(80), Constraint::Length(10));
@@ -48,6 +49,7 @@ impl App {
                 &mut self.now_playing,
                 self.full_screen,
                 hide_album_cover,
+                right_timer_mode,
             );
             return;
         }
@@ -87,6 +89,7 @@ impl App {
                 &mut self.now_playing,
                 self.full_screen,
                 hide_album_cover,
+                right_timer_mode,
             );
         }
 

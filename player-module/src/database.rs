@@ -244,6 +244,28 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_right_timer_mode(&self, mode: RightTimerMode) -> AppResult<()> {
+        let mode_id = match mode {
+            RightTimerMode::TrackLength => 0,
+            RightTimerMode::TrackRemaining => 1,
+            RightTimerMode::QueueRemaining => 2,
+            RightTimerMode::QueueTotal => 3,
+        };
+
+        sqlx::query!(
+            r#"
+             update configuration
+             set right_timer_mode=?1
+             where rowid = 1
+             "#,
+            mode_id
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn get_credentials(&self) -> AppResult<Option<Credentials>> {
         let credentials = sqlx::query_as!(
             DatabaseCredentials,
@@ -277,7 +299,8 @@ impl Database {
                  disconnect_password,
                  device_name,
                  enable_disconnect,
-                 auto_play
+                 auto_play,
+                 right_timer_mode
              from configuration where rowid = 1"#
         )
         .fetch_one(&self.pool)
@@ -309,6 +332,7 @@ impl Database {
             disconnect_server_url: configuration.disconnect_server_url,
             disconnect_password: configuration.disconnect_password,
             auto_play,
+            right_timer_mode: RightTimerMode::from(configuration.right_timer_mode),
         })
     }
 
@@ -481,6 +505,7 @@ struct DatabaseConfiguration {
     disconnect_password: Option<String>,
     device_name: Option<String>,
     auto_play: Option<bool>,
+    right_timer_mode: Option<i64>,
 }
 
 #[derive(Default, Debug)]
@@ -495,6 +520,38 @@ pub struct Configuration {
     pub disconnect_password: Option<String>,
     pub device_name: Option<String>,
     pub auto_play: bool,
+    pub right_timer_mode: RightTimerMode,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RightTimerMode {
+    #[default]
+    TrackLength,
+    TrackRemaining,
+    QueueRemaining,
+    QueueTotal,
+}
+
+impl RightTimerMode {
+    pub fn to_label_str(&self) -> &str {
+        match self {
+            RightTimerMode::TrackLength => "track length",
+            RightTimerMode::TrackRemaining => "track remaining",
+            RightTimerMode::QueueRemaining => "queue remaining",
+            RightTimerMode::QueueTotal => "queue total",
+        }
+    }
+}
+
+impl From<Option<i64>> for RightTimerMode {
+    fn from(value: Option<i64>) -> Self {
+        match value {
+            Some(1) => RightTimerMode::TrackRemaining,
+            Some(2) => RightTimerMode::QueueRemaining,
+            Some(3) => RightTimerMode::QueueTotal,
+            _ => RightTimerMode::TrackLength,
+        }
+    }
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Deserialize)]

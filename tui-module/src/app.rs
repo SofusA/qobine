@@ -845,13 +845,24 @@ pub fn get_current_state_without_image(
         _ => track_image.cloned(),
     };
 
+    let queue = tracklist.queue();
+    let position = tracklist.current_position();
+    let queue_total_seconds = queue.iter().map(|item| item.track.duration_seconds).sum();
+    let queue_after_current_seconds = queue
+        .iter()
+        .skip(position + 1)
+        .map(|item| item.track.duration_seconds)
+        .sum();
+
     let state = NowPlayingState {
         image: None,
         playing_track: track,
         tracklist_length: tracklist.total(),
         status,
-        tracklist_position: tracklist.current_position(),
+        tracklist_position: position,
         duration_ms: 0,
+        queue_total_seconds,
+        queue_after_current_seconds,
         ..Default::default()
     };
 
