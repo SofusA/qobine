@@ -12,3 +12,4 @@ qobuz-client = { version = "*", path = "../qobuz-client" }
 tokio.workspace = true
 serde.workspace = true
 time.workspace = true
+html-escape = "0.2"
