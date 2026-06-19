@@ -248,6 +248,7 @@ impl App {
 
                 Ok(_) = self.position.changed() => {
                     self.now_playing.duration_ms = self.position.borrow_and_update().as_millis() as u32;
+                    self.now_playing.position_anchor = Some(Instant::now());
                     self.should_draw = true;
                 },
 
@@ -284,13 +285,22 @@ impl App {
                 }
 
                 Ok(_) = self.status.changed() => {
-                    let status = self.status.borrow_and_update();
-                    self.now_playing.status = *status;
+                    let status = *self.status.borrow_and_update();
+                    self.now_playing.duration_ms = self.now_playing.displayed_ms();
+                    self.now_playing.position_anchor = Some(Instant::now());
+                    self.now_playing.status = status;
                     self.should_draw = true;
                 }
 
                 _ = tick_interval.tick() => {
-                    // Tick is only used for notification cleanup
+                    // Tick is used for notification cleanup and smooth progress interpolation
+                    if matches!(self.now_playing.status, Status::Playing) {
+                        let eighths = self.now_playing.progress_eighths();
+                        if eighths != self.now_playing.progress_drawn_eighths {
+                            self.now_playing.progress_drawn_eighths = eighths;
+                            self.should_draw = true;
+                        }
+                    }
                 }
 
                 notification = receiver.recv() => {
@@ -840,6 +850,7 @@ pub fn get_current_state_without_image(
         status,
         tracklist_position: tracklist.current_position(),
         duration_ms: 0,
+        ..Default::default()
     };
 
     (state, image)

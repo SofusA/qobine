@@ -1,7 +1,8 @@
 use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
 use controls_module::{Status, models::Track};
-use ratatui::{prelude::*, widgets::*};
+use ratatui::prelude::*;
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use std::time::Instant;
 
 #[derive(Default)]
 pub struct NowPlayingState {
@@ -11,6 +12,36 @@ pub struct NowPlayingState {
     pub tracklist_position: usize,
     pub status: Status,
     pub duration_ms: u32,
+    pub position_anchor: Option<Instant>,
+    pub progress_cells: u16,
+    pub progress_drawn_eighths: usize,
+}
+
+impl NowPlayingState {
+    fn track_ms(&self) -> u32 {
+        self.playing_track
+            .as_ref()
+            .map_or(0, |t| t.duration_seconds * 1000)
+    }
+
+    pub fn displayed_ms(&self) -> u32 {
+        let interpolated = match (matches!(self.status, Status::Playing), self.position_anchor) {
+            (true, Some(anchor)) => self
+                .duration_ms
+                .saturating_add(anchor.elapsed().as_millis() as u32),
+            _ => self.duration_ms,
+        };
+        interpolated.min(self.track_ms())
+    }
+
+    pub fn progress_eighths(&self) -> usize {
+        let track_ms = self.track_ms();
+        if track_ms == 0 || self.progress_cells == 0 {
+            return 0;
+        }
+        let ratio = self.displayed_ms() as f64 / track_ms as f64;
+        (ratio.clamp(0.0, 1.0) * (self.progress_cells as usize * 8) as f64).round() as usize
+    }
 }
 
 pub fn render(
@@ -70,27 +101,49 @@ pub fn render(
         )),
     ];
 
-    let duration = if state.duration_ms < track.duration_seconds * 1000 {
-        state.duration_ms
+    let displayed_ms = state.displayed_ms();
+    let cells = render_progress_bar(frame, info_chunks[1], displayed_ms, track.duration_seconds);
+    state.progress_cells = cells;
+    frame.render_widget(Text::from(lines), info_chunks[0]);
+}
+
+fn render_progress_bar(frame: &mut Frame, area: Rect, elapsed_ms: u32, duration_secs: u32) -> u16 {
+    let elapsed = format_mseconds(elapsed_ms);
+    let total = format_seconds(duration_secs);
+
+    let chrome = elapsed.chars().count() + total.chars().count() + 4;
+    let width = (area.width as usize).saturating_sub(chrome).max(1);
+
+    let ratio = if duration_secs == 0 {
+        0.0
     } else {
-        track.duration_seconds * 1000
+        (elapsed_ms as f64 / (duration_secs * 1000) as f64).clamp(0.0, 1.0)
     };
 
-    let ratio = duration as f64 / (track.duration_seconds * 1000) as f64;
+    let eighths = (ratio * (width * 8) as f64).round() as usize;
+    let full = (eighths / 8).min(width);
+    let rem = eighths % 8;
+    let mut bar = "█".repeat(full);
+    let mut used = full;
 
-    let label = format!(
-        "{} / {}",
-        format_mseconds(state.duration_ms),
-        format_seconds(track.duration_seconds),
-    );
+    if used < width && rem > 0 {
+        const PARTIALS: [char; 7] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+        bar.push(PARTIALS[rem - 1]);
+        used += 1;
+    }
 
-    let gauge = Gauge::default()
-        .ratio(ratio)
-        .gauge_style(HIGHLIGHT_TEXT_STYLE)
-        .label(label);
+    let line = Line::from(vec![
+        Span::styled(elapsed, Style::new().dim()),
+        Span::styled(" ▕", Style::new().dim()),
+        Span::styled(bar, HIGHLIGHT_TEXT_STYLE),
+        Span::styled(" ".repeat(width - used), Style::new().dim()),
+        Span::styled("▏ ", Style::new().dim()),
+        Span::styled(total, Style::new().dim()),
+    ]);
 
-    frame.render_widget(gauge, info_chunks[1]);
-    frame.render_widget(Text::from(lines), info_chunks[0]);
+    frame.render_widget(line, area);
+
+    width as u16
 }
 
 fn get_status(state: Status) -> String {
