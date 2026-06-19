@@ -1,6 +1,6 @@
 use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
 use controls_module::{Status, models::Track};
-use ratatui::prelude::*;
+use ratatui::{prelude::*, widgets::Gauge};
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 use std::time::Instant;
 
@@ -111,8 +111,12 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, elapsed_ms: u32, duration_
     let elapsed = format_mseconds(elapsed_ms);
     let total = format_seconds(duration_secs);
 
-    let chrome = elapsed.chars().count() + total.chars().count() + 4;
-    let width = (area.width as usize).saturating_sub(chrome).max(1);
+    let [left, gauge_area, right] = Layout::horizontal([
+        Constraint::Length(elapsed.chars().count() as u16 + 1),
+        Constraint::Min(1),
+        Constraint::Length(total.chars().count() as u16 + 2),
+    ])
+    .areas(area);
 
     let ratio = if duration_secs == 0 {
         0.0
@@ -120,30 +124,23 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, elapsed_ms: u32, duration_
         (elapsed_ms as f64 / (duration_secs * 1000) as f64).clamp(0.0, 1.0)
     };
 
-    let eighths = (ratio * (width * 8) as f64).round() as usize;
-    let full = (eighths / 8).min(width);
-    let rem = eighths % 8;
-    let mut bar = "█".repeat(full);
-    let mut used = full;
+    frame.render_widget(Line::from(elapsed).style(Style::new().dim()), left);
+    frame.render_widget(
+        Gauge::default()
+            .ratio(ratio)
+            .gauge_style(HIGHLIGHT_TEXT_STYLE)
+            .label("")
+            .use_unicode(true),
+        gauge_area,
+    );
+    frame.render_widget(
+        Line::from(format!("{total} "))
+            .style(Style::new().dim())
+            .right_aligned(),
+        right,
+    );
 
-    if used < width && rem > 0 {
-        const PARTIALS: [char; 7] = ['▏', '▎', '▍', '▌', '▋', '▊', '▉'];
-        bar.push(PARTIALS[rem - 1]);
-        used += 1;
-    }
-
-    let line = Line::from(vec![
-        Span::styled(elapsed, Style::new().dim()),
-        Span::styled(" ▕", Style::new().dim()),
-        Span::styled(bar, HIGHLIGHT_TEXT_STYLE),
-        Span::styled(" ".repeat(width - used), Style::new().dim()),
-        Span::styled("▏ ", Style::new().dim()),
-        Span::styled(total, Style::new().dim()),
-    ]);
-
-    frame.render_widget(line, area);
-
-    width as u16
+    gauge_area.width
 }
 
 fn get_status(state: Status) -> String {
