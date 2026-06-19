@@ -35,7 +35,7 @@ pub struct ArtistPopupState {
     description: Option<String>,
     image: Option<(StatefulProtocol, f32)>,
     selected_sub_tab: usize,
-    about_scroll: u16,
+    about_scroll: ScrollbarState,
     top_tracks: TrackList,
     id: u32,
 }
@@ -82,7 +82,7 @@ impl ArtistPopupState {
             description: artist_page.description,
             image,
             selected_sub_tab: 0,
-            about_scroll: 0,
+            about_scroll: ScrollbarState::default(),
             top_tracks: TrackList::new(artist_page.top_tracks),
             id: artist.id,
         };
@@ -115,17 +115,21 @@ impl ArtistPopupState {
     fn cycle_subtab_backwards(&mut self) {
         let count = self.tabs().len();
         self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
-        self.about_scroll = 0;
+        self.about_scroll = ScrollbarState::default();
     }
 
     fn cycle_subtab(&mut self) {
         let count = self.tabs().len();
         self.selected_sub_tab = (self.selected_sub_tab + count + 1) % count;
-        self.about_scroll = 0;
+        self.about_scroll = ScrollbarState::default();
     }
 
     fn scroll_about(&mut self, delta: i16) {
-        self.about_scroll = self.about_scroll.saturating_add_signed(delta);
+        let position = self
+            .about_scroll
+            .get_position()
+            .saturating_add_signed(delta as isize);
+        self.about_scroll = self.about_scroll.position(position);
     }
 
     fn visible_tab_kinds(&self) -> Vec<TabKind> {
@@ -238,7 +242,7 @@ pub struct AlbumPopupState {
     bit_depth: Option<u32>,
     sampling_rate: Option<f32>,
     selected_sub_tab: usize,
-    about_scroll: u16,
+    about_scroll: ScrollbarState,
     id: String,
 }
 
@@ -275,7 +279,7 @@ impl AlbumPopupState {
             bit_depth: album.bit_depth,
             sampling_rate: album.sampling_rate,
             selected_sub_tab: 0,
-            about_scroll: 0,
+            about_scroll: ScrollbarState::default(),
             id: album.id,
         }
     }
@@ -328,17 +332,21 @@ impl AlbumPopupState {
     fn cycle_subtab_backwards(&mut self) {
         let count = self.tabs().len();
         self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
-        self.about_scroll = 0;
+        self.about_scroll = ScrollbarState::default();
     }
 
     fn cycle_subtab(&mut self) {
         let count = self.tabs().len();
         self.selected_sub_tab = (self.selected_sub_tab + count + 1) % count;
-        self.about_scroll = 0;
+        self.about_scroll = ScrollbarState::default();
     }
 
     fn scroll_about(&mut self, delta: i16) {
-        self.about_scroll = self.about_scroll.saturating_add_signed(delta);
+        let position = self
+            .about_scroll
+            .get_position()
+            .saturating_add_signed(delta as isize);
+        self.about_scroll = self.about_scroll.position(position);
     }
 
     fn visible_tab_kinds(&self) -> Vec<AlbumTabKind> {
@@ -1198,7 +1206,7 @@ fn wrap_text(text: &str, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_about(frame: &mut Frame, area: Rect, description: &str, scroll: &mut u16) {
+fn render_about(frame: &mut Frame, area: Rect, description: &str, scroll: &mut ScrollbarState) {
     let [text_area, bar_area] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(2)]).areas(area);
 
@@ -1206,23 +1214,25 @@ fn render_about(frame: &mut Frame, area: Rect, description: &str, scroll: &mut u
     let total = lines.len() as u16;
     let viewport = text_area.height;
     let max_scroll = total.saturating_sub(viewport);
-    *scroll = (*scroll).min(max_scroll);
+
+    let position = scroll.get_position().min(max_scroll as usize);
+    *scroll = scroll
+        .position(position)
+        .content_length((max_scroll + 1) as usize)
+        .viewport_content_length(viewport as usize);
 
     frame.render_widget(
-        Paragraph::new(Text::from(lines)).scroll((*scroll, 0)),
+        Paragraph::new(Text::from(lines)).scroll((position as u16, 0)),
         text_area,
     );
 
     if total > viewport {
-        let mut state = ScrollbarState::new((max_scroll + 1) as usize)
-            .viewport_content_length(viewport as usize)
-            .position(*scroll as usize);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
                 .end_symbol(None),
             bar_area,
-            &mut state,
+            scroll,
         );
     }
 }
