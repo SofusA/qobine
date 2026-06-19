@@ -827,26 +827,14 @@ pub fn get_current_state_without_image(
 ) -> (NowPlayingState, Option<String>) {
     let track = tracklist.current_track().cloned();
     let track_image = track.as_ref().and_then(|track| track.image.as_ref());
-    let tracklist_type = tracklist.list_type();
 
-    let (title, image) = match tracklist_type {
-        TracklistType::Album(tracklist) => (
-            Some(tracklist.title.clone()),
-            tracklist.image.as_ref().or(track_image).cloned(),
-        ),
-        TracklistType::Playlist(tracklist) => (Some(tracklist.title.clone()), track_image.cloned()),
-        TracklistType::TopTracks(tracklist) => {
-            (Some(tracklist.artist_name.clone()), track_image.cloned())
-        }
-        TracklistType::Tracks => (
-            track.as_ref().map(|x| x.title.clone()),
-            track_image.cloned(),
-        ),
+    let image = match tracklist.list_type() {
+        TracklistType::Album(tracklist) => tracklist.image.as_ref().or(track_image).cloned(),
+        _ => track_image.cloned(),
     };
 
     let state = NowPlayingState {
         image: None,
-        entity_title: title,
         playing_track: track,
         tracklist_length: tracklist.total(),
         status,

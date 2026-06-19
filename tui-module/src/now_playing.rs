@@ -6,7 +6,6 @@ use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 #[derive(Default)]
 pub struct NowPlayingState {
     pub image: Option<(StatefulProtocol, f32)>,
-    pub entity_title: Option<String>,
     pub playing_track: Option<Track>,
     pub tracklist_length: usize,
     pub tracklist_position: usize,
@@ -60,23 +59,16 @@ pub fn render(
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(*chunks.last().unwrap());
 
-    let mut lines = vec![];
-
-    if let Some(entity) = &state.entity_title {
-        lines.push(Line::from(entity.clone()).style(Style::new().bold()));
-    }
-
-    if let Some(artist) = &track.artist_name {
-        lines.push(Line::from(artist.clone()));
-    }
-
-    lines.push(Line::from(track.title.clone()));
-
-    lines.push(Line::from(format!(
-        "{} of {}",
-        state.tracklist_position + 1,
-        state.tracklist_length
-    )));
+    let lines = vec![
+        Line::from(track.title.clone()).style(Style::new().bold()),
+        Line::from(track.artist_name.clone().unwrap_or_default()),
+        Line::from(track.album_title.clone().unwrap_or_default()),
+        Line::from(format!(
+            "{} of {}",
+            state.tracklist_position + 1,
+            state.tracklist_length
+        )),
+    ];
 
     let duration = if state.duration_ms < track.duration_seconds * 1000 {
         state.duration_ms
