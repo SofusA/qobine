@@ -247,8 +247,10 @@ impl App {
                 }
 
                 Ok(_) = self.position.changed() => {
-                    self.now_playing.duration_ms = self.position.borrow_and_update().as_millis() as u32;
-                    self.now_playing.position_anchor = Some(Instant::now());
+                    let new_ms = self.position.borrow_and_update().as_millis() as u32;
+                    let advanced = new_ms >= self.now_playing.duration_ms;
+                    self.now_playing.duration_ms = new_ms;
+                    self.now_playing.position_anchor = advanced.then(Instant::now);
                     self.should_draw = true;
                 },
 
