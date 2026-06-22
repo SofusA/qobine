@@ -242,6 +242,7 @@ pub struct AlbumPopupState {
     selected_sub_tab: usize,
     about_scroll: ScrollbarState,
     id: String,
+    awards: Vec<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -278,6 +279,7 @@ impl AlbumPopupState {
             sampling_rate: album.sampling_rate,
             selected_sub_tab: 0,
             about_scroll: ScrollbarState::default(),
+            awards: album.awards,
             id: album.id,
         }
     }
@@ -299,6 +301,15 @@ impl AlbumPopupState {
         }
         parts.push(format!("{} tracks", self.total_tracks));
         parts.push(format_seconds(self.duration_seconds));
+
+        let awards = self.awards.len();
+
+        if awards > 0 {
+            parts.push(format!(
+                "{awards} award{}",
+                if awards == 1 { "" } else { "s" }
+            ));
+        }
 
         let mut info = vec![Span::styled(parts.join(" · "), Style::new().dim())];
 
@@ -621,7 +632,13 @@ impl Popup {
                     frame.render_widget(Paragraph::new(hint).style(Style::new().dim()), content);
                 } else if album.selected_tab_kind() == Some(AlbumTabKind::About) {
                     let description = album.description.clone().unwrap_or_default();
-                    render_about(frame, content, &description, &mut album.about_scroll);
+                    render_about(
+                        frame,
+                        content,
+                        &description,
+                        album.awards.as_ref(),
+                        &mut album.about_scroll,
+                    );
                 } else if let Some(state) = album.current_state_mut() {
                     match state {
                         SelectedAlbumPopupSubtabMut::Tracks(track_list) => track_list.render(
@@ -736,7 +753,7 @@ impl Popup {
 
                 if artist.selected_tab_kind() == Some(TabKind::About) {
                     let description = artist.description.clone().unwrap_or_default();
-                    render_about(frame, content, &description, &mut artist.about_scroll);
+                    render_about(frame, content, &description, &[], &mut artist.about_scroll);
                 } else if let Some(state) = artist.current_state_mut() {
                     match state {
                         SelectedArtistPopupSubtabMut::Albums(album_list) => album_list.render(
@@ -1220,16 +1237,36 @@ fn wrap_text(text: &str, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_about(frame: &mut Frame, area: Rect, description: &str, scroll: &mut ScrollbarState) {
+fn render_about(
+    frame: &mut Frame,
+    area: Rect,
+    description: &str,
+    awards: &[String],
+    scroll: &mut ScrollbarState,
+) {
     let [text_area, bar_area] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(2)]).areas(area);
 
-    let lines = wrap_text(description, text_area.width);
+    let mut lines: Vec<Line> = Vec::new();
+
+    if !awards.is_empty() {
+        lines.push(Line::styled("Awards", Style::new().bold()));
+
+        for award in awards {
+            lines.push(Line::from(format!("• {}", award)));
+        }
+
+        lines.push(Line::from(""));
+    }
+
+    lines.extend(wrap_text(description, text_area.width));
+
     let total = lines.len() as u16;
     let viewport = text_area.height;
     let max_scroll = total.saturating_sub(viewport);
 
     let position = scroll.get_position().min(max_scroll as usize);
+
     *scroll = scroll
         .position(position)
         .content_length((max_scroll + 1) as usize)
