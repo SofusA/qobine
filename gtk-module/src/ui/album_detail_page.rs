@@ -1,8 +1,9 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
+use adw::prelude::*;
 use glib::WeakRef;
-use gtk::{gio, prelude::*};
-use gtk4 as gtk;
+use gtk::gio;
+use gtk4::{self as gtk, pango};
 use libadwaita as adw;
 
 use controls_module::{TracklistReceiver, controls::Controls, tracklist::PlayingEntity};
@@ -48,6 +49,9 @@ pub struct AlbumDetailPage {
 
     track_rows: Rc<RefCell<HashMap<u32, WeakRef<gtk::ListBoxRow>>>>,
     current_selected_id: Rc<RefCell<Option<u32>>>,
+
+    info_button: gtk::Button,
+
     on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
     on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
     loaded: RefCell<bool>,
@@ -97,6 +101,12 @@ impl AlbumDetailPage {
             }
         });
 
+        let info_button = gtk::Button::builder()
+            .label("More info")
+            .icon_name("info-outline-symbolic")
+            .css_classes(vec!["pill"])
+            .build();
+
         let header = build_detail_header(
             client.clone(),
             controls.clone(),
@@ -106,7 +116,7 @@ impl AlbumDetailPage {
                 artist_box.clone().upcast(),
                 meta.clone().upcast(),
             ],
-            vec![play_button],
+            vec![play_button, info_button.clone()],
             DetailType::Album(album_id.clone()),
         );
 
@@ -148,6 +158,7 @@ impl AlbumDetailPage {
             loaded: RefCell::new(false),
             track_rows: Rc::new(RefCell::new(HashMap::new())),
             current_selected_id: Rc::new(RefCell::new(None)),
+            info_button,
             on_open_artist,
             on_open_album,
             ui_event_sender,
@@ -163,6 +174,7 @@ impl AlbumDetailPage {
         if *self.loaded.borrow() {
             return;
         }
+
         *self.loaded.borrow_mut() = true;
 
         let client = self.client.clone();
@@ -182,6 +194,7 @@ impl AlbumDetailPage {
         let current_selected_id = self.current_selected_id.clone();
         let on_open_artist = self.on_open_artist.clone();
         let on_open_album = self.on_open_album.clone();
+        let info_button = self.info_button.clone();
 
         stack.set_visible_child_name("loading");
 
@@ -203,6 +216,7 @@ impl AlbumDetailPage {
                         .build();
 
                     let artist_id = album.artist.id;
+
                     let button = clickable_tile(&artist_label.upcast(), move || {
                         on_open_artist(ArtistHeaderInfo { id: artist_id });
                     });
@@ -211,13 +225,23 @@ impl AlbumDetailPage {
 
                     let year_string = album.release_year.to_string();
                     let duration_string = format_time(album.duration_seconds);
+
                     let mut meta_info = vec![year_string.as_str(), &duration_string];
 
                     if album.explicit {
                         meta_info.push("Explicit");
                     }
+
                     if album.hires_available {
                         meta_info.push("Hi-res");
+                    }
+
+                    let awards = album.awards.len();
+                    let awards_str =
+                        format!("{awards} award{}", if awards == 1 { "" } else { "s" });
+
+                    if awards > 0 {
+                        meta_info.push(&awards_str);
                     }
 
                     let meta_info_label = meta_info.join(" • ");
@@ -229,7 +253,9 @@ impl AlbumDetailPage {
                     clear_listbox(&tracks_list);
 
                     let favorites = client.favorites().await.unwrap_or_default();
+
                     let favorite_tracks = favorites.tracks.into_iter().map(|x| x.id).collect();
+
                     let owned_playlists = favorites
                         .playlists
                         .into_iter()
@@ -237,9 +263,9 @@ impl AlbumDetailPage {
                         .map(|x| x.into())
                         .collect();
 
-                    for track in album.tracks {
+                    for track in &album.tracks {
                         let row = build_track_row(
-                            &track,
+                            track,
                             false,
                             false,
                             false,
@@ -253,11 +279,161 @@ impl AlbumDetailPage {
                         let weak = glib::WeakRef::new();
                         weak.set(Some(&row));
 
-                        weak.set(Some(&row));
                         track_rows.borrow_mut().insert(track.id, weak);
 
                         tracks_list.append(&row);
                     }
+
+                    let dialog_album = album.clone();
+
+                    info_button.connect_clicked(move |button| {
+                        let dialog = adw::Dialog::builder()
+                            .content_width(900)
+                            .content_height(600)
+                            .build();
+
+                        let root = gtk::Box::builder()
+                            .orientation(gtk::Orientation::Horizontal)
+                            .build();
+
+                        let sidebar = gtk::Box::builder()
+                            .orientation(gtk::Orientation::Vertical)
+                            .spacing(12)
+                            .margin_top(24)
+                            .margin_bottom(24)
+                            .margin_start(24)
+                            .margin_end(24)
+                            .width_request(280)
+                            .valign(gtk::Align::Start)
+                            .build();
+
+                        let artist_label = gtk::Label::builder()
+                            .label(&dialog_album.artist.name)
+                            .xalign(0.0)
+                            .wrap(true)
+                            .css_classes(vec!["title-2"])
+                            .focusable(false)
+                            .selectable(false)
+                            .build();
+
+                        let album_label = gtk::Label::builder()
+                            .label(&dialog_album.title)
+                            .xalign(0.0)
+                            .wrap(true)
+                            .css_classes(vec!["title-1"])
+                            .focusable(false)
+                            .selectable(false)
+                            .build();
+
+                        let label_text = dialog_album
+                            .label
+                            .clone()
+                            .unwrap_or_else(|| "Unknown label".to_string());
+
+                        let released_label = gtk::Label::builder()
+                            .label(format!(
+                                "Released by {} in {}",
+                                label_text, dialog_album.release_year
+                            ))
+                            .xalign(0.0)
+                            .wrap(true)
+                            .css_classes(vec!["dim-label"])
+                            .focusable(false)
+                            .selectable(false)
+                            .build();
+
+                        let tracks_label = gtk::Label::builder()
+                            .label(format!(
+                                "{} tracks • {}",
+                                dialog_album.total_tracks,
+                                format_time(dialog_album.duration_seconds)
+                            ))
+                            .xalign(0.0)
+                            .wrap(true)
+                            .css_classes(vec!["dim-label"])
+                            .focusable(false)
+                            .selectable(false)
+                            .build();
+
+                        sidebar.append(&artist_label);
+                        sidebar.append(&album_label);
+                        sidebar.append(&released_label);
+                        sidebar.append(&tracks_label);
+
+                        if !dialog_album.awards.is_empty() {
+                            let awards_title = gtk::Label::builder()
+                                .label("Awards")
+                                .xalign(0.0)
+                                .margin_top(16)
+                                .css_classes(vec!["heading"])
+                                .focusable(false)
+                                .selectable(false)
+                                .build();
+
+                            let awards_label = gtk::Label::builder()
+                                .label(dialog_album.awards.join("\n"))
+                                .xalign(0.0)
+                                .wrap(true)
+                                .focusable(false)
+                                .selectable(false)
+                                .build();
+
+                            sidebar.append(&awards_title);
+                            sidebar.append(&awards_label);
+                        }
+
+                        let description = dialog_album
+                            .description
+                            .clone()
+                            .unwrap_or_else(|| "No description available.".to_string());
+
+                        let description_label = gtk::Label::builder()
+                            .label(&description)
+                            .wrap(true)
+                            .wrap_mode(pango::WrapMode::WordChar)
+                            .xalign(0.0)
+                            .yalign(0.0)
+                            .selectable(false)
+                            .focusable(false)
+                            .build();
+
+                        let description_container = gtk::Box::builder()
+                            .orientation(gtk::Orientation::Vertical)
+                            .margin_top(24)
+                            .margin_bottom(24)
+                            .margin_start(24)
+                            .margin_end(24)
+                            .build();
+
+                        description_container.append(&description_label);
+
+                        let description_scroller = gtk::ScrolledWindow::builder()
+                            .hexpand(true)
+                            .vexpand(true)
+                            .child(&description_container)
+                            .build();
+
+                        root.append(&sidebar);
+                        root.append(&gtk::Separator::new(gtk::Orientation::Vertical));
+                        root.append(&description_scroller);
+
+                        let toolbar = adw::ToolbarView::new();
+
+                        let header = adw::HeaderBar::builder()
+                            .show_end_title_buttons(true)
+                            .build();
+
+                        toolbar.add_top_bar(&header);
+                        toolbar.set_content(Some(&root));
+
+                        dialog.set_child(Some(&toolbar));
+
+                        if let Some(root) = button.root()
+                            && let Ok(window) = root.downcast::<gtk::Window>()
+                        {
+                            dialog.present(Some(&window));
+                        }
+                    });
 
                     if !suggestions.is_empty() {
                         content.append(&section(
@@ -267,6 +443,7 @@ impl AlbumDetailPage {
                     }
 
                     let playing_entity = tracklist_receiver.borrow().current_playing_entity();
+
                     if let Some(playing_entity) = playing_entity {
                         update_current_playing(
                             &playing_entity,
@@ -275,12 +452,14 @@ impl AlbumDetailPage {
                             &track_rows,
                         );
                     }
+
                     stack.set_visible_child_name("content");
                 }
                 Err(err) => {
                     tracing::error!("Failed to load album {album_id}: {err}");
 
                     clear_listbox(&tracks_list);
+
                     stack.set_visible_child_name("content");
                 }
             }

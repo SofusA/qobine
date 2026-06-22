@@ -52,6 +52,8 @@ pub struct Album {
     pub description: Option<String>,
     pub bit_depth: Option<u32>,
     pub sampling_rate: Option<f32>,
+    pub awards: Vec<String>,
+    pub label: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

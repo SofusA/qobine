@@ -140,6 +140,8 @@ pub fn parse_album(value: qobuz_models::album::Album, max_audio_quality: &AudioQ
         description: sanitize_html(value.description),
         bit_depth: value.maximum_bit_depth,
         sampling_rate: value.maximum_sampling_rate,
+        awards: value.awards.into_iter().map(|x| x.name).collect(),
+        label: value.label.map(|x| x.name),
     }
 }
 

@@ -53,7 +53,7 @@ pub struct Genre {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Label {
     id: i64,
-    name: String,
+    pub name: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

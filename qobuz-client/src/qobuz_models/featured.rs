@@ -45,5 +45,5 @@ pub struct FeaturedPlaylists {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Award {
-    name: String,
+    pub name: String,
 }

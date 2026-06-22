@@ -1,4 +1,6 @@
-use crate::qobuz_models::{Image, artist::Artist, track::Tracks};
+use crate::qobuz_models::{
+    Image, album_suggestion::Label, artist::Artist, featured::Award, track::Tracks,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,6 +21,9 @@ pub struct Album {
     pub title: String,
     pub tracks: Option<Tracks>,
     pub tracks_count: i64,
+    #[serde(default)]
+    pub awards: Vec<Award>,
+    pub label: Option<Label>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
