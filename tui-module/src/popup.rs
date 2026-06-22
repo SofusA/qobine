@@ -601,11 +601,9 @@ impl Popup {
 
                 if has_description {
                     if let Some(description) = &album.description {
-                        let blurb = header_blurb(description, info_chunks[2].width);
+                        let blurb = header_blurb(description, info_chunks[2].width as usize);
                         frame.render_widget(
-                            Paragraph::new(blurb)
-                                .style(Style::new().dim())
-                                .wrap(Wrap { trim: true }),
+                            Paragraph::new(blurb).style(Style::new().dim()),
                             info_chunks[2],
                         );
                     }
@@ -720,12 +718,10 @@ impl Popup {
                 frame.render_widget(Paragraph::new(name), info_chunks[0]);
 
                 if let Some(description) = &artist.description {
-                    let blurb = header_blurb(description, info_chunks[1].width);
+                    let blurb = header_blurb(description, info_chunks[1].width as usize);
                     frame.render_widget(
-                        Paragraph::new(blurb)
-                            .style(Style::new().dim())
-                            .wrap(Wrap { trim: true }),
-                        info_chunks[1],
+                        Paragraph::new(blurb).style(Style::new().dim()),
+                        info_chunks[2],
                     );
                 }
 
@@ -1255,36 +1251,23 @@ fn render_about(frame: &mut Frame, area: Rect, description: &str, scroll: &mut S
     }
 }
 
-fn header_blurb(description: &str, width: u16) -> Line<'static> {
+fn header_blurb(description: &str, width: usize) -> Line<'static> {
     let normalized = description.split_whitespace().collect::<Vec<_>>().join(" ");
-    let line = width as usize;
-    let capacity = line.saturating_mul(2);
 
-    if normalized.chars().count() <= capacity {
+    let hint = " [see about]";
+    let ellipsis = "…";
+
+    let reserved = hint.chars().count() + ellipsis.chars().count();
+
+    let effective = width.saturating_sub(reserved);
+
+    if normalized.chars().count() <= width {
         return Line::from(normalized);
     }
 
-    let hint = " [see about]";
-    let effective = capacity.saturating_sub(hint.chars().count());
+    let truncated: String = normalized.chars().take(effective).collect();
 
-    let sentence_end = normalized
-        .char_indices()
-        .enumerate()
-        .filter(|(char_pos, (_, c))| {
-            matches!(c, '.' | '!' | '?') && *char_pos >= line && *char_pos < effective
-        })
-        .map(|(_, (byte_idx, c))| byte_idx + c.len_utf8())
-        .last();
-
-    let head = if let Some(end) = sentence_end {
-        normalized[..end].to_string()
-    } else {
-        let truncated: String = normalized
-            .chars()
-            .take(effective.saturating_sub(1))
-            .collect();
-        format!("{}…", truncated.trim_end())
-    };
+    let head = format!("{}{}", truncated.trim_end(), ellipsis);
 
     Line::from(vec![
         Span::raw(head),
