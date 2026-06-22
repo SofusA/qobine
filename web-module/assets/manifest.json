@@ -1,6 +1,6 @@
 {
-  "short_name": "qobuz-player",
-  "name": "qobuz-player",
+  "short_name": "qobine",
+  "name": "qobine",
   "icons": [
     {
       "src": "assets/pwa/manifest-icon-192.maskable.png",

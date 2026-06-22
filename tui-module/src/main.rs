@@ -79,7 +79,7 @@ pub async fn run() -> AppResult<()> {
     .await?;
 
     #[cfg(target_os = "linux")]
-    spawn_mpris(&player, &exit_sender, "qobuz-player".to_string());
+    spawn_mpris(&player, &exit_sender, "qobine".to_string());
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
@@ -225,7 +225,7 @@ impl SleepInhibitor {
                 .idle(true)
                 .sleep(true)
                 .reason("Audio playback")
-                .app_name("qobuz-player");
+                .app_name("qobine");
 
             if let Ok(awake) = builder.create() {
                 self.awake = Some(awake);

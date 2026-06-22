@@ -1,4 +1,4 @@
-# qobuz-player
+# qobine-tui
 A tui Qobuz client.
 
 #### Keyboard Shortcuts
@@ -10,7 +10,7 @@ The terminal ui needs a [nerdfont](https://www.nerdfonts.com/) to display icons 
 
 ### Download Release
 
-Download the tar.gz file for your supported OS from the releases page, extract the file and execute `qobuz-player` or copy it to your `$PATH`.
+Download the tar.gz file for your supported OS from the releases page, extract the file and execute `qobine-tui` or copy it to your `$PATH`.
 
 ### Installation with cargo
 Terminal app:

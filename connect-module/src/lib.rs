@@ -384,7 +384,7 @@ impl ConnectState {
                     tracing::info!("Error. Remove renderer not supported");
                 }
                 Notification::RendererStateUpdated(_state_msg) => {
-                    // TODO: This will be needed when qobuz-player is used as a controller
+                    // TODO: This will be needed when qobine is used as a controller
                     // let state = state_msg.state;
                     // tracing::info!("Error. Renderer state not supported: {:?}", state);
                 }

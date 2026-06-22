@@ -26,7 +26,7 @@ Click the "Link" button on album or playlist pages, and then scan an RFID tag. A
 You can share the RFID database with multiple players by setting a base address and an optional secret:
 ```
 --rfid-server-base-address <RFID_SERVER_BASE_ADDRESS>
-    Use other qobuz-player with web for rfid database
+    Use other qobine with web for rfid database
 --rfid-server-secret <RFID_SERVER_SECRET>
-    Secret for optional qobuz-player rfid server
+    Secret for optional qobine rfid server
 ```

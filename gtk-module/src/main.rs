@@ -174,7 +174,7 @@ impl SleepInhibitor {
                 .idle(true)
                 .sleep(true)
                 .reason("Audio playback")
-                .app_name("qobuz-player");
+                .app_name("qobine");
 
             if let Ok(awake) = builder.create() {
                 self.awake = Some(awake);

@@ -7,7 +7,7 @@ license-file.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "qobuz-player"
+name = "qobine-tui"
 path = "src/main.rs"
 
 [dependencies]

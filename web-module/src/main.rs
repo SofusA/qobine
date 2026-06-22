@@ -255,7 +255,7 @@ pub async fn run() -> AppResult<()> {
     if args.mpris {
         use mpris_module::spawn_mpris;
 
-        spawn_mpris(&player, &exit_sender, "qobuz-player".to_string());
+        spawn_mpris(&player, &exit_sender, "qobine".to_string());
     }
 
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);

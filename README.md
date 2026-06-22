@@ -1,4 +1,4 @@
-# qobuz-player / qobine
+# qobine
 
 ## High resolution audio player backed by Qobuz
 
@@ -11,11 +11,11 @@ This includes a terminal app, a web server and web-ui, a RFID player, and a mini
 The web interface is ideal for a setup with a single board computer, e.g. Raspberry Pi, connected to the speaker system and controlled with a smartphone or tablet.
 
 ### Terminal UI
-![TUI screenshot](/assets/qobuz-player.png)
+![TUI screenshot](/assets/qobine-tui.png)
 [More info](/tui-module)
 
 ### GNOME player
-![GTK screenshot](/assets/gtk-module.png)
+![GTK screenshot](/assets/qobine-gtk.png)
 [More info](/tui-module)
 
 ### Web UI
@@ -67,10 +67,10 @@ Linux dependencies: `alsa-sys-devel`, `just`, `sqlx-cli`, `npm`.
 ## Get started
 Install your favorites app.
 
-Run `qobuz-player --help` or `qobuz-player <subcommand> --help` to see all available options.
+Run `--help` or `<subcommand> --help` to see all available options.
 
 ## Contribution
 Feature requests, issues and contributions are very welcome.
 
 ## Credits
-Qobuz-player started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged. 
+Qobine started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged. 

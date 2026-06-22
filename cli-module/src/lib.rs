@@ -21,7 +21,7 @@ pub struct SharedArgs {
 
     #[clap(long)]
     /// Use provided device for audio output, instead of default.
-    /// Use qobuz-player list-devices for output device list
+    /// Use list-devices for output device list
     pub output_device_id: Option<String>,
 
     /// Use the file based streaming endpoint instead endpoint from web player
@@ -42,17 +42,17 @@ pub struct ConnectArgs {
 #[derive(Args, Debug)]
 pub struct RfidArgs {
     #[clap(long)]
-    /// Use other qobuz-player with web for rfid database
+    /// Use other qobine-web for rfid database
     pub rfid_server_base_address: Option<String>,
 
     #[clap(long)]
-    /// Secret for optional qobuz-player rfid server
+    /// Secret for optional qobine rfid server
     pub rfid_server_secret: Option<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct ConnectNameArgs {
-    #[clap(long, default_value = "qobuz-player")]
+    #[clap(long, default_value = "qobine")]
     pub connect_name: String,
 
     #[clap(long, default_value_t = 0)]
@@ -152,7 +152,7 @@ pub async fn handle_shared_commands(command: SharedCommands, database: &Database
                 Client::new_with_oauth_login(AudioQuality::Mp3, false, true).await?;
 
             database.set_credentials(Some(oauth_result.into())).await?;
-            println!("Login successful! You can now run qobuz-player.");
+            println!("Login successful!");
             Ok(())
         }
         SharedCommands::Logout => {
@@ -270,7 +270,7 @@ pub fn spawn_clean_up_mut(
 pub fn default_audio_cache(path: Option<PathBuf>) -> PathBuf {
     path.unwrap_or_else(|| {
         let mut cache_dir = std::env::temp_dir();
-        cache_dir.push("qobuz-player-cache");
+        cache_dir.push("qobine-cache");
         cache_dir
     })
 }

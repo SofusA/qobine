@@ -4,7 +4,7 @@
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
   "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
-  "command": "gtk-module",
+  "command": "qobine-gtk",
 
   "finish-args": [
     "--share=network",
@@ -33,7 +33,7 @@
       "build-commands": [
         "cargo build --locked --release --manifest-path gtk-module/Cargo.toml",
 
-        "install -Dm755 ./target/release/gtk-module /app/bin/gtk-module",
+        "install -Dm755 ./target/release/qobine-gtk /app/bin/qobine-gtk",
         "install -Dm644 flatpak/icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sofusa.qobine.svg",
         "install -Dm644 flatpak/io.github.sofusa.qobine.desktop /app/share/applications/io.github.sofusa.qobine.desktop",
         "install -Dm644 flatpak/io.github.sofusa.qobine.metainfo.xml /app/share/metainfo/io.github.sofusa.qobine.metainfo.xml"

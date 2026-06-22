@@ -19,7 +19,7 @@ impl Database {
             let Some(mut url) = dirs::data_local_dir() else {
                 return Err(Error::DatabaseLocationError);
             };
-            url.push("qobuz-player");
+            url.push("qobine");
 
             if !url.exists() {
                 let Ok(_) = std::fs::create_dir_all(&url) else {
@@ -289,7 +289,7 @@ impl Database {
             .and_then(|x| PathBuf::from_str(&x).ok())
             .unwrap_or_else(|| {
                 let mut cache_dir = std::env::temp_dir();
-                cache_dir.push("qobuz-player-cache");
+                cache_dir.push("qobine-cache");
                 cache_dir
             });
 

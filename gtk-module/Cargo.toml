@@ -7,7 +7,7 @@ repository.workspace = true
 description.workspace = true
 
 [[bin]]
-name = "gtk-module"
+name = "qobine-gtk"
 path = "src/main.rs"
 
 [dependencies]

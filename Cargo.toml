@@ -20,7 +20,7 @@ resolver = "2"
 version = "1.0.0"
 edition = "2024"
 license-file = "LICENSE"
-repository = "https://github.com/sofusa/qobuz-player"
+repository = "https://github.com/sofusa/qobine"
 description = "Music player for Qobuz"
 
 [workspace.dependencies]
