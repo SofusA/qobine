@@ -1,6 +1,5 @@
-use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_duration, format_mseconds};
+use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
 use controls_module::{Status, models::Track};
-use player_module::RightTimerMode;
 use ratatui::{prelude::*, widgets::Gauge};
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 use std::time::Instant;
@@ -16,8 +15,6 @@ pub struct NowPlayingState {
     pub position_anchor: Option<Instant>,
     pub progress_cells: u16,
     pub progress_drawn_eighths: usize,
-    pub queue_total_seconds: u32,
-    pub queue_after_current_seconds: u32,
 }
 
 impl NowPlayingState {
@@ -53,7 +50,6 @@ pub fn render(
     state: &mut NowPlayingState,
     full_screen: bool,
     disable_tui_album_cover: bool,
-    right_timer_mode: RightTimerMode,
 ) {
     let track = match &state.playing_track {
         Some(t) => t,
@@ -106,37 +102,14 @@ pub fn render(
     ];
 
     let displayed_ms = state.displayed_ms();
-    let remaining_track = track.duration_seconds.saturating_sub(displayed_ms / 1000);
-    let right_label = match right_timer_mode {
-        RightTimerMode::TrackLength => format_duration(track.duration_seconds),
-        RightTimerMode::TrackRemaining => format!("-{}", format_duration(remaining_track)),
-        RightTimerMode::QueueRemaining => format!(
-            "-{}",
-            format_duration(remaining_track + state.queue_after_current_seconds)
-        ),
-        RightTimerMode::QueueTotal => format_duration(state.queue_total_seconds),
-    };
-
-    let cells = render_progress_bar(
-        frame,
-        info_chunks[1],
-        displayed_ms,
-        track.duration_seconds,
-        &right_label,
-    );
+    let cells = render_progress_bar(frame, info_chunks[1], displayed_ms, track.duration_seconds);
     state.progress_cells = cells;
     frame.render_widget(Text::from(lines), info_chunks[0]);
 }
 
-fn render_progress_bar(
-    frame: &mut Frame,
-    area: Rect,
-    elapsed_ms: u32,
-    duration_secs: u32,
-    right_label: &str,
-) -> u16 {
+fn render_progress_bar(frame: &mut Frame, area: Rect, elapsed_ms: u32, duration_secs: u32) -> u16 {
     let elapsed = format_mseconds(elapsed_ms);
-    let total = right_label;
+    let total = format_seconds(duration_secs);
 
     let [left, gauge_area, right] = Layout::horizontal([
         Constraint::Length(elapsed.chars().count() as u16 + 1),

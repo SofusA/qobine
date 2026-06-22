@@ -1,6 +1,5 @@
 use crate::error::Error;
 
-pub use database::RightTimerMode;
 pub use qobuz_client::client::AudioQuality;
 
 pub mod client;
