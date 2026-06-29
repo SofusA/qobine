@@ -308,7 +308,7 @@ pub fn parse_playlist_simple(
         title: playlist.name,
         duration_seconds: playlist.duration as u32,
         tracks_count: playlist.tracks_count as u32,
-        image: Some(playlist.image.rectangle),
+        image: playlist.image.rectangle,
         owner: playlist.owner,
     }
 }

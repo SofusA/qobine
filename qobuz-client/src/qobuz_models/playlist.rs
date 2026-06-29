@@ -89,6 +89,8 @@ pub struct PlaylistSimple {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaylistSimpleImage {
-    pub rectangle: String,
+    #[serde(default)]
+    pub rectangle: Option<String>,
+    #[serde(default)]
     pub covers: Vec<String>,
 }
