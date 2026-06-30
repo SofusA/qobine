@@ -85,6 +85,28 @@ impl From<Album> for AlbumSimple {
     }
 }
 
+impl From<&Album> for AlbumSimple {
+    fn from(value: &Album) -> Self {
+        Self {
+            id: value.id.clone(),
+            title: value.title.clone(),
+            artist: value.artist.clone(),
+            image: value.image.clone(),
+            available: value.available,
+            hires_available: value.hires_available,
+            explicit: value.explicit,
+            duration_seconds: value.duration_seconds,
+            release_year: value.release_year,
+        }
+    }
+}
+
+impl From<&AlbumSimple> for AlbumSimple {
+    fn from(value: &AlbumSimple) -> Self {
+        value.clone()
+    }
+}
+
 #[derive(Default, Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SearchResults {
     pub query: String,
@@ -123,6 +145,32 @@ pub struct ArtistPage {
     pub compilations: Vec<AlbumSimple>,
 }
 
+impl From<ArtistPage> for Artist {
+    fn from(value: ArtistPage) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            image: value.image,
+        }
+    }
+}
+
+impl From<&ArtistPage> for Artist {
+    fn from(value: &ArtistPage) -> Self {
+        Self {
+            id: value.id,
+            name: value.name.clone(),
+            image: value.image.clone(),
+        }
+    }
+}
+
+impl From<&Artist> for Artist {
+    fn from(value: &Artist) -> Self {
+        value.clone()
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Playlist {
     pub is_owned: bool,
@@ -158,6 +206,26 @@ impl From<PlaylistSimple> for Playlist {
             tracks: Default::default(),
             owner: value.owner,
         }
+    }
+}
+
+impl From<&Playlist> for PlaylistSimple {
+    fn from(value: &Playlist) -> Self {
+        Self {
+            is_owned: value.is_owned,
+            title: value.title.clone(),
+            duration_seconds: value.duration_seconds,
+            tracks_count: value.tracks.len() as u32,
+            id: value.id,
+            image: value.image.clone(),
+            owner: value.owner.clone(),
+        }
+    }
+}
+
+impl From<&PlaylistSimple> for PlaylistSimple {
+    fn from(value: &PlaylistSimple) -> Self {
+        value.clone()
     }
 }
 

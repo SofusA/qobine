@@ -84,7 +84,8 @@ async fn track_action(
 ) -> ResponseResult {
     match req.action {
         TrackAction::AddFavorite => {
-            ok_or_send_error_toast(&state, state.client.add_favorite_track(req.track_id).await)?;
+            let track = ok_or_send_error_toast(&state, state.client.track(req.track_id).await)?;
+            ok_or_send_error_toast(&state, state.client.add_favorite_track(&track).await)?;
             state.send_sse("tracklist".into(), "New favorite track".into());
             Ok(state.send_toast(Notification::Info("Track added to favorites".into())))
         }

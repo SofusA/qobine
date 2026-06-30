@@ -360,7 +360,7 @@ pub fn build_track_row(
 
     add_to_playlist_action.connect_activate({
         let client = client.clone();
-        let track_id = track.id;
+        let track = track.clone();
 
         move |_, parameter| {
             let Some(playlist_id) = parameter.and_then(|p| p.get::<u32>()) else {
@@ -368,11 +368,13 @@ pub fn build_track_row(
                 return;
             };
 
+            let track = track.clone();
+
             glib::MainContext::default().spawn_local({
                 let client = client.clone();
 
                 async move {
-                    if let Err(err) = client.playlist_add_track(playlist_id, &[track_id]).await {
+                    if let Err(err) = client.playlist_add_track(playlist_id, &[track]).await {
                         tracing::error!("Failed to add track to playlist: {err}");
                     }
                 }
@@ -399,20 +401,21 @@ pub fn build_track_row(
     let toggle_favorite_action = gio::SimpleAction::new("toggle-favorite", None);
 
     toggle_favorite_action.connect_activate({
-        let track_id = track.id;
         let client = client.clone();
         let ui_event_sender = ui_event_sender.clone();
+        let track = track.clone();
 
         move |_, _| {
             glib::MainContext::default().spawn_local({
                 let client = client.clone();
                 let ui_event_sender = ui_event_sender.clone();
+                let track = track.clone();
 
                 async move {
                     let result = if is_favorite {
-                        client.remove_favorite_track(track_id).await
+                        client.remove_favorite_track(track.id).await
                     } else {
-                        client.add_favorite_track(track_id).await
+                        client.add_favorite_track(&track).await
                     };
 
                     if let Err(error) = result {

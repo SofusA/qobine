@@ -146,13 +146,8 @@ pub fn build_detail_header(
 
                 async move {
                     match fetch_tracks(&client, detail_type).await {
-                        Ok(track_ids) => {
-                            if let Err(err) = client
-                                .playlist_add_track(
-                                    playlist_id,
-                                    &track_ids.iter().map(|x| x.id).collect::<Vec<_>>(),
-                                )
-                                .await
+                        Ok(tracks) => {
+                            if let Err(err) = client.playlist_add_track(playlist_id, &tracks).await
                             {
                                 tracing::error!("Failed to add tracks to playlist: {err}");
                             }
@@ -400,26 +395,29 @@ fn new_favorite_button(
                 #[strong]
                 is_favorite,
                 async move {
-                    let next = !is_favorite.get();
+                    let not_favorite = !is_favorite.get();
 
                     let res = match &*button_type {
                         DetailType::Album(album_id) => {
-                            if next {
-                                client.add_favorite_album(album_id).await
+                            if not_favorite {
+                                let album = client.album(album_id).await.unwrap();
+                                client.add_favorite_album(&album.into()).await
                             } else {
                                 client.remove_favorite_album(album_id).await
                             }
                         }
                         DetailType::Artist(artist_id) => {
-                            if next {
-                                client.add_favorite_artist(*artist_id).await
+                            if not_favorite {
+                                let artist = client.artist_page(*artist_id).await.unwrap();
+                                client.add_favorite_artist(&artist.into()).await
                             } else {
                                 client.remove_favorite_artist(*artist_id).await
                             }
                         }
                         DetailType::Playlist(playlist_id) => {
-                            if next {
-                                client.add_favorite_playlist(*playlist_id).await
+                            if not_favorite {
+                                let playlist = client.playlist(*playlist_id).await.unwrap();
+                                client.add_favorite_playlist(&playlist).await
                             } else {
                                 client.remove_favorite_playlist(*playlist_id).await
                             }
@@ -427,8 +425,8 @@ fn new_favorite_button(
                     };
 
                     if res.is_ok() {
-                        is_favorite.set(next);
-                        favorites_button.set_icon_name(if next {
+                        is_favorite.set(not_favorite);
+                        favorites_button.set_icon_name(if not_favorite {
                             "starred-symbolic"
                         } else {
                             "non-starred-symbolic"

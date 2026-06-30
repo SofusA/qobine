@@ -412,59 +412,95 @@ impl Client {
         Ok(playlist)
     }
 
-    pub async fn add_favorite_track(&self, id: u32) -> Result<()> {
+    pub async fn add_favorite_track(&self, track: &Track) -> Result<()> {
         let client = self.get_client().await?;
-        client.add_favorite_track(id).await?;
-        self.favorites_cache.clear().await;
+        client.add_favorite_track(track.id).await?;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.tracks.push(track.clone());
+        }
+
         Ok(())
     }
 
     pub async fn remove_favorite_track(&self, id: u32) -> Result<()> {
         let client = self.get_client().await?;
         client.remove_favorite_track(id).await?;
-        self.favorites_cache.clear().await;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.tracks.retain(|track| track.id != id);
+            self.favorites_cache.set(favorites).await;
+        }
+
         Ok(())
     }
 
-    pub async fn add_favorite_album(&self, id: &str) -> Result<()> {
+    pub async fn add_favorite_album(&self, album: &AlbumSimple) -> Result<()> {
         let client = self.get_client().await?;
-        client.add_favorite_album(id).await?;
-        self.favorites_cache.clear().await;
+        client.add_favorite_album(&album.id).await?;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.albums.push(album.clone());
+        }
+
         Ok(())
     }
 
     pub async fn remove_favorite_album(&self, id: &str) -> Result<()> {
         let client = self.get_client().await?;
         client.remove_favorite_album(id).await?;
-        self.favorites_cache.clear().await;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.albums.retain(|album| album.id != id);
+            self.favorites_cache.set(favorites).await;
+        }
+
         Ok(())
     }
 
-    pub async fn add_favorite_artist(&self, id: u32) -> Result<()> {
+    pub async fn add_favorite_artist(&self, artist: &Artist) -> Result<()> {
         let client = self.get_client().await?;
-        client.add_favorite_artist(id).await?;
-        self.favorites_cache.clear().await;
+        client.add_favorite_artist(artist.id).await?;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.artists.push(artist.clone());
+        }
+
         Ok(())
     }
 
     pub async fn remove_favorite_artist(&self, id: u32) -> Result<()> {
         let client = self.get_client().await?;
         client.remove_favorite_artist(id).await?;
-        self.favorites_cache.clear().await;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.artists.retain(|artist| artist.id != id);
+            self.favorites_cache.set(favorites).await;
+        }
+
         Ok(())
     }
 
-    pub async fn add_favorite_playlist(&self, id: u32) -> Result<()> {
+    pub async fn add_favorite_playlist(&self, playlist: &Playlist) -> Result<()> {
         let client = self.get_client().await?;
-        client.add_favorite_playlist(id).await?;
-        self.favorites_cache.clear().await;
+        client.add_favorite_playlist(playlist.id).await?;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.playlists.push(playlist.clone());
+        }
+
         Ok(())
     }
 
     pub async fn remove_favorite_playlist(&self, id: u32) -> Result<()> {
         let client = self.get_client().await?;
         client.remove_favorite_playlist(id).await?;
-        self.favorites_cache.clear().await;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await {
+            favorites.playlists.retain(|playlist| playlist.id != id);
+            self.favorites_cache.set(favorites).await;
+        }
+
         Ok(())
     }
 
@@ -572,14 +608,23 @@ impl Client {
         Ok(())
     }
 
-    pub async fn playlist_add_track(
-        &self,
-        playlist_id: u32,
-        track_ids: &[u32],
-    ) -> Result<Playlist> {
+    pub async fn playlist_add_track(&self, playlist_id: u32, tracks: &[Track]) -> Result<Playlist> {
         let client = self.get_client().await?;
-        client.playlist_add_track(playlist_id, track_ids).await?;
-        self.playlist_cache.invalidate(&playlist_id).await;
+        let track_ids: Vec<_> = tracks.iter().map(|x| x.id).collect();
+        client.playlist_add_track(playlist_id, &track_ids).await?;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await
+            && let Some(playlist) = favorites.playlists.iter_mut().find(|p| p.id == playlist_id)
+        {
+            playlist.duration_seconds += tracks.iter().map(|x| x.duration_seconds).sum::<u32>();
+            self.favorites_cache.set(favorites).await;
+        }
+
+        if let Some(mut playlist) = self.playlist_cache.get(&playlist_id).await {
+            playlist.duration_seconds += tracks.iter().map(|x| x.duration_seconds).sum::<u32>();
+            self.playlist_cache.insert(playlist_id, playlist).await;
+        };
+
         self.playlist(playlist_id).await
     }
 
@@ -592,7 +637,37 @@ impl Client {
         client
             .playlist_delete_track(playlist_id, playlist_track_ids)
             .await?;
-        self.playlist_cache.invalidate(&playlist_id).await;
+
+        if let Some(mut favorites) = self.favorites_cache.get().await
+            && let Some(playlist) = favorites.playlists.iter_mut().find(|p| p.id == playlist_id)
+        {
+            let tracks: Vec<_> = playlist
+                .tracks
+                .iter()
+                .filter(|x| {
+                    x.playlist_track_id
+                        .is_some_and(|i| playlist_track_ids.contains(&i))
+                })
+                .collect();
+
+            playlist.duration_seconds -= tracks.iter().map(|x| x.duration_seconds).sum::<u32>();
+            self.favorites_cache.set(favorites).await;
+        }
+
+        if let Some(mut playlist) = self.playlist_cache.get(&playlist_id).await {
+            let tracks: Vec<_> = playlist
+                .tracks
+                .iter()
+                .filter(|x| {
+                    x.playlist_track_id
+                        .is_some_and(|i| playlist_track_ids.contains(&i))
+                })
+                .collect();
+
+            playlist.duration_seconds -= tracks.iter().map(|x| x.duration_seconds).sum::<u32>();
+            self.playlist_cache.insert(playlist_id, playlist).await;
+        };
+
         self.playlist(playlist_id).await
     }
 

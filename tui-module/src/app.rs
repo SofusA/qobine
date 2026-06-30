@@ -114,7 +114,7 @@ pub enum Output {
     Popup(Popup),
     PopPopupUpdateFavorites,
     AddTrackToPlaylistPopup(Track),
-    AddTrackToPlaylistAndPopPopup((u32, u32)),
+    AddTrackToPlaylistAndPopPopup((Track, u32)),
 }
 
 pub enum FavoriteAdd {

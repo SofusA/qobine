@@ -87,7 +87,7 @@ impl AlbumList {
                 let selected = index.and_then(|index| self.items.filter().get(index));
 
                 if let Some(selected) = selected {
-                    client.add_favorite_album(&selected.id).await?;
+                    client.add_favorite_album(selected).await?;
                     notifications.push(Notification::Info(format!(
                         "{} added to favorites",
                         selected.title

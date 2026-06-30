@@ -95,7 +95,8 @@ impl PlaylistList {
                 if let Some(selected) = selected
                     && !selected.is_owned
                 {
-                    client.add_favorite_playlist(selected.id).await?;
+                    let playlist = client.playlist(selected.id).await?;
+                    client.add_favorite_playlist(&playlist).await?;
 
                     notifications.push(Notification::Info(format!(
                         "{} added to favorites",

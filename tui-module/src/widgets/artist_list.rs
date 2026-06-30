@@ -93,7 +93,7 @@ impl ArtistList {
                 let selected = index.and_then(|index| self.items.filter().get(index));
 
                 if let Some(selected) = selected {
-                    client.add_favorite_artist(selected.id).await?;
+                    client.add_favorite_artist(selected).await?;
 
                     notifications.push(Notification::Info(format!(
                         "{} added to favorites",

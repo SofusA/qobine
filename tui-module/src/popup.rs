@@ -1124,7 +1124,7 @@ impl Popup {
 
                         if let Some(id) = id {
                             return Ok(Output::AddTrackToPlaylistAndPopPopup((
-                                track_popup_state.track.id,
+                                track_popup_state.track.clone(),
                                 id,
                             )));
                         }

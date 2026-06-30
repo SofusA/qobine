@@ -142,7 +142,7 @@ impl QueueState {
                             .and_then(|index| self.items.get(index));
 
                         if let Some(selected) = selected {
-                            client.add_favorite_track(selected.id).await?;
+                            client.add_favorite_track(selected).await?;
                             notifications.push(Notification::Info(format!(
                                 "{} added to favorites",
                                 selected.title

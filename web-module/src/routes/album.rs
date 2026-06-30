@@ -77,7 +77,8 @@ async fn set_favorite(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> ResponseResult {
-    ok_or_send_error_toast(&state, state.client.add_favorite_album(&id).await)?;
+    let album = ok_or_send_error_toast(&state, state.client.album(&id).await)?;
+    ok_or_send_error_toast(&state, state.client.add_favorite_album(&album.into()).await)?;
 
     Ok(state.render(
         "toggle-favorite.html",

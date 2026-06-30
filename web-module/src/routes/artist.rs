@@ -94,7 +94,11 @@ async fn play_top_track(
 }
 
 async fn set_favorite(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> ResponseResult {
-    ok_or_send_error_toast(&state, state.client.add_favorite_artist(id).await)?;
+    let artist = ok_or_send_error_toast(&state, state.client.artist_page(id).await)?;
+    ok_or_send_error_toast(
+        &state,
+        state.client.add_favorite_artist(&artist.into()).await,
+    )?;
 
     Ok(state.render(
         "toggle-favorite.html",
