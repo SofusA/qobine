@@ -2,8 +2,8 @@
 use cli_module::GpioArgs;
 use cli_module::{
     ConnectArgs, DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
-    default_audio_cache, default_audio_quality, error_exit, get_client, handle_shared_commands,
-    parse_disconnect_args, spawn_clean_up,
+    default_audio_quality, error_exit, get_client, handle_shared_commands, parse_disconnect_args,
+    spawn_clean_up,
 };
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
 use rfid_module::{RfidState, spawn_rfid};
@@ -91,10 +91,9 @@ pub async fn run() -> AppResult<()> {
     let client = Arc::new(client);
 
     let broadcast = Arc::new(NotificationBroadcast::new());
-    let audio_cache = default_audio_cache(args.shared.audio_cache);
 
     let mut player = create_player(
-        audio_cache,
+        args.shared.audio_cache,
         database.clone(),
         client.clone(),
         broadcast.clone(),

@@ -44,7 +44,7 @@ pub async fn run() -> AppResult<()> {
     let broadcast = Arc::new(NotificationBroadcast::new());
 
     let mut player = create_player(
-        configuration.cache_directory,
+        None,
         database.clone(),
         client.clone(),
         broadcast.clone(),

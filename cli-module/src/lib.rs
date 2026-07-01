@@ -267,14 +267,6 @@ pub fn spawn_clean_up_mut(
     });
 }
 
-pub fn default_audio_cache(path: Option<PathBuf>) -> PathBuf {
-    path.unwrap_or_else(|| {
-        let mut cache_dir = std::env::temp_dir();
-        cache_dir.push("qobine-cache");
-        cache_dir
-    })
-}
-
 pub async fn default_audio_quality(
     database: &Database,
     args: Option<AudioQuality>,
@@ -289,7 +281,7 @@ pub async fn default_audio_quality(
 }
 
 pub async fn create_player(
-    audio_cache: PathBuf,
+    audio_cache: Option<PathBuf>,
     database: Arc<Database>,
     client: Arc<Client>,
     broadcast: Arc<NotificationBroadcast>,
@@ -299,6 +291,7 @@ pub async fn create_player(
 ) -> AppResult<Player> {
     let tracklist = database.get_tracklist().await.unwrap_or_default();
     let configuration = database.get_configuration().await?;
+    let audio_cache = audio_cache.unwrap_or(configuration.cache_directory);
 
     let state_change_delay = state_change_delay_ms.map(Duration::from_millis);
     let sample_rate_change_delay = sample_rate_change_delay_ms.map(Duration::from_millis);

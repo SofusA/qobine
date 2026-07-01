@@ -1,8 +1,8 @@
 #[cfg(feature = "gpio")]
 use cli_module::GpioArgs;
 use cli_module::{
-    ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_cache,
-    default_audio_quality, error_exit, get_client, handle_shared_commands, spawn_clean_up,
+    ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality,
+    error_exit, get_client, handle_shared_commands, spawn_clean_up,
 };
 use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 use std::sync::Arc;
@@ -63,10 +63,9 @@ pub async fn run() -> AppResult<()> {
     let client = Arc::new(client);
 
     let broadcast = Arc::new(NotificationBroadcast::new());
-    let audio_cache = default_audio_cache(args.shared.audio_cache);
 
     let mut player = create_player(
-        audio_cache,
+        args.shared.audio_cache,
         database.clone(),
         client.clone(),
         broadcast.clone(),
