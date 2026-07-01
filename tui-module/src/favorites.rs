@@ -8,7 +8,7 @@ use ratatui::{
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
@@ -55,7 +55,7 @@ impl FavoritesState {
         })
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let tab_content_area_split = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
@@ -92,26 +92,26 @@ impl FavoritesState {
                 chunks[1],
                 frame.buffer_mut(),
                 content_focused,
-                favorites.albums(),
+                &Default::default(),
             ),
             SubTab::Artists => self.artists.render(
                 chunks[1],
                 frame.buffer_mut(),
                 content_focused,
-                favorites.artists(),
+                &Default::default(),
             ),
             SubTab::Playlists => self.playlists.render(
                 chunks[1],
                 frame.buffer_mut(),
                 content_focused,
-                favorites.playlists(),
+                &Default::default(),
             ),
             SubTab::Tracks => self.tracks.render(
                 chunks[1],
                 frame.buffer_mut(),
                 true,
                 content_focused,
-                favorites.tracks(),
+                &Default::default(),
             ),
         };
     }

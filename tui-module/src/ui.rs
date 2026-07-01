@@ -99,7 +99,7 @@ impl App {
         let favorite_ids = &self.favorite_ids;
 
         match self.current_screen {
-            Tab::Favorites => self.favorites.render(frame, tab_content_area, favorite_ids),
+            Tab::Favorites => self.favorites.render(frame, tab_content_area),
             Tab::Search => self.search.render(frame, tab_content_area, favorite_ids),
             Tab::Queue => self.queue.render(frame, tab_content_area, favorite_ids),
             Tab::Discover => self.discover.render(frame, tab_content_area, favorite_ids),
