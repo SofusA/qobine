@@ -27,7 +27,7 @@ use player_module::{
 };
 use ratatui::{DefaultTerminal, widgets::*};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::{io, sync::Arc, time::Instant};
+use std::{collections::HashSet, io, sync::Arc, time::Instant};
 use tokio::{
     sync::{mpsc, watch},
     time::{self, Duration},
@@ -94,6 +94,31 @@ pub enum AppState {
     Popup(Vec<Popup>),
     Help,
     ConnectPopup(usize),
+}
+
+pub struct FavoriteIds {
+    albums: HashSet<String>,
+    artists: HashSet<u32>,
+    playlists: HashSet<u32>,
+    tracks: HashSet<u32>,
+}
+
+impl FavoriteIds {
+    pub fn albums(&self) -> &HashSet<String> {
+        &self.albums
+    }
+
+    pub fn artists(&self) -> &HashSet<u32> {
+        &self.artists
+    }
+
+    pub fn playlists(&self) -> &HashSet<u32> {
+        &self.playlists
+    }
+
+    pub fn tracks(&self) -> &HashSet<u32> {
+        &self.tracks
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -507,6 +532,47 @@ impl App {
                 };
                 self.should_draw = true;
             }
+        }
+    }
+
+    pub fn favorites(&self) -> FavoriteIds {
+        let albums = self
+            .favorites
+            .albums
+            .all_items()
+            .iter()
+            .map(|x| x.id.clone())
+            .collect();
+
+        let artists = self
+            .favorites
+            .artists
+            .all_items()
+            .iter()
+            .map(|x| x.id)
+            .collect();
+
+        let playlists = self
+            .favorites
+            .playlists
+            .all_items()
+            .iter()
+            .map(|x| x.id)
+            .collect();
+
+        let tracks = self
+            .favorites
+            .tracks
+            .all_items()
+            .iter()
+            .map(|x| x.id)
+            .collect();
+
+        FavoriteIds {
+            albums,
+            artists,
+            playlists,
+            tracks,
         }
     }
 

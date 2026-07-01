@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use controls_module::{controls::Controls, models::PlaylistSimple};
 use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
@@ -12,7 +14,10 @@ use ratatui::{
 use crate::{
     app::{FilteredListState, NotificationList, Output},
     popup::{DeletePlaylistPopupState, NewPlaylistPopupState, PlaylistPopupState, Popup},
-    ui::{COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_owned},
+    ui::{
+        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_favorite,
+        mark_as_owned,
+    },
 };
 
 #[derive(Default)]
@@ -33,8 +38,8 @@ impl PlaylistList {
         Self { items: playlists }
     }
 
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool) {
-        let table = playlist_list(self.items.filter(), focus);
+    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool, favorites: &HashSet<u32>) {
+        let table = playlist_list(self.items.filter(), focus, favorites);
         table.render(area, buf, &mut self.items.state);
     }
 
@@ -195,12 +200,15 @@ impl PlaylistList {
     }
 }
 
-fn playlist_list<'a>(rows: &[PlaylistSimple], focus: bool) -> Table<'a> {
+fn playlist_list<'a>(rows: &[PlaylistSimple], focus: bool, favorites: &HashSet<u32>) -> Table<'a> {
     let body_rows: Vec<Row<'a>> = rows
         .iter()
         .map(|playlist| {
+            let name = Line::from(playlist.title.clone());
+            let line = mark_as_favorite(name, favorites.contains(&playlist.id));
+            let line = mark_as_owned(line, playlist.is_owned);
             Row::new(vec![
-                mark_as_owned(playlist.title.clone(), playlist.is_owned),
+                line,
                 Line::from(format_duration(playlist.duration_seconds)),
             ])
         })

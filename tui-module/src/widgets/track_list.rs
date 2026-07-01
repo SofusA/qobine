@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use controls_module::{controls::Controls, models::Track};
 use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
@@ -42,8 +44,15 @@ impl TrackList {
         Self { items: tracks }
     }
 
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer, show_album: bool, focus: bool) {
-        let table = track_table(self.items.filter(), show_album, focus);
+    pub fn render(
+        &mut self,
+        area: Rect,
+        buf: &mut Buffer,
+        show_album: bool,
+        focus: bool,
+        favorites: &HashSet<u32>,
+    ) {
+        let table = track_table(self.items.filter(), show_album, focus, favorites);
         table.render(area, buf, &mut self.items.state);
     }
 
@@ -215,7 +224,12 @@ impl TrackList {
     }
 }
 
-fn track_table<'a>(rows: &[Track], show_album: bool, focus: bool) -> Table<'a> {
+fn track_table<'a>(
+    rows: &[Track],
+    show_album: bool,
+    focus: bool,
+    favorites: &HashSet<u32>,
+) -> Table<'a> {
     let body_rows: Vec<Row<'a>> = rows
         .iter()
         .map(|track| {
@@ -225,6 +239,7 @@ fn track_table<'a>(rows: &[Track], show_album: bool, focus: bool) -> Table<'a> {
                 track.title.clone(),
                 track.explicit,
                 track.hires_available,
+                favorites.contains(&track.id),
             ));
 
             cols.push(Line::from(track.artist_name.clone().unwrap_or_default()));

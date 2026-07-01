@@ -8,7 +8,7 @@ use ratatui::{
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
-    app::{NotificationList, Output},
+    app::{FavoriteIds, NotificationList, Output},
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
@@ -55,7 +55,7 @@ impl FavoritesState {
         })
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
         let tab_content_area_split = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
@@ -88,20 +88,31 @@ impl FavoritesState {
 
         let content_focused = self.focus == FavoritesFocus::Content;
         match self.sub_tab {
-            SubTab::Albums => self
-                .albums
-                .render(chunks[1], frame.buffer_mut(), content_focused),
-            SubTab::Artists => self
-                .artists
-                .render(chunks[1], frame.buffer_mut(), content_focused),
-            SubTab::Playlists => {
-                self.playlists
-                    .render(chunks[1], frame.buffer_mut(), content_focused)
-            }
-            SubTab::Tracks => {
-                self.tracks
-                    .render(chunks[1], frame.buffer_mut(), true, content_focused)
-            }
+            SubTab::Albums => self.albums.render(
+                chunks[1],
+                frame.buffer_mut(),
+                content_focused,
+                favorites.albums(),
+            ),
+            SubTab::Artists => self.artists.render(
+                chunks[1],
+                frame.buffer_mut(),
+                content_focused,
+                favorites.artists(),
+            ),
+            SubTab::Playlists => self.playlists.render(
+                chunks[1],
+                frame.buffer_mut(),
+                content_focused,
+                favorites.playlists(),
+            ),
+            SubTab::Tracks => self.tracks.render(
+                chunks[1],
+                frame.buffer_mut(),
+                true,
+                content_focused,
+                favorites.tracks(),
+            ),
         };
     }
 

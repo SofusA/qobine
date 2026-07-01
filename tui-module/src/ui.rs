@@ -96,19 +96,23 @@ impl App {
             chunks[1].union(chunks[2])
         };
 
+        let favorite_ids = self.favorites();
+
         match self.current_screen {
-            Tab::Favorites => self.favorites.render(frame, tab_content_area),
-            Tab::Search => self.search.render(frame, tab_content_area),
-            Tab::Queue => self.queue.render(frame, tab_content_area),
-            Tab::Discover => self.discover.render(frame, tab_content_area),
-            Tab::Genres => self.genres.render(frame, tab_content_area),
+            Tab::Favorites => self
+                .favorites
+                .render(frame, tab_content_area, &favorite_ids),
+            Tab::Search => self.search.render(frame, tab_content_area, &favorite_ids),
+            Tab::Queue => self.queue.render(frame, tab_content_area, &favorite_ids),
+            Tab::Discover => self.discover.render(frame, tab_content_area, &favorite_ids),
+            Tab::Genres => self.genres.render(frame, tab_content_area, &favorite_ids),
             Tab::Preferences => self.preferences.render(frame, tab_content_area),
         }
 
         if let AppState::Popup(popups) = &mut self.app_state
             && let Some(popup) = popups.last_mut()
         {
-            popup.render(frame);
+            popup.render(frame, &favorite_ids);
         }
     }
 
@@ -391,10 +395,19 @@ pub fn mark_explicit_and_hifi(
     title: String,
     explicit: bool,
     hires_available: bool,
+    is_favorite: bool,
 ) -> Line<'static> {
     let mut parts: Vec<Span<'static>> = Vec::new();
 
     parts.push(Span::raw(title));
+
+    if is_favorite {
+        parts.push(Span::raw(" "));
+        parts.push(Span::styled(
+            "\u{f004}",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+    }
 
     if explicit {
         parts.push(Span::raw(" "));
@@ -415,20 +428,33 @@ pub fn mark_explicit_and_hifi(
     Line::from(parts)
 }
 
-pub fn mark_as_owned(title: String, owned: bool) -> Line<'static> {
-    let mut parts: Vec<Span<'static>> = Vec::new();
-
-    parts.push(Span::raw(title));
-
-    if owned {
-        parts.push(Span::raw(" "));
-        parts.push(Span::styled(
-            "\u{f007}",
-            Style::default().add_modifier(Modifier::DIM),
-        ));
+pub fn mark_as_favorite(line: Line<'static>, is_favorite: bool) -> Line<'static> {
+    if !is_favorite {
+        return line;
     }
 
-    Line::from(parts)
+    let mut spans = line.spans;
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(
+        "\u{f004}",
+        Style::default().add_modifier(Modifier::DIM),
+    ));
+    Line::from(spans)
+}
+
+pub fn mark_as_owned(line: Line<'static>, owned: bool) -> Line<'static> {
+    if !owned {
+        return line;
+    }
+
+    let mut spans = line.spans;
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(
+        "\u{f007}",
+        Style::default().add_modifier(Modifier::DIM),
+    ));
+
+    Line::from(spans)
 }
 
 pub fn format_duration(secs: u32) -> String {

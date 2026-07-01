@@ -9,6 +9,7 @@ use ratatui::{
     widgets::ListState,
 };
 
+use crate::app::FavoriteIds;
 use crate::ui::sidebar;
 use crate::{
     app::{NotificationList, Output},
@@ -82,7 +83,7 @@ impl DiscoverState {
         })
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
         let block = block(None);
         frame.render_widget(block, area);
 
@@ -114,9 +115,19 @@ impl DiscoverState {
         let content_focused = self.focus == DiscoverFocus::Content;
 
         if let Some((_, list)) = self.selected_album_mut() {
-            list.render(chunks[1], frame.buffer_mut(), content_focused);
+            list.render(
+                chunks[1],
+                frame.buffer_mut(),
+                content_focused,
+                favorites.albums(),
+            );
         } else if let Some((_, list)) = self.selected_playlist_mut() {
-            list.render(chunks[1], frame.buffer_mut(), content_focused);
+            list.render(
+                chunks[1],
+                frame.buffer_mut(),
+                content_focused,
+                favorites.playlists(),
+            );
         }
     }
 

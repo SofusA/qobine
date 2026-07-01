@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{NotificationList, Output},
+    app::{FavoriteIds, NotificationList, Output},
     popup::Popup,
     ui::{basic_list_table, block, mark_explicit_and_hifi},
 };
@@ -27,7 +27,7 @@ impl QueueState {
             state: Default::default(),
         }
     }
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
         let table = basic_list_table(
             self.items
                 .iter()
@@ -46,6 +46,7 @@ impl QueueState {
                         track.title.clone(),
                         track.explicit,
                         track.hires_available,
+                        favorites.tracks().contains(&track.id),
                     );
 
                     let mut spans = vec![Span::from(format!("{} ", index + 1))];

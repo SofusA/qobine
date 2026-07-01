@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use controls_module::{controls::Controls, models::AlbumSimple};
 use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
@@ -34,8 +36,14 @@ impl AlbumList {
         Self { items: albums }
     }
 
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool) {
-        let table = album_table(self.items.filter(), focus);
+    pub fn render(
+        &mut self,
+        area: Rect,
+        buf: &mut Buffer,
+        focus: bool,
+        favorites: &HashSet<String>,
+    ) {
+        let table = album_table(self.items.filter(), focus, favorites);
         table.render(area, buf, &mut self.items.state);
     }
 
@@ -157,12 +165,17 @@ impl AlbumList {
     }
 }
 
-fn album_table<'a>(rows: &[AlbumSimple], focus: bool) -> Table<'a> {
+fn album_table<'a>(rows: &[AlbumSimple], focus: bool, favorites: &HashSet<String>) -> Table<'a> {
     let body_rows: Vec<Row<'a>> = rows
         .iter()
         .map(|album| {
             Row::new(vec![
-                mark_explicit_and_hifi(album.title.clone(), album.explicit, album.hires_available),
+                mark_explicit_and_hifi(
+                    album.title.clone(),
+                    album.explicit,
+                    album.hires_available,
+                    favorites.contains(&album.id),
+                ),
                 Line::from(album.artist.name.clone()),
                 Line::from(album.release_year.to_string()),
                 Line::from(format_duration(album.duration_seconds)),

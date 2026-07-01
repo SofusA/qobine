@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use controls_module::models::Artist;
 use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
@@ -11,7 +13,7 @@ use ratatui::{
 use crate::{
     app::{FilteredListState, NotificationList, Output},
     popup::{ArtistPopupState, Popup},
-    ui::basic_list_table,
+    ui::{basic_list_table, mark_as_favorite},
 };
 
 #[derive(Default)]
@@ -32,12 +34,15 @@ impl ArtistList {
         Self { items: artists }
     }
 
-    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool) {
+    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool, favorites: &HashSet<u32>) {
         let table = basic_list_table(
             self.items
                 .filter()
                 .iter()
-                .map(|artist| Row::new(Line::from(artist.name.clone())))
+                .map(|artist| {
+                    let name = Line::from(artist.name.clone());
+                    Row::new(vec![mark_as_favorite(name, favorites.contains(&artist.id))])
+                })
                 .collect::<Vec<_>>(),
             focus,
         );

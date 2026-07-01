@@ -11,7 +11,10 @@ use ratatui::{
     widgets::{Block, Borders, ListState, Paragraph},
 };
 
-use crate::ui::{SELECTED_STYLE, sidebar};
+use crate::{
+    app::FavoriteIds,
+    ui::{SELECTED_STYLE, sidebar},
+};
 use crate::{
     app::{NotificationList, Output},
     ui::block,
@@ -119,7 +122,7 @@ impl GenresState {
         Ok(())
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
         let block = block(None);
         frame.render_widget(block, area);
 
@@ -127,7 +130,7 @@ impl GenresState {
 
         match self.mode {
             GenresMode::GenreList => self.render_genre_list(frame, content_area),
-            GenresMode::GenreDetail => self.render_genre_detail(frame, content_area),
+            GenresMode::GenreDetail => self.render_genre_detail(frame, content_area, favorites),
         }
     }
 
@@ -192,7 +195,7 @@ impl GenresState {
         }
     }
 
-    fn render_genre_detail(&mut self, frame: &mut Frame, area: Rect) {
+    fn render_genre_detail(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
@@ -233,10 +236,20 @@ impl GenresState {
         let content_focused = self.focus == GenresFocus::Content;
         match self.selected_mut() {
             Some(Selected::Album(list)) => {
-                list.render(content_chunks[1], frame.buffer_mut(), content_focused);
+                list.render(
+                    content_chunks[1],
+                    frame.buffer_mut(),
+                    content_focused,
+                    favorites.albums(),
+                );
             }
             Some(Selected::Playlist(list)) => {
-                list.render(content_chunks[1], frame.buffer_mut(), content_focused);
+                list.render(
+                    content_chunks[1],
+                    frame.buffer_mut(),
+                    content_focused,
+                    favorites.playlists(),
+                );
             }
             None => {}
         }

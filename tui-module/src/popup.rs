@@ -12,9 +12,10 @@ use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
-    app::{NotificationList, Output},
+    app::{FavoriteIds, NotificationList, Output},
     ui::{
-        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, render_input, tab_bar,
+        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, mark_as_favorite,
+        render_input, tab_bar,
     },
     widgets::{
         album_list::AlbumList,
@@ -283,10 +284,16 @@ impl AlbumPopupState {
         }
     }
 
-    fn detail_lines(&self) -> [Line<'static>; 3] {
+    fn album_detail_lines(
+        &self,
+        is_favorite: bool,
+        is_artist_favorite: bool,
+    ) -> [Line<'static>; 3] {
         let title = Line::from(Span::styled(self.title.clone(), Style::new().bold()));
+        let title = mark_as_favorite(title, is_favorite);
 
         let artist = Line::from(Span::from(self.artist.name.clone()));
+        let artist = mark_as_favorite(artist, is_artist_favorite);
 
         let mut parts = Vec::new();
         if self.release_year > 0 {
@@ -515,7 +522,7 @@ impl Popup {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame) {
+    pub fn render(&mut self, frame: &mut Frame, favorites: &FavoriteIds) {
         match self {
             Popup::Album(album) => {
                 let visible_rows = (album.current_row_count() + 1).min(15) as u16;
@@ -571,7 +578,10 @@ impl Popup {
                     frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
                 }
 
-                let [title, artist, misc] = album.detail_lines();
+                let [title, artist, misc] = album.album_detail_lines(
+                    favorites.albums().contains(&album.id),
+                    favorites.artists().contains(&album.artist.id),
+                );
 
                 let has_description = album.description.as_ref().is_some_and(|d| !d.is_empty());
 
@@ -631,11 +641,15 @@ impl Popup {
                     );
                 } else if let Some(state) = album.current_state_mut() {
                     match state {
-                        SelectedAlbumPopupSubtabMut::Tracks(track_list) => {
-                            track_list.render(content, frame.buffer_mut(), true, true)
-                        }
+                        SelectedAlbumPopupSubtabMut::Tracks(track_list) => track_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            true,
+                            favorites.tracks(),
+                        ),
                         SelectedAlbumPopupSubtabMut::Similar(album_list) => {
-                            album_list.render(content, frame.buffer_mut(), true)
+                            album_list.render(content, frame.buffer_mut(), true, favorites.albums())
                         }
                     }
                 }
@@ -698,6 +712,7 @@ impl Popup {
                     artist.artist_name.clone(),
                     Style::new().bold(),
                 ));
+                let name = mark_as_favorite(name, favorites.artists().contains(&artist.id));
 
                 let info_chunks = Layout::default()
                     .direction(Direction::Vertical)
@@ -735,14 +750,21 @@ impl Popup {
                 } else if let Some(state) = artist.current_state_mut() {
                     match state {
                         SelectedArtistPopupSubtabMut::Albums(album_list) => {
-                            album_list.render(content, frame.buffer_mut(), true)
+                            album_list.render(content, frame.buffer_mut(), true, favorites.albums())
                         }
-                        SelectedArtistPopupSubtabMut::TopTracks(track_list) => {
-                            track_list.render(content, frame.buffer_mut(), true, true)
-                        }
-                        SelectedArtistPopupSubtabMut::Similar(artist_list) => {
-                            artist_list.render(content, frame.buffer_mut(), true)
-                        }
+                        SelectedArtistPopupSubtabMut::TopTracks(track_list) => track_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            true,
+                            favorites.tracks(),
+                        ),
+                        SelectedArtistPopupSubtabMut::Similar(artist_list) => artist_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            favorites.artists(),
+                        ),
                     }
                 }
             }
@@ -780,9 +802,13 @@ impl Popup {
                     ])
                     .split(inner);
 
-                playlist_state
-                    .tracks
-                    .render(chunks[0], frame.buffer_mut(), true, true);
+                playlist_state.tracks.render(
+                    chunks[0],
+                    frame.buffer_mut(),
+                    true,
+                    true,
+                    favorites.tracks(),
+                );
                 frame.render_widget(buttons, chunks[2]);
             }
             Popup::Track(track_state) => {
@@ -797,9 +823,12 @@ impl Popup {
 
                 frame.render_widget(Clear, area);
                 frame.render_widget(&block, area);
-                track_state
-                    .playlists
-                    .render(block.inner(area), frame.buffer_mut(), true);
+                track_state.playlists.render(
+                    block.inner(area),
+                    frame.buffer_mut(),
+                    true,
+                    favorites.playlists(),
+                );
             }
             Popup::NewPlaylist(state) => {
                 let area = center(
