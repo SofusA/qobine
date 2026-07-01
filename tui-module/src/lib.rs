@@ -15,6 +15,8 @@ use ratatui_image::picker::Picker;
 use tokio::sync::{mpsc, watch};
 use ui::center;
 
+use crate::app::build_favorite_ids;
+
 mod app;
 mod discover;
 mod favorites;
@@ -62,6 +64,8 @@ pub async fn init(
         get_current_state_without_image(&tracklist_value, status_value);
 
     let initial_configuration = database.get_configuration().await?;
+    let favorites = FavoritesState::new(&client).await?;
+    let favorite_ids = build_favorite_ids(&favorites);
 
     let mut app = App {
         broadcast,
@@ -79,7 +83,8 @@ pub async fn init(
         app_state: Default::default(),
         disable_tui_album_cover,
         current_image_url,
-        favorites: FavoritesState::new(&client).await?,
+        favorites,
+        favorite_ids,
         search: Default::default(),
         queue: QueueState::new(queue_tracks),
         discover: discover::DiscoverState::new(&client).await?,

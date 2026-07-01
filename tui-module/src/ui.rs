@@ -96,23 +96,21 @@ impl App {
             chunks[1].union(chunks[2])
         };
 
-        let favorite_ids = self.favorites();
+        let favorite_ids = &self.favorite_ids;
 
         match self.current_screen {
-            Tab::Favorites => self
-                .favorites
-                .render(frame, tab_content_area, &favorite_ids),
-            Tab::Search => self.search.render(frame, tab_content_area, &favorite_ids),
-            Tab::Queue => self.queue.render(frame, tab_content_area, &favorite_ids),
-            Tab::Discover => self.discover.render(frame, tab_content_area, &favorite_ids),
-            Tab::Genres => self.genres.render(frame, tab_content_area, &favorite_ids),
+            Tab::Favorites => self.favorites.render(frame, tab_content_area, favorite_ids),
+            Tab::Search => self.search.render(frame, tab_content_area, favorite_ids),
+            Tab::Queue => self.queue.render(frame, tab_content_area, favorite_ids),
+            Tab::Discover => self.discover.render(frame, tab_content_area, favorite_ids),
+            Tab::Genres => self.genres.render(frame, tab_content_area, favorite_ids),
             Tab::Preferences => self.preferences.render(frame, tab_content_area),
         }
 
         if let AppState::Popup(popups) = &mut self.app_state
             && let Some(popup) = popups.last_mut()
         {
-            popup.render(frame, &favorite_ids);
+            popup.render(frame, favorite_ids);
         }
     }
 

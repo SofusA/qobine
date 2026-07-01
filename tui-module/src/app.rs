@@ -71,6 +71,7 @@ pub struct App {
     pub app_state: AppState,
     pub now_playing: NowPlayingState,
     pub favorites: FavoritesState,
+    pub favorite_ids: FavoriteIds,
     pub search: SearchState,
     pub queue: QueueState,
     pub discover: DiscoverState,
@@ -318,18 +319,11 @@ impl App {
     }
 
     pub(crate) async fn update_favorites(&mut self) {
-        let favorites = self.client.favorites().await;
-        let Ok(favorites) = favorites else {
-            return;
-        };
-
-        self.favorites.albums.set_all_items(favorites.albums);
-        self.favorites.artists.set_all_items(favorites.artists);
-        self.favorites
-            .playlists
-            .set_all_items(favorites.playlists.into_iter().map(|x| x.into()).collect());
-        self.favorites.tracks.set_all_items(favorites.tracks);
-        self.favorites.filter.reset();
+        let favorites = FavoritesState::new(&self.client).await;
+        if let Ok(favorites) = favorites {
+            self.favorite_ids = build_favorite_ids(&favorites);
+            self.favorites = favorites;
+        }
     }
 
     async fn push_popup(&mut self, mut popup: Popup) {
@@ -532,47 +526,6 @@ impl App {
                 };
                 self.should_draw = true;
             }
-        }
-    }
-
-    pub fn favorites(&self) -> FavoriteIds {
-        let albums = self
-            .favorites
-            .albums
-            .all_items()
-            .iter()
-            .map(|x| x.id.clone())
-            .collect();
-
-        let artists = self
-            .favorites
-            .artists
-            .all_items()
-            .iter()
-            .map(|x| x.id)
-            .collect();
-
-        let playlists = self
-            .favorites
-            .playlists
-            .all_items()
-            .iter()
-            .map(|x| x.id)
-            .collect();
-
-        let tracks = self
-            .favorites
-            .tracks
-            .all_items()
-            .iter()
-            .map(|x| x.id)
-            .collect();
-
-        FavoriteIds {
-            albums,
-            artists,
-            playlists,
-            tracks,
         }
     }
 
@@ -795,4 +748,41 @@ pub fn get_current_state_without_image(
     };
 
     (state, image)
+}
+
+pub fn build_favorite_ids(favorite_state: &FavoritesState) -> FavoriteIds {
+    let albums = favorite_state
+        .albums
+        .all_items()
+        .iter()
+        .map(|x| x.id.clone())
+        .collect();
+
+    let artists = favorite_state
+        .artists
+        .all_items()
+        .iter()
+        .map(|x| x.id)
+        .collect();
+
+    let playlists = favorite_state
+        .playlists
+        .all_items()
+        .iter()
+        .map(|x| x.id)
+        .collect();
+
+    let tracks = favorite_state
+        .tracks
+        .all_items()
+        .iter()
+        .map(|x| x.id)
+        .collect();
+
+    FavoriteIds {
+        albums,
+        artists,
+        playlists,
+        tracks,
+    }
 }
