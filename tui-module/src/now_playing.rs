@@ -200,7 +200,6 @@ pub fn render_full_screen(
         Constraint::Length(title_height),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(1),
         Constraint::Fill(1),
         Constraint::Length(1),
     ])
@@ -279,16 +278,7 @@ pub fn render_full_screen(
 
     render_progress(frame, rows[7], state.duration_ms, track);
 
-    if let (Some(bit_depth), Some(sampling_rate)) = (track.bit_depth, track.sampling_rate) {
-        frame.render_widget(
-            Paragraph::new(format!("{bit_depth} bit - {sampling_rate}kHz"))
-                .dim()
-                .alignment(Alignment::Center),
-            rows[8],
-        );
-    }
-
-    render_buttons(frame, rows[10], selection);
+    render_buttons(frame, rows[9], selection);
 }
 
 fn render_buttons(frame: &mut Frame, area: Rect, selection: FullScreenSelection) {

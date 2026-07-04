@@ -271,6 +271,7 @@ impl App {
                         new_state.image = self.now_playing.image.take();
                     } else if !self.disable_tui_album_cover {
                         if let Some(url) = image_url.clone() {
+                            new_state.image = self.now_playing.image.take();
                             let tx = image_tx.clone();
                             let picker = self.picker.clone();
                             tokio::spawn(async move {
