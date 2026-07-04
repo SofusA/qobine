@@ -2,7 +2,7 @@ use crate::{
     discover::DiscoverState,
     favorites::FavoritesState,
     genres::GenresState,
-    now_playing::NowPlayingState,
+    now_playing::{FullScreenSelection, NowPlayingState},
     popup::{AlbumPopupState, ArtistPopupState, Popup, TrackPopupState},
     preferences::PreferencesState,
     queue::QueueState,
@@ -80,6 +80,7 @@ pub struct App {
     pub broadcast: Arc<NotificationBroadcast>,
     pub notifications: NotificationList,
     pub full_screen: bool,
+    pub full_screen_selection: FullScreenSelection,
     pub disable_tui_album_cover: bool,
     pub current_image_url: Option<String>,
     pub connect_available_devices: watch::Receiver<Vec<String>>,
@@ -326,6 +327,28 @@ impl App {
         }
     }
 
+    fn handle_full_screen_event(&mut self, key_code: KeyCode) -> AppResult<Output> {
+        match key_code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.full_screen_selection = self.full_screen_selection.previous();
+                Ok(Output::Consumed)
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                self.full_screen_selection = self.full_screen_selection.next();
+                Ok(Output::Consumed)
+            }
+            KeyCode::Enter => {
+                match self.full_screen_selection {
+                    FullScreenSelection::TrackTitle => self.controls.play_pause(),
+                    FullScreenSelection::Previous => self.controls.previous(),
+                    FullScreenSelection::Next => self.controls.next(),
+                }
+                Ok(Output::Consumed)
+            }
+            _ => Ok(Output::NotConsumed),
+        }
+    }
+
     async fn push_popup(&mut self, mut popup: Popup) {
         if let Some(url) = popup.image_url() {
             let image = fetch_image(&self.picker, &url).await;
@@ -462,6 +485,7 @@ impl App {
                 }
                 KeyCode::Char('F') => {
                     self.full_screen = !self.full_screen;
+                    self.full_screen_selection = Default::default();
                     self.should_draw = true;
                 }
                 _ => {}
@@ -612,6 +636,12 @@ impl App {
                     }
                     _ => {}
                 };
+
+                if self.full_screen {
+                    let output = self.handle_full_screen_event(key_event.code);
+                    self.handle_output(key_event.code, output).await;
+                    return Ok(());
+                }
 
                 let screen_output = match self.current_screen {
                     Tab::Favorites => {

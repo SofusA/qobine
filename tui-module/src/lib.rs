@@ -74,6 +74,7 @@ pub async fn init(
         database,
         now_playing,
         full_screen: false,
+        full_screen_selection: Default::default(),
         position: position_receiver,
         tracklist: tracklist_receiver,
         status: status_receiver,

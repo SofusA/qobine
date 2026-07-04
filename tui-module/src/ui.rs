@@ -41,14 +41,19 @@ impl App {
         let hide_album_cover = self.disable_tui_album_cover;
 
         if self.full_screen {
-            let area = center(area, Constraint::Percentage(80), Constraint::Length(10));
-            now_playing::render(
+            now_playing::render_full_screen(
                 frame,
                 area,
                 &mut self.now_playing,
-                self.full_screen,
+                self.full_screen_selection,
                 hide_album_cover,
             );
+
+            if let AppState::Popup(popups) = &mut self.app_state
+                && let Some(popup) = popups.last_mut()
+            {
+                popup.render(frame, &self.favorite_ids);
+            }
             return;
         }
 
@@ -81,13 +86,7 @@ impl App {
         frame.render_widget(tabs, chunks[0]);
 
         if self.now_playing.playing_track.is_some() {
-            now_playing::render(
-                frame,
-                chunks[2],
-                &mut self.now_playing,
-                self.full_screen,
-                hide_album_cover,
-            );
+            now_playing::render(frame, chunks[2], &mut self.now_playing, hide_album_cover);
         }
 
         let tab_content_area = if self.now_playing.playing_track.is_some() {
