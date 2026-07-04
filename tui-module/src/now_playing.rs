@@ -170,6 +170,13 @@ pub fn render_full_screen(
         None => center(area, Constraint::Percentage(60), Constraint::Percentage(80)),
     };
 
+    let entity_lines = state
+        .entity_title
+        .as_ref()
+        .map(|entity| wrap_big_text(entity, info_area.width / BIG_TEXT_CHAR_WIDTH))
+        .unwrap_or_default();
+    let entity_height = 3 * entity_lines.len().max(1) as u16;
+
     let title_lines = wrap_big_text(
         &track.title,
         info_area.width.saturating_sub(10) / BIG_TEXT_CHAR_WIDTH,
@@ -177,11 +184,11 @@ pub fn render_full_screen(
     let title_height = 3 * title_lines.len() as u16;
 
     let top_spacer = (info_area.height / 2)
-        .saturating_sub(6)
+        .saturating_sub(entity_height + 3)
         .saturating_sub(title_height);
 
     let rows = Layout::vertical([
-        Constraint::Length(3),
+        Constraint::Length(entity_height),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -195,12 +202,11 @@ pub fn render_full_screen(
     ])
     .split(info_area);
 
-    if let Some(entity) = &state.entity_title {
-        let entity = fit_big_text(entity, rows[0].width / BIG_TEXT_CHAR_WIDTH);
+    if !entity_lines.is_empty() {
         frame.render_widget(
             BigText::builder()
                 .pixel_size(PixelSize::Sextant)
-                .lines(vec![Line::from(entity)])
+                .lines(entity_lines.into_iter().map(Line::from).collect::<Vec<_>>())
                 .centered()
                 .build(),
             rows[0],
