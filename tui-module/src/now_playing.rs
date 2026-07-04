@@ -3,7 +3,7 @@ use crate::ui::{
 };
 use controls_module::{Status, models::Track};
 use ratatui::{layout::Flex, prelude::*, widgets::*};
-use ratatui_image::{Resize, StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::{FilterType, Resize, StatefulImage, protocol::StatefulProtocol};
 use tui_big_text::{BigText, PixelSize};
 
 #[derive(Default)]
@@ -129,8 +129,8 @@ pub fn render_full_screen(
     } else {
         state.image.as_ref().map(|image| {
             image.0.size_for(
-                Resize::Fit(None),
-                Size::new(area.width * 2 / 5, area.height * 4 / 5),
+                Resize::Scale(Some(FilterType::Triangle)),
+                Size::new(area.width * 2 / 5, area.height * 9 / 10),
             )
         })
     };
@@ -157,7 +157,11 @@ pub fn render_full_screen(
             );
 
             if let Some(image) = &mut state.image {
-                frame.render_stateful_widget(StatefulImage::default(), image_area, &mut image.0);
+                frame.render_stateful_widget(
+                    StatefulImage::new().resize(Resize::Scale(Some(FilterType::Triangle))),
+                    image_area,
+                    &mut image.0,
+                );
             }
 
             Rect {
