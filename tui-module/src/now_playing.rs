@@ -157,7 +157,7 @@ pub fn render_full_screen(
 
     let title_lines = wrap_big_text(
         &track.title,
-        info_area.width.saturating_sub(10) / TITLE_CHAR_WIDTH,
+        info_area.width.saturating_sub(18) / TITLE_CHAR_WIDTH,
     );
     let title_height = 4 * title_lines.len() as u16;
 
@@ -223,16 +223,16 @@ pub fn render_full_screen(
     );
 
     let icon_area = Rect {
-        x: title_area.x.saturating_sub(10),
+        x: title_area.x.saturating_sub(18),
         y: title_area.y + (title_height - 4) / 2,
-        width: 8,
+        width: 16,
         height: 4,
     }
     .intersection(rows[5]);
 
     frame.render_widget(
         BigText::builder()
-            .pixel_size(PixelSize::Quadrant)
+            .pixel_size(PixelSize::HalfHeight)
             .lines(vec![Line::from(status_icon(state.status))])
             .right_aligned()
             .build(),
