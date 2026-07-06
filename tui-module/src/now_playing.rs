@@ -84,39 +84,13 @@ pub fn render(
 }
 
 const BIG_TEXT_CHAR_WIDTH: u16 = 4;
+const TITLE_CHAR_WIDTH: u16 = 8;
 const IMAGE_INFO_GAP: u16 = 6;
-
-#[derive(Default, Clone, Copy, PartialEq)]
-pub enum FullScreenSelection {
-    Previous,
-    #[default]
-    TrackTitle,
-    Next,
-}
-
-impl FullScreenSelection {
-    pub fn next(self) -> Self {
-        match self {
-            Self::Previous => Self::TrackTitle,
-            Self::TrackTitle => Self::Next,
-            Self::Next => Self::Previous,
-        }
-    }
-
-    pub fn previous(self) -> Self {
-        match self {
-            Self::Previous => Self::Next,
-            Self::TrackTitle => Self::Previous,
-            Self::Next => Self::TrackTitle,
-        }
-    }
-}
 
 pub fn render_full_screen(
     frame: &mut Frame,
     area: Rect,
     state: &mut NowPlayingState,
-    selection: FullScreenSelection,
     disable_tui_album_cover: bool,
 ) {
     let track = match &state.playing_track {
@@ -183,13 +157,13 @@ pub fn render_full_screen(
 
     let title_lines = wrap_big_text(
         &track.title,
-        info_area.width.saturating_sub(10) / BIG_TEXT_CHAR_WIDTH,
+        info_area.width.saturating_sub(10) / TITLE_CHAR_WIDTH,
     );
-    let title_height = 3 * title_lines.len() as u16;
+    let title_height = 4 * title_lines.len() as u16;
 
     let top_spacer = (info_area.height / 2)
         .saturating_sub(entity_height + 3)
-        .saturating_sub(title_height);
+        .saturating_sub(title_height / 2);
 
     let rows = Layout::vertical([
         Constraint::Length(entity_height),
@@ -198,9 +172,8 @@ pub fn render_full_screen(
         Constraint::Length(1),
         Constraint::Length(top_spacer),
         Constraint::Length(title_height),
-        Constraint::Length(1),
-        Constraint::Length(1),
         Constraint::Fill(1),
+        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .split(info_area);
@@ -241,7 +214,7 @@ pub fn render_full_screen(
         .map(|line| line.chars().count())
         .max()
         .unwrap_or_default() as u16
-        * BIG_TEXT_CHAR_WIDTH;
+        * TITLE_CHAR_WIDTH;
 
     let title_area = center(
         rows[5],
@@ -251,15 +224,15 @@ pub fn render_full_screen(
 
     let icon_area = Rect {
         x: title_area.x.saturating_sub(10),
-        y: title_area.y + (title_height - 3) / 2,
+        y: title_area.y + (title_height - 4) / 2,
         width: 8,
-        height: 3,
+        height: 4,
     }
     .intersection(rows[5]);
 
     frame.render_widget(
         BigText::builder()
-            .pixel_size(PixelSize::Sextant)
+            .pixel_size(PixelSize::Quadrant)
             .lines(vec![Line::from(status_icon(state.status))])
             .right_aligned()
             .build(),
@@ -268,7 +241,7 @@ pub fn render_full_screen(
 
     frame.render_widget(
         BigText::builder()
-            .pixel_size(PixelSize::Sextant)
+            .pixel_size(PixelSize::HalfHeight)
             .style(HIGHLIGHT_TEXT_STYLE)
             .lines(title_lines.into_iter().map(Line::from).collect::<Vec<_>>())
             .centered()
@@ -277,32 +250,6 @@ pub fn render_full_screen(
     );
 
     render_progress(frame, rows[7], state.duration_ms, track);
-
-    render_buttons(frame, rows[9], selection);
-}
-
-fn render_buttons(frame: &mut Frame, area: Rect, selection: FullScreenSelection) {
-    let button = |label: &str, selected: bool| {
-        let style = if selected {
-            HIGHLIGHT_STYLE
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
-        };
-        Span::styled(format!(" {label} "), style)
-    };
-
-    let chunks =
-        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
-
-    let left = Line::from(button(
-        "Previous",
-        selection == FullScreenSelection::Previous,
-    ));
-
-    let right = Line::from(button("Next", selection == FullScreenSelection::Next));
-
-    frame.render_widget(Paragraph::new(left), chunks[0]);
-    frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), chunks[1]);
 }
 
 fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
@@ -310,32 +257,29 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
         return vec![text.to_string()];
     }
 
-    let mut first = String::new();
-    let mut words = text.split_whitespace().peekable();
+    let mut lines = vec![];
+    let mut current = String::new();
 
-    while let Some(word) = words.peek() {
-        if !first.is_empty()
-            && first.chars().count() + 1 + word.chars().count() > max_chars as usize
+    for word in text.split_whitespace() {
+        if !current.is_empty()
+            && current.chars().count() + 1 + word.chars().count() > max_chars as usize
         {
-            break;
+            lines.push(std::mem::take(&mut current));
         }
-        if !first.is_empty() {
-            first.push(' ');
+        if !current.is_empty() {
+            current.push(' ');
         }
-        first.push_str(word);
-        words.next();
+        current.push_str(word);
     }
 
-    let second = words.collect::<Vec<_>>().join(" ");
-
-    if second.is_empty() {
-        return vec![fit_big_text(&first, max_chars)];
+    if !current.is_empty() {
+        lines.push(current);
     }
 
-    vec![
-        fit_big_text(&first, max_chars),
-        fit_big_text(&second, max_chars),
-    ]
+    lines
+        .into_iter()
+        .map(|line| fit_big_text(&line, max_chars))
+        .collect()
 }
 
 fn fit_big_text(text: &str, max_chars: u16) -> String {

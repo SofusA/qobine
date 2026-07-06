@@ -41,13 +41,7 @@ impl App {
         let hide_album_cover = self.disable_tui_album_cover;
 
         if self.full_screen {
-            now_playing::render_full_screen(
-                frame,
-                area,
-                &mut self.now_playing,
-                self.full_screen_selection,
-                hide_album_cover,
-            );
+            now_playing::render_full_screen(frame, area, &mut self.now_playing, hide_album_cover);
 
             if let AppState::Popup(popups) = &mut self.app_state
                 && let Some(popup) = popups.last_mut()
