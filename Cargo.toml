@@ -32,6 +32,7 @@ clap = { version = "4", features = ["derive", "env"] }
 rust-embed = { version = "8", features = ["axum", "tokio", "mime_guess"] }
 dirs = "6"
 futures = "0.3"
+hostname = "0.4"
 md5 = "0.8"
 mime = "0.3"
 mime_guess = "2"
