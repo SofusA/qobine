@@ -941,6 +941,7 @@ dependencies = [
  "qonductor",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
