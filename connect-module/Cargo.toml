@@ -20,6 +20,7 @@ gpio-module = { version = "*", path = "../gpio-module", optional = true }
 cli-module = { version = "*", path = "../cli-module" }
 
 qonductor.workspace = true
+rustls.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
