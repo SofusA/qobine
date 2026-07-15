@@ -41,6 +41,8 @@ async fn main() {
 }
 
 pub async fn run() -> AppResult<()> {
+    tracing_subscriber::fmt().init();
+
     let args = Arguments::parse();
     let database = Arc::new(Database::new().await?);
     let headless = true;

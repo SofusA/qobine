@@ -79,7 +79,6 @@ pub struct App {
     pub preferences: PreferencesState,
     pub broadcast: Arc<NotificationBroadcast>,
     pub notifications: NotificationList,
-    pub full_screen: bool,
     pub disable_tui_album_cover: bool,
     pub current_image_url: Option<String>,
     pub connect_available_devices: watch::Receiver<Vec<String>>,
@@ -95,6 +94,7 @@ pub enum AppState {
     Popup(Vec<Popup>),
     Help,
     ConnectPopup(usize),
+    Focus,
 }
 
 pub struct FavoriteIds {
@@ -329,6 +329,10 @@ impl App {
 
     fn handle_full_screen_event(&mut self, key_code: KeyCode) -> AppResult<Output> {
         match key_code {
+            KeyCode::Esc | KeyCode::Char('F') => {
+                self.app_state = AppState::Normal;
+                Ok(Output::Consumed)
+            }
             KeyCode::Enter => {
                 self.controls.play_pause();
                 Ok(Output::Consumed)
@@ -472,7 +476,7 @@ impl App {
                     self.should_draw = true;
                 }
                 KeyCode::Char('F') => {
-                    self.full_screen = !self.full_screen;
+                    self.app_state = AppState::Focus;
                     self.should_draw = true;
                 }
                 _ => {}
@@ -549,6 +553,12 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
+                    AppState::Focus => {
+                        let output = self.handle_full_screen_event(key_event.code);
+                        self.handle_output(key_event.code, output).await;
+                        self.should_draw = true;
+                        return Ok(());
+                    }
                     AppState::ConnectPopup(selected_device) => {
                         match key_event.code {
                             KeyCode::Enter => {
@@ -621,14 +631,8 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
-                    _ => {}
+                    AppState::Normal => {}
                 };
-
-                if self.full_screen {
-                    let output = self.handle_full_screen_event(key_event.code);
-                    self.handle_output(key_event.code, output).await;
-                    return Ok(());
-                }
 
                 let screen_output = match self.current_screen {
                     Tab::Favorites => {

@@ -73,7 +73,6 @@ pub async fn init(
         controls,
         database,
         now_playing,
-        full_screen: false,
         position: position_receiver,
         tracklist: tracklist_receiver,
         status: status_receiver,

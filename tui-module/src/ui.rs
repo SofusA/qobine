@@ -18,10 +18,10 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
 
-        self.render_inner(frame);
-
         match self.app_state {
-            AppState::Normal | AppState::Popup(_) => {}
+            AppState::Normal | AppState::Popup(_) => {
+                self.render_inner(frame);
+            }
             AppState::Help => {
                 render_help(frame);
             }
@@ -31,6 +31,14 @@ impl App {
                 let active_device: String = self.connect_active_device.borrow().to_string();
                 render_connect(frame, available_devices, active_device, selected);
             }
+            AppState::Focus => {
+                now_playing::render_full_screen(
+                    frame,
+                    area,
+                    &mut self.now_playing,
+                    self.disable_tui_album_cover,
+                );
+            }
         }
 
         self.render_notifications(frame, area);
@@ -39,17 +47,6 @@ impl App {
     fn render_inner(&mut self, frame: &mut Frame) {
         let area = frame.area();
         let hide_album_cover = self.disable_tui_album_cover;
-
-        if self.full_screen {
-            now_playing::render_full_screen(frame, area, &mut self.now_playing, hide_album_cover);
-
-            if let AppState::Popup(popups) = &mut self.app_state
-                && let Some(popup) = popups.last_mut()
-            {
-                popup.render(frame, &self.favorite_ids);
-            }
-            return;
-        }
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)

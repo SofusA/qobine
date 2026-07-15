@@ -6,6 +6,10 @@ license-file.workspace = true
 repository.workspace = true
 description.workspace = true
 
+[[bin]]
+name = "qobine-disconnect"
+path = "src/main.rs"
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }

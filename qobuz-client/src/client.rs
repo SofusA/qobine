@@ -197,11 +197,11 @@ impl Display for Endpoint {
 }
 
 pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthResult> {
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|_| Error::Login)?;
-    let port = listener.local_addr().map_err(|_| Error::Login)?.port();
+    let listener = TcpListener::bind("0.0.0.0:0").map_err(|_| Error::Login)?;
+    let local_addr = listener.local_addr().map_err(|_| Error::Login)?;
     drop(listener);
 
-    let oauth_url = build_oauth_url(app_id, port);
+    let oauth_url = build_oauth_url(app_id, local_addr.port());
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(1);
 
@@ -220,7 +220,7 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
         }),
     );
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
+    let listener = tokio::net::TcpListener::bind(local_addr)
         .await
         .map_err(|_| Error::Login)?;
 
@@ -231,7 +231,9 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
     println!("Login to Qobuz in browser...");
     if headless {
         let manual_oauth_url = format!(
-            "https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url=http%3A%2F%2Flocalhost"
+            "https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url=http%3A%2F%2F{}:{}",
+            hostname::get().map_err(|_| Error::Login)?.display(),
+            local_addr.port(),
         );
 
         println!("Headless? Open this URL on another device instead:");

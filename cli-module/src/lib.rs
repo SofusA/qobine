@@ -10,9 +10,11 @@ use tokio_schedule::{Job, every};
 #[derive(Args, Debug)]
 pub struct SharedArgs {
     #[clap(long)]
+    /// Directory where cached audio is stored. Defaults to the system temporary directory.
     pub audio_cache: Option<PathBuf>,
 
     #[clap(long, default_value_t = 1)]
+    /// Time-to-live for cached audio, in hours.
     pub audio_cache_time_to_live: u32,
 
     #[clap(short, long)]
