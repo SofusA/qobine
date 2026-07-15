@@ -174,6 +174,10 @@ impl ConnectState {
         connect_name: String,
         connect_port: u16,
     ) -> qonductor::Result<()> {
+        rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .expect("rustls aws-lc-rs feature selected");
+
         let mut manager = SessionManager::start(connect_port, app_id).await?;
 
         let mut session = manager.add_device(DeviceConfig::new(connect_name)).await?;

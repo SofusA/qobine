@@ -1,0 +1,15 @@
+[build]
+# this is suitable to cross-compile qobine-connect
+# other binaries would require adding dependencies
+# with proper versions.
+#
+# cross-compile qobine-connect for Raspberry Pi 3B+:
+#
+# ```
+# cargo install cross --git https://github.com/cross-rs/cross
+# cross build --release --target aarch64-unknown-linux-gnu --bin qobine-connect
+#```
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH", 
+    "apt-get update && apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH"
+]    
