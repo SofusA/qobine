@@ -7,7 +7,7 @@ use tui_input::Input;
 use crate::{
     app::{App, AppState, Tab},
     now_playing::{self},
-    widgets::full_screen,
+    widgets::focus,
 };
 
 pub const HIGHLIGHT_STYLE: Style = Style::new().white().on_blue();
@@ -33,7 +33,7 @@ impl App {
                 render_connect(frame, available_devices, active_device, selected);
             }
             AppState::Focus => {
-                full_screen::render(
+                focus::render(
                     frame,
                     area,
                     &mut self.now_playing,

@@ -327,13 +327,13 @@ impl App {
         }
     }
 
-    fn handle_full_screen_event(&mut self, key_code: KeyCode) -> AppResult<Output> {
+    fn handle_focus_event(&mut self, key_code: KeyCode) -> AppResult<Output> {
         match key_code {
             KeyCode::Esc | KeyCode::Char('F') => {
                 self.app_state = AppState::Normal;
                 Ok(Output::Consumed)
             }
-            KeyCode::Enter => {
+            KeyCode::Char(' ') => {
                 self.controls.play_pause();
                 Ok(Output::Consumed)
             }
@@ -554,7 +554,7 @@ impl App {
                         return Ok(());
                     }
                     AppState::Focus => {
-                        let output = self.handle_full_screen_event(key_event.code);
+                        let output = self.handle_focus_event(key_event.code);
                         self.handle_output(key_event.code, output).await;
                         self.should_draw = true;
                         return Ok(());
