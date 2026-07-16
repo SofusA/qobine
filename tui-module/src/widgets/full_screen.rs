@@ -7,9 +7,105 @@ use ratatui::{layout::Flex, prelude::*, widgets::*};
 use ratatui_image::{FilterType, Resize, StatefulImage};
 use tui_big_text::{BigText, PixelSize};
 
-const BIG_TEXT_CHAR_WIDTH: u16 = 4;
-const TITLE_CHAR_WIDTH: u16 = 8;
 const IMAGE_INFO_GAP: u16 = 6;
+const ICON_CHARS: u16 = 2;
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct BigTextSize {
+    pixel_size: PixelSize,
+    char_width: u16,
+    char_height: u16,
+}
+
+const TITLE_SIZES: [BigTextSize; 2] = [
+    BigTextSize {
+        pixel_size: PixelSize::HalfHeight,
+        char_width: 8,
+        char_height: 4,
+    },
+    BigTextSize {
+        pixel_size: PixelSize::Sextant,
+        char_width: 4,
+        char_height: 3,
+    },
+];
+
+const ENTITY_SIZES: [BigTextSize; 1] = [BigTextSize {
+    pixel_size: PixelSize::Sextant,
+    char_width: 4,
+    char_height: 3,
+}];
+
+#[derive(PartialEq, Debug)]
+enum FittedText {
+    Big {
+        size: BigTextSize,
+        lines: Vec<String>,
+    },
+    Plain(String),
+}
+
+impl FittedText {
+    fn height(&self) -> u16 {
+        match self {
+            Self::Big { size, lines } => size.char_height * lines.len() as u16,
+            Self::Plain(_) => 1,
+        }
+    }
+
+    fn width(&self) -> u16 {
+        match self {
+            Self::Big { size, lines } => {
+                lines
+                    .iter()
+                    .map(|line| line.chars().count())
+                    .max()
+                    .unwrap_or_default() as u16
+                    * size.char_width
+            }
+            Self::Plain(text) => text.chars().count() as u16,
+        }
+    }
+}
+
+fn fit_text(
+    text: &str,
+    max_width: u16,
+    max_height: u16,
+    sizes: &[BigTextSize],
+    reserved_chars: u16,
+) -> FittedText {
+    for size in sizes {
+        let max_chars = (max_width / size.char_width).saturating_sub(reserved_chars);
+        if max_chars == 0 {
+            continue;
+        }
+
+        let lines = wrap_big_text(text, max_chars);
+        let fits_width = lines
+            .iter()
+            .all(|line| line.chars().count() <= max_chars as usize);
+        let fits_height = lines.len() as u16 * size.char_height <= max_height;
+
+        if fits_width && fits_height {
+            return FittedText::Big { size: *size, lines };
+        }
+    }
+
+    FittedText::Plain(ellipsize(text, max_width))
+}
+
+fn ellipsize(text: &str, max_chars: u16) -> String {
+    if text.chars().count() <= max_chars as usize {
+        return text.to_string();
+    }
+
+    let truncated: String = text
+        .chars()
+        .take((max_chars as usize).saturating_sub(1))
+        .collect();
+    format!("{truncated}…")
+}
 
 pub fn render(
     frame: &mut Frame,
@@ -72,18 +168,26 @@ pub fn render(
         None => center(area, Constraint::Percentage(60), Constraint::Percentage(80)),
     };
 
-    let entity_lines = state
-        .entity_title
-        .as_ref()
-        .map(|entity| wrap_big_text(entity, info_area.width / BIG_TEXT_CHAR_WIDTH))
-        .unwrap_or_default();
-    let entity_height = 3 * entity_lines.len().max(1) as u16;
+    let entity = state.entity_title.as_ref().map(|entity| {
+        fit_text(
+            entity,
+            info_area.width,
+            info_area.height / 4,
+            &ENTITY_SIZES,
+            0,
+        )
+    });
+    let entity_height = entity.as_ref().map(FittedText::height).unwrap_or(0);
 
-    let title_lines = wrap_big_text(
+    let title_budget = info_area.height.saturating_sub(entity_height + 6);
+    let title = fit_text(
         &track.title,
-        info_area.width.saturating_sub(18) / TITLE_CHAR_WIDTH,
+        info_area.width,
+        title_budget,
+        &TITLE_SIZES,
+        ICON_CHARS,
     );
-    let title_height = 4 * title_lines.len() as u16;
+    let title_height = title.height();
 
     let top_spacer = (info_area.height / 2)
         .saturating_sub(entity_height + 3)
@@ -102,15 +206,24 @@ pub fn render(
     ])
     .split(info_area);
 
-    if !entity_lines.is_empty() {
-        frame.render_widget(
-            BigText::builder()
-                .pixel_size(PixelSize::Sextant)
-                .lines(entity_lines.into_iter().map(Line::from).collect::<Vec<_>>())
-                .centered()
-                .build(),
-            rows[0],
-        );
+    match &entity {
+        Some(FittedText::Big { size, lines }) => {
+            frame.render_widget(
+                BigText::builder()
+                    .pixel_size(size.pixel_size)
+                    .lines(lines.iter().map(Line::raw).collect::<Vec<_>>())
+                    .centered()
+                    .build(),
+                rows[0],
+            );
+        }
+        Some(FittedText::Plain(text)) => {
+            frame.render_widget(
+                Paragraph::new(text.as_str()).alignment(Alignment::Center),
+                rows[0],
+            );
+        }
+        None => {}
     }
 
     if let Some(artist) = &track.artist_name {
@@ -133,45 +246,56 @@ pub fn render(
         rows[3],
     );
 
-    let title_width = title_lines
-        .iter()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or_default() as u16
-        * TITLE_CHAR_WIDTH;
-
     let title_area = center(
         rows[5],
-        Constraint::Length(title_width),
+        Constraint::Length(title.width()),
         Constraint::Percentage(100),
     );
 
-    let icon_area = Rect {
-        x: title_area.x.saturating_sub(18),
-        y: title_area.y + (title_height - 4) / 2,
-        width: 16,
-        height: 4,
+    match &title {
+        FittedText::Big { size, lines } => {
+            let icon_width = ICON_CHARS * size.char_width;
+            let icon_area = Rect {
+                x: title_area.x.saturating_sub(icon_width + 2),
+                y: title_area.y + title_height.saturating_sub(size.char_height) / 2,
+                width: icon_width,
+                height: size.char_height,
+            }
+            .intersection(rows[5]);
+
+            frame.render_widget(
+                BigText::builder()
+                    .pixel_size(size.pixel_size)
+                    .lines(vec![Line::from(status_icon(state.status))])
+                    .right_aligned()
+                    .build(),
+                icon_area,
+            );
+
+            frame.render_widget(
+                BigText::builder()
+                    .pixel_size(size.pixel_size)
+                    .style(HIGHLIGHT_TEXT_STYLE)
+                    .lines(lines.iter().map(Line::raw).collect::<Vec<_>>())
+                    .centered()
+                    .build(),
+                title_area,
+            );
+        }
+        FittedText::Plain(text) => {
+            let text = ellipsize(
+                &format!("{} {}", status_icon(state.status), text),
+                info_area.width,
+            );
+            frame.render_widget(
+                Paragraph::new(text)
+                    .style(HIGHLIGHT_TEXT_STYLE)
+                    .bold()
+                    .alignment(Alignment::Center),
+                rows[5],
+            );
+        }
     }
-    .intersection(rows[5]);
-
-    frame.render_widget(
-        BigText::builder()
-            .pixel_size(PixelSize::HalfHeight)
-            .lines(vec![Line::from(status_icon(state.status))])
-            .right_aligned()
-            .build(),
-        icon_area,
-    );
-
-    frame.render_widget(
-        BigText::builder()
-            .pixel_size(PixelSize::HalfHeight)
-            .style(HIGHLIGHT_TEXT_STYLE)
-            .lines(title_lines.into_iter().map(Line::from).collect::<Vec<_>>())
-            .centered()
-            .build(),
-        title_area,
-    );
 
     render_progress(frame, rows[7], state.duration_ms, track);
 }
@@ -201,20 +325,6 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
     }
 
     lines
-        .into_iter()
-        .map(|line| fit_big_text(&line, max_chars))
-        .collect()
-}
-
-fn fit_big_text(text: &str, max_chars: u16) -> String {
-    let max_chars = max_chars as usize;
-
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-
-    let truncated: String = text.chars().take(max_chars.saturating_sub(3)).collect();
-    format!("{truncated}...")
 }
 
 fn status_icon(status: Status) -> &'static str {
@@ -222,5 +332,78 @@ fn status_icon(status: Status) -> &'static str {
         Status::Playing => ">",
         Status::Paused => "||",
         Status::Buffering => "~",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lines(fitted: &FittedText) -> Vec<&str> {
+        match fitted {
+            FittedText::Big { lines, .. } => lines.iter().map(String::as_str).collect(),
+            FittedText::Plain(_) => panic!("expected big text"),
+        }
+    }
+
+    fn pixel_size(fitted: &FittedText) -> PixelSize {
+        match fitted {
+            FittedText::Big { size, .. } => size.pixel_size,
+            FittedText::Plain(_) => panic!("expected big text"),
+        }
+    }
+
+    #[test]
+    fn multi_word_title_falls_back_to_smaller_size_instead_of_overflowing() {
+        let fitted = fit_text("Days of Candy", 50, 8, &TITLE_SIZES, ICON_CHARS);
+
+        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
+        assert_eq!(lines(&fitted), ["Days of", "Candy"]);
+    }
+
+    #[test]
+    fn single_word_falls_back_instead_of_truncating() {
+        let fitted = fit_text("Sparks", 50, 12, &TITLE_SIZES, ICON_CHARS);
+
+        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
+        assert_eq!(lines(&fitted), ["Sparks"]);
+    }
+
+    #[test]
+    fn short_title_in_large_area_uses_the_largest_size() {
+        let fitted = fit_text("Meddle", 200, 20, &TITLE_SIZES, ICON_CHARS);
+
+        assert_eq!(pixel_size(&fitted), PixelSize::HalfHeight);
+        assert_eq!(lines(&fitted), ["Meddle"]);
+    }
+
+    #[test]
+    fn long_single_word_in_tiny_area_falls_back_to_plain_text() {
+        let fitted = fit_text("Supermassive", 30, 6, &TITLE_SIZES, ICON_CHARS);
+
+        assert_eq!(fitted, FittedText::Plain("Supermassive".to_string()));
+    }
+
+    #[test]
+    fn plain_fallback_ellipsizes_with_a_single_character() {
+        let fitted = fit_text("An Ending (Ascent)", 10, 2, &TITLE_SIZES, ICON_CHARS);
+
+        assert_eq!(fitted, FittedText::Plain("An Ending…".to_string()));
+    }
+
+    #[test]
+    fn entity_wraps_at_sextant() {
+        let fitted = fit_text("Depression Cherry", 50, 8, &ENTITY_SIZES, 0);
+
+        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
+        assert_eq!(lines(&fitted), ["Depression", "Cherry"]);
+    }
+
+    #[test]
+    fn wrap_never_splits_words_and_respects_width() {
+        let wrapped = wrap_big_text("one two three four five", 9);
+
+        assert_eq!(wrapped, ["one two", "three", "four five"]);
+        assert!(wrapped.iter().all(|line| line.chars().count() <= 9));
     }
 }
