@@ -1,111 +1,14 @@
 use crate::{
-    now_playing::{NowPlayingState, render_progress},
+    now_playing::{NowPlayingState, get_status, render_progress},
     ui::{HIGHLIGHT_STYLE, HIGHLIGHT_TEXT_STYLE, center},
 };
-use controls_module::Status;
 use ratatui::{layout::Flex, prelude::*, widgets::*};
 use ratatui_image::{FilterType, Resize, StatefulImage};
 use tui_big_text::{BigText, PixelSize};
 
 const IMAGE_INFO_GAP: u16 = 6;
-const ICON_CHARS: u16 = 2;
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct BigTextSize {
-    pixel_size: PixelSize,
-    char_width: u16,
-    char_height: u16,
-}
-
-const TITLE_SIZES: [BigTextSize; 2] = [
-    BigTextSize {
-        pixel_size: PixelSize::HalfHeight,
-        char_width: 8,
-        char_height: 4,
-    },
-    BigTextSize {
-        pixel_size: PixelSize::Sextant,
-        char_width: 4,
-        char_height: 3,
-    },
-];
-
-const ENTITY_SIZES: [BigTextSize; 1] = [BigTextSize {
-    pixel_size: PixelSize::Sextant,
-    char_width: 4,
-    char_height: 3,
-}];
-
-#[derive(PartialEq, Debug)]
-enum FittedText {
-    Big {
-        size: BigTextSize,
-        lines: Vec<String>,
-    },
-    Plain(String),
-}
-
-impl FittedText {
-    fn height(&self) -> u16 {
-        match self {
-            Self::Big { size, lines } => size.char_height * lines.len() as u16,
-            Self::Plain(_) => 1,
-        }
-    }
-
-    fn width(&self) -> u16 {
-        match self {
-            Self::Big { size, lines } => {
-                lines
-                    .iter()
-                    .map(|line| line.chars().count())
-                    .max()
-                    .unwrap_or_default() as u16
-                    * size.char_width
-            }
-            Self::Plain(text) => text.chars().count() as u16,
-        }
-    }
-}
-
-fn fit_text(
-    text: &str,
-    max_width: u16,
-    max_height: u16,
-    sizes: &[BigTextSize],
-    reserved_chars: u16,
-) -> FittedText {
-    for size in sizes {
-        let max_chars = (max_width / size.char_width).saturating_sub(reserved_chars);
-        if max_chars == 0 {
-            continue;
-        }
-
-        let lines = wrap_big_text(text, max_chars);
-        let fits_width = lines
-            .iter()
-            .all(|line| line.chars().count() <= max_chars as usize);
-        let fits_height = lines.len() as u16 * size.char_height <= max_height;
-
-        if fits_width && fits_height {
-            return FittedText::Big { size: *size, lines };
-        }
-    }
-
-    FittedText::Plain(ellipsize(text, max_width))
-}
-
-fn ellipsize(text: &str, max_chars: u16) -> String {
-    if text.chars().count() <= max_chars as usize {
-        return text.to_string();
-    }
-
-    let truncated: String = text
-        .chars()
-        .take((max_chars as usize).saturating_sub(1))
-        .collect();
-    format!("{truncated}…")
-}
+const CHAR_WIDTH: u16 = 4;
+const CHAR_HEIGHT: u16 = 2;
 
 pub fn render(
     frame: &mut Frame,
@@ -114,7 +17,7 @@ pub fn render(
     disable_tui_album_cover: bool,
 ) {
     let track = match &state.playing_track {
-        Some(t) => t,
+        Some(track) => track,
         None => return,
     };
 
@@ -168,26 +71,16 @@ pub fn render(
         None => center(area, Constraint::Percentage(60), Constraint::Percentage(80)),
     };
 
-    let entity = state.entity_title.as_ref().map(|entity| {
-        fit_text(
-            entity,
-            info_area.width,
-            info_area.height / 4,
-            &ENTITY_SIZES,
-            0,
-        )
-    });
-    let entity_height = entity.as_ref().map(FittedText::height).unwrap_or(0);
+    let entity_lines = state
+        .entity_title
+        .as_deref()
+        .map(|entity| fit_big_text(entity, info_area.width, info_area.height.saturating_div(4)))
+        .unwrap_or_default();
 
-    let title_budget = info_area.height.saturating_sub(entity_height + 6);
-    let title = fit_text(
-        &track.title,
-        info_area.width,
-        title_budget,
-        &TITLE_SIZES,
-        ICON_CHARS,
-    );
-    let title_height = title.height();
+    let entity_height = entity_lines.len() as u16 * CHAR_HEIGHT;
+    let title_budget = info_area.height.saturating_sub(entity_height + 7);
+    let title_lines = fit_big_text(&track.title, info_area.width, title_budget);
+    let title_height = title_lines.len() as u16 * CHAR_HEIGHT;
 
     let top_spacer = (info_area.height / 2)
         .saturating_sub(entity_height + 3)
@@ -206,24 +99,15 @@ pub fn render(
     ])
     .split(info_area);
 
-    match &entity {
-        Some(FittedText::Big { size, lines }) => {
-            frame.render_widget(
-                BigText::builder()
-                    .pixel_size(size.pixel_size)
-                    .lines(lines.iter().map(Line::raw).collect::<Vec<_>>())
-                    .centered()
-                    .build(),
-                rows[0],
-            );
-        }
-        Some(FittedText::Plain(text)) => {
-            frame.render_widget(
-                Paragraph::new(text.as_str()).alignment(Alignment::Center),
-                rows[0],
-            );
-        }
-        None => {}
+    if !entity_lines.is_empty() {
+        frame.render_widget(
+            BigText::builder()
+                .pixel_size(PixelSize::Octant)
+                .lines(entity_lines.iter().map(Line::raw).collect::<Vec<_>>())
+                .centered()
+                .build(),
+            rows[0],
+        );
     }
 
     if let Some(artist) = &track.artist_name {
@@ -246,77 +130,95 @@ pub fn render(
         rows[3],
     );
 
+    let title_width = title_lines
+        .iter()
+        .map(|line| line.chars().count() as u16)
+        .max()
+        .unwrap_or_default()
+        .saturating_mul(CHAR_WIDTH)
+        .min(rows[5].width);
+
     let title_area = center(
         rows[5],
-        Constraint::Length(title.width()),
+        Constraint::Length(title_width),
         Constraint::Percentage(100),
     );
 
-    match &title {
-        FittedText::Big { size, lines } => {
-            let icon_width = ICON_CHARS * size.char_width;
-            let icon_area = Rect {
-                x: title_area.x.saturating_sub(icon_width + 2),
-                y: title_area.y + title_height.saturating_sub(size.char_height) / 2,
-                width: icon_width,
-                height: size.char_height,
-            }
-            .intersection(rows[5]);
-
-            frame.render_widget(
-                BigText::builder()
-                    .pixel_size(size.pixel_size)
-                    .lines(vec![Line::from(status_icon(state.status))])
-                    .right_aligned()
-                    .build(),
-                icon_area,
-            );
-
-            frame.render_widget(
-                BigText::builder()
-                    .pixel_size(size.pixel_size)
-                    .style(HIGHLIGHT_TEXT_STYLE)
-                    .lines(lines.iter().map(Line::raw).collect::<Vec<_>>())
-                    .centered()
-                    .build(),
-                title_area,
-            );
-        }
-        FittedText::Plain(text) => {
-            let text = ellipsize(
-                &format!("{} {}", status_icon(state.status), text),
-                info_area.width,
-            );
-            frame.render_widget(
-                Paragraph::new(text)
-                    .style(HIGHLIGHT_TEXT_STYLE)
-                    .bold()
-                    .alignment(Alignment::Center),
-                rows[5],
-            );
-        }
+    if !title_lines.is_empty() {
+        frame.render_widget(
+            BigText::builder()
+                .pixel_size(PixelSize::Octant)
+                .style(HIGHLIGHT_TEXT_STYLE)
+                .lines(title_lines.iter().map(Line::raw).collect::<Vec<_>>())
+                .centered()
+                .build(),
+            title_area,
+        );
     }
+
+    let status_area = center(rows[6], Constraint::Percentage(100), Constraint::Length(1));
+
+    frame.render_widget(
+        Paragraph::new(get_status(state.status)).alignment(Alignment::Center),
+        status_area,
+    );
 
     render_progress(frame, rows[7], state.duration_ms, track);
 }
 
-fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
-    if text.chars().count() <= max_chars as usize {
-        return vec![text.to_string()];
+fn fit_big_text(text: &str, max_width: u16, max_height: u16) -> Vec<String> {
+    let max_chars = max_width / CHAR_WIDTH;
+    let max_lines = max_height / CHAR_HEIGHT;
+
+    if max_chars == 0 || max_lines == 0 {
+        return Vec::new();
     }
 
-    let mut lines = vec![];
+    let mut lines = wrap_big_text(text, max_chars);
+
+    if lines.len() > max_lines as usize {
+        lines.truncate(max_lines as usize);
+
+        if let Some(last) = lines.last_mut() {
+            *last = truncate_with_dots(last, max_chars);
+        }
+    }
+
+    lines
+}
+
+fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
+    if max_chars == 0 {
+        return Vec::new();
+    }
+
+    let max_chars = max_chars as usize;
+    let mut lines = Vec::new();
     let mut current = String::new();
 
     for word in text.split_whitespace() {
-        if !current.is_empty()
-            && current.chars().count() + 1 + word.chars().count() > max_chars as usize
-        {
+        let word_length = word.chars().count();
+
+        if word_length > max_chars {
+            if !current.is_empty() {
+                lines.push(std::mem::take(&mut current));
+            }
+
+            lines.push(truncate_with_dots(word, max_chars as u16));
+            continue;
+        }
+
+        let required_length =
+            current.chars().count() + usize::from(!current.is_empty()) + word_length;
+
+        if required_length > max_chars {
             lines.push(std::mem::take(&mut current));
         }
+
         if !current.is_empty() {
             current.push(' ');
         }
+
         current.push_str(word);
     }
 
@@ -327,83 +229,60 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
     lines
 }
 
-fn status_icon(status: Status) -> &'static str {
-    match status {
-        Status::Playing => ">",
-        Status::Paused => "||",
-        Status::Buffering => "~",
+fn truncate_with_dots(text: &str, max_chars: u16) -> String {
+    let max_chars = max_chars as usize;
+
+    if max_chars == 0 {
+        return String::new();
     }
+
+    if max_chars <= 3 {
+        return ".".repeat(max_chars);
+    }
+
+    let content_length = max_chars - 3;
+    let truncated = text.chars().take(content_length).collect::<String>();
+
+    format!("{truncated}...")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn lines(fitted: &FittedText) -> Vec<&str> {
-        match fitted {
-            FittedText::Big { lines, .. } => lines.iter().map(String::as_str).collect(),
-            FittedText::Plain(_) => panic!("expected big text"),
-        }
-    }
-
-    fn pixel_size(fitted: &FittedText) -> PixelSize {
-        match fitted {
-            FittedText::Big { size, .. } => size.pixel_size,
-            FittedText::Plain(_) => panic!("expected big text"),
-        }
+    #[test]
+    fn short_text_stays_on_one_line() {
+        assert_eq!(fit_big_text("Meddle", 40, 3), ["Meddle"]);
     }
 
     #[test]
-    fn multi_word_title_falls_back_to_smaller_size_instead_of_overflowing() {
-        let fitted = fit_text("Days of Candy", 50, 8, &TITLE_SIZES, ICON_CHARS);
-
-        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
-        assert_eq!(lines(&fitted), ["Days of", "Candy"]);
+    fn multi_word_text_wraps() {
+        assert_eq!(
+            fit_big_text("Depression Cherry", 40, 6),
+            ["Depression", "Cherry"]
+        );
     }
 
     #[test]
-    fn single_word_falls_back_instead_of_truncating() {
-        let fitted = fit_text("Sparks", 50, 12, &TITLE_SIZES, ICON_CHARS);
-
-        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
-        assert_eq!(lines(&fitted), ["Sparks"]);
+    fn long_word_is_truncated() {
+        assert_eq!(fit_big_text("Supermassive", 24, 3), ["Sup..."]);
     }
 
     #[test]
-    fn short_title_in_large_area_uses_the_largest_size() {
-        let fitted = fit_text("Meddle", 200, 20, &TITLE_SIZES, ICON_CHARS);
-
-        assert_eq!(pixel_size(&fitted), PixelSize::HalfHeight);
-        assert_eq!(lines(&fitted), ["Meddle"]);
+    fn excess_lines_are_truncated() {
+        assert_eq!(
+            fit_big_text("one two three four five six seven", 36, 6),
+            ["one two", "three", "four f..."]
+        );
     }
 
     #[test]
-    fn long_single_word_in_tiny_area_falls_back_to_plain_text() {
-        let fitted = fit_text("Supermassive", 30, 6, &TITLE_SIZES, ICON_CHARS);
-
-        assert_eq!(fitted, FittedText::Plain("Supermassive".to_string()));
+    fn exact_fit_is_not_truncated() {
+        assert_eq!(fit_big_text("one two", 28, 3), ["one two"]);
     }
 
     #[test]
-    fn plain_fallback_ellipsizes_with_a_single_character() {
-        let fitted = fit_text("An Ending (Ascent)", 10, 2, &TITLE_SIZES, ICON_CHARS);
-
-        assert_eq!(fitted, FittedText::Plain("An Ending…".to_string()));
-    }
-
-    #[test]
-    fn entity_wraps_at_sextant() {
-        let fitted = fit_text("Depression Cherry", 50, 8, &ENTITY_SIZES, 0);
-
-        assert_eq!(pixel_size(&fitted), PixelSize::Sextant);
-        assert_eq!(lines(&fitted), ["Depression", "Cherry"]);
-    }
-
-    #[test]
-    fn wrap_never_splits_words_and_respects_width() {
-        let wrapped = wrap_big_text("one two three four five", 9);
-
-        assert_eq!(wrapped, ["one two", "three", "four five"]);
-        assert!(wrapped.iter().all(|line| line.chars().count() <= 9));
+    fn tiny_width_uses_visible_dots() {
+        assert_eq!(truncate_with_dots("long", 2), "..");
     }
 }

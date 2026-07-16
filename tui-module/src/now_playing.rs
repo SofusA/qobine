@@ -111,7 +111,7 @@ pub(crate) fn render_progress(frame: &mut Frame, area: Rect, duration_ms: u32, t
     frame.render_widget(total_time, progress_chunks[2]);
 }
 
-fn get_status(state: Status) -> &'static str {
+pub fn get_status(state: Status) -> &'static str {
     match state {
         Status::Playing => "Playing ⏵",
         Status::Paused => "Paused ⏸",
