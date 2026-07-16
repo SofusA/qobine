@@ -1,6 +1,6 @@
 use crate::{
     now_playing::{NowPlayingState, get_status, render_progress},
-    ui::{HIGHLIGHT_STYLE, HIGHLIGHT_TEXT_STYLE, center},
+    ui::{HIGHLIGHT_TEXT_STYLE, center},
 };
 use ratatui::{layout::Flex, prelude::*, widgets::*};
 use ratatui_image::{FilterType, Resize, StatefulImage};
@@ -118,14 +118,11 @@ pub fn render(
     }
 
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!(" {} ", state.tracklist_position + 1),
-                HIGHLIGHT_STYLE,
-            ),
-            Span::raw(" of "),
-            Span::styled(format!(" {} ", state.tracklist_length), HIGHLIGHT_STYLE),
-        ]))
+        Paragraph::new(Line::from(vec![Span::raw(format!(
+            "{} of {}",
+            state.tracklist_position + 1,
+            state.tracklist_length
+        ))]))
         .alignment(Alignment::Center),
         rows[3],
     );
