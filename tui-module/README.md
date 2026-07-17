@@ -8,6 +8,9 @@ Press <kbd>?</kbd> for an overview of all available keyboard shortcuts
 ### Fonts
 The terminal ui needs a [nerdfont](https://www.nerdfonts.com/) to display icons for explicit and hi-resolution.
 
+### Homebrew
+`qobine-tui` is available in [homebrew](https://formulae.brew.sh/formula/qobine-tui)
+
 ### Download Release
 
 Download the tar.gz file for your supported OS from the releases page, extract the file and execute `qobine-tui` or copy it to your `$PATH`.
