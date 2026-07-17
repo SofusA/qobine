@@ -2368,6 +2368,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/font8x8/font8x8-0.3.1.crate",
+        "sha256": "875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e",
+        "dest": "cargo/vendor/font8x8-0.3.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"875488b8711a968268c7cf5d139578713097ca4635a76044e8fe8eedf831d07e\", \"files\": {}}",
+        "dest": "cargo/vendor/font8x8-0.3.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/foreign-types/foreign-types-0.3.2.crate",
         "sha256": "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1",
         "dest": "cargo/vendor/foreign-types-0.3.2"
@@ -3598,6 +3611,19 @@
         "type": "inline",
         "contents": "{\"package\": \"2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285\", \"files\": {}}",
         "dest": "cargo/vendor/itertools-0.14.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/itertools/itertools-0.15.0.crate",
+        "sha256": "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc",
+        "dest": "cargo/vendor/itertools-0.15.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc\", \"files\": {}}",
+        "dest": "cargo/vendor/itertools-0.15.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -7862,6 +7888,19 @@
         "type": "inline",
         "contents": "{\"package\": \"e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b\", \"files\": {}}",
         "dest": "cargo/vendor/try-lock-0.2.5",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tui-big-text/tui-big-text-0.8.8.crate",
+        "sha256": "9e36b4d581e4e44186f87156c1c281f066ad792551580acc0e02aa7333f769ed",
+        "dest": "cargo/vendor/tui-big-text-0.8.8"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"9e36b4d581e4e44186f87156c1c281f066ad792551580acc0e02aa7333f769ed\", \"files\": {}}",
+        "dest": "cargo/vendor/tui-big-text-0.8.8",
         "dest-filename": ".cargo-checksum.json"
     },
     {
