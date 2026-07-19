@@ -19,7 +19,7 @@ player-module = { version = "*", path = "../player-module" }
 gpio-module = { version = "*", path = "../gpio-module", optional = true }
 cli-module = { version = "*", path = "../cli-module" }
 
-qonductor.workspace = true
+qonductor = "0.1.0-alpha.5"
 tokio.workspace = true
 tracing.workspace = true
 

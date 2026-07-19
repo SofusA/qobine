@@ -10,12 +10,14 @@ name = "qobine-rfid"
 path = "src/main.rs"
 
 [features]
+default = []
 gpio = ["gpio-module/gpio"]
+connect = ["dep:connect-module"]
 
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
-connect-module = { version = "*", path = "../connect-module" }
+connect-module = { version = "*", path = "../connect-module", optional = true }
 disconnect-module = { version = "*", path = "../disconnect-module" }
 gpio-module = { version = "*", path = "../gpio-module", optional = true }
 cli-module = { version = "*", path = "../cli-module" }
