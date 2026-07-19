@@ -1,7 +1,9 @@
+#[cfg(feature = "connect")]
+use cli_module::ConnectArgs;
 #[cfg(feature = "gpio")]
 use cli_module::GpioArgs;
 use cli_module::{
-    ConnectArgs, DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
+    DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
     default_audio_quality, error_exit, get_client, handle_shared_commands, parse_disconnect_args,
     spawn_clean_up,
 };
@@ -32,6 +34,7 @@ struct Arguments {
     #[clap(flatten)]
     disconnect: DisconnectArgs,
 
+    #[cfg(feature = "connect")]
     #[clap(flatten)]
     connect: ConnectArgs,
 
@@ -154,6 +157,7 @@ pub async fn run() -> AppResult<()> {
         );
     }
 
+    #[cfg(feature = "connect")]
     if args.connect.connect {
         let app_id = client.app_id().await?;
         let position_receiver = player.position();

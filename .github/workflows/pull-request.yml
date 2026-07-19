@@ -87,9 +87,9 @@ jobs:
       - name: Test 
         run: cargo test --workspace --exclude qobuz-client --exclude gtk-module
 
-      - name: Build gpio 
+      - name: Build optional features
         if: startsWith(matrix.os, 'ubuntu')
-        run: cargo build --workspace --features gpio --exclude gtk-module
+        run: cargo build --workspace --features gpio,connect --exclude gtk-module
 
   build-flatpak:
     name: "Flatpak ${{ matrix.variant.arch }}"

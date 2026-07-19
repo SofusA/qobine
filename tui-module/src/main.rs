@@ -1,6 +1,8 @@
+#[cfg(feature = "connect")]
+use cli_module::ConnectArgs;
 use cli_module::{
-    ConnectArgs, SharedArgs, SharedCommands, create_player, default_audio_quality, error_exit,
-    get_client, handle_shared_commands, spawn_clean_up_mut,
+    SharedArgs, SharedCommands, create_player, default_audio_quality, error_exit, get_client,
+    handle_shared_commands, spawn_clean_up_mut,
 };
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
 use futures::executor::block_on;
@@ -24,6 +26,7 @@ struct Arguments {
     #[clap(flatten)]
     shared: SharedArgs,
 
+    #[cfg(feature = "connect")]
     #[clap(flatten)]
     connect: ConnectArgs,
 
@@ -93,6 +96,7 @@ pub async fn run() -> AppResult<()> {
     let client = client.clone();
     let broadcast = broadcast.clone();
 
+    #[cfg(feature = "connect")]
     if args.connect.connect {
         let app_id = client.app_id().await?;
         let position_receiver = player.position();
