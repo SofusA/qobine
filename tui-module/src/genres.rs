@@ -13,6 +13,7 @@ use ratatui::{
 
 use crate::{
     app::FavoriteIds,
+    image_cache::ImageManager,
     ui::{SELECTED_STYLE, sidebar},
 };
 use crate::{
@@ -122,7 +123,13 @@ impl GenresState {
         Ok(())
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        favorites: &FavoriteIds,
+        image_cache: &mut ImageManager,
+    ) {
         let block = block(None);
         frame.render_widget(block, area);
 
@@ -130,7 +137,9 @@ impl GenresState {
 
         match self.mode {
             GenresMode::GenreList => self.render_genre_list(frame, content_area),
-            GenresMode::GenreDetail => self.render_genre_detail(frame, content_area, favorites),
+            GenresMode::GenreDetail => {
+                self.render_genre_detail(frame, content_area, favorites, image_cache)
+            }
         }
     }
 
@@ -195,7 +204,13 @@ impl GenresState {
         }
     }
 
-    fn render_genre_detail(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
+    fn render_genre_detail(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        favorites: &FavoriteIds,
+        image_cache: &mut ImageManager,
+    ) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
@@ -241,6 +256,7 @@ impl GenresState {
                     frame.buffer_mut(),
                     content_focused,
                     favorites.albums(),
+                    image_cache,
                 );
             }
             Some(Selected::Playlist(list)) => {

@@ -8,11 +8,12 @@ use ratatui::{
     prelude::*,
     widgets::*,
 };
-use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::StatefulImage;
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
+    image_cache::{AppImage, ImageManager},
     ui::{
         HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, mark_as_favorite,
         render_input, tab_bar,
@@ -34,7 +35,6 @@ pub struct ArtistPopupState {
     similar: ArtistList,
     description: Option<String>,
     image_url: Option<String>,
-    image: Option<(StatefulProtocol, f32)>,
     selected_sub_tab: usize,
     about_scroll: ScrollbarState,
     top_tracks: TrackList,
@@ -77,7 +77,6 @@ impl ArtistPopupState {
             similar: ArtistList::new(artist_page.similar_artists),
             description: artist_page.description,
             image_url: artist_page.image,
-            image: None,
             selected_sub_tab: 0,
             about_scroll: ScrollbarState::default(),
             top_tracks: TrackList::new(artist_page.top_tracks),
@@ -231,7 +230,6 @@ pub struct AlbumPopupState {
     similar: AlbumList,
     description: Option<String>,
     image_url: String,
-    image: Option<(StatefulProtocol, f32)>,
     release_year: u32,
     total_tracks: u32,
     duration_seconds: u32,
@@ -269,7 +267,6 @@ impl AlbumPopupState {
             similar: AlbumList::new(similar),
             description: album.description,
             image_url: album.image,
-            image: None,
             release_year: album.release_year,
             total_tracks: album.total_tracks,
             duration_seconds: album.duration_seconds,
@@ -497,32 +494,17 @@ pub enum Popup {
     Track(TrackPopupState),
     NewPlaylist(NewPlaylistPopupState),
     DeletePlaylist(DeletePlaylistPopupState),
-    PlaylistInfo(Playlist, Option<(StatefulProtocol, f32)>),
-    TrackInfo(Track, Option<(StatefulProtocol, f32)>, usize),
+    PlaylistInfo(Playlist, Option<AppImage>),
+    TrackInfo(Track, Option<AppImage>, usize),
 }
 
 impl Popup {
-    pub fn image_url(&self) -> Option<String> {
-        match self {
-            Popup::Artist(state) => state.image_url.clone(),
-            Popup::Album(state) => Some(state.image_url.clone()),
-            Popup::PlaylistInfo(playlist, _) => playlist.image.clone(),
-            Popup::TrackInfo(track, _, _) => track.image.clone(),
-            _ => None,
-        }
-    }
-
-    pub fn set_image(&mut self, image: Option<(StatefulProtocol, f32)>) {
-        match self {
-            Popup::Artist(state) => state.image = image,
-            Popup::Album(state) => state.image = image,
-            Popup::PlaylistInfo(_, slot) => *slot = image,
-            Popup::TrackInfo(_, slot, _) => *slot = image,
-            _ => {}
-        }
-    }
-
-    pub fn render(&mut self, frame: &mut Frame, favorites: &FavoriteIds) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        favorites: &FavoriteIds,
+        image_cache: &mut ImageManager,
+    ) {
         match self {
             Popup::Album(album) => {
                 let visible_rows = (album.current_row_count() + 1).min(15) as u16;
@@ -557,10 +539,11 @@ impl Popup {
                     ])
                     .split(inner);
 
-                let image_width = album
-                    .image
+                let image = image_cache.get_mut(&album.image_url);
+
+                let image_width = image
                     .as_ref()
-                    .map(|(_, ratio)| (*ratio * (header_height * 2) as f32) as u16)
+                    .map(|image| (image.ratio * (header_height * 2) as f32) as u16)
                     .unwrap_or(0);
 
                 let gap = if image_width > 0 { 2 } else { 0 };
@@ -574,7 +557,7 @@ impl Popup {
                     ])
                     .split(chunks[0]);
 
-                if let Some((protocol, _)) = album.image.as_mut() {
+                if let Some(AppImage { protocol, ratio: _ }) = image {
                     frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
                 }
 
@@ -648,9 +631,13 @@ impl Popup {
                             true,
                             favorites.tracks(),
                         ),
-                        SelectedAlbumPopupSubtabMut::Similar(album_list) => {
-                            album_list.render(content, frame.buffer_mut(), true, favorites.albums())
-                        }
+                        SelectedAlbumPopupSubtabMut::Similar(album_list) => album_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            favorites.albums(),
+                            image_cache,
+                        ),
                     }
                 }
             }
@@ -687,10 +674,14 @@ impl Popup {
                     ])
                     .split(inner);
 
-                let image_width = artist
-                    .image
+                let image = artist
+                    .image_url
                     .as_ref()
-                    .map(|(_, ratio)| (*ratio * (header_height * 2) as f32) as u16)
+                    .and_then(|x| image_cache.get_mut(x));
+
+                let image_width = image
+                    .as_ref()
+                    .map(|image| (image.ratio * (header_height * 2) as f32) as u16)
                     .unwrap_or(0);
 
                 let gap = if image_width > 0 { 2 } else { 0 };
@@ -704,7 +695,7 @@ impl Popup {
                     ])
                     .split(chunks[0]);
 
-                if let Some((protocol, _)) = artist.image.as_mut() {
+                if let Some(AppImage { protocol, ratio: _ }) = image {
                     frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
                 }
 
@@ -749,9 +740,13 @@ impl Popup {
                     render_about(frame, content, &description, &[], &mut artist.about_scroll);
                 } else if let Some(state) = artist.current_state_mut() {
                     match state {
-                        SelectedArtistPopupSubtabMut::Albums(album_list) => {
-                            album_list.render(content, frame.buffer_mut(), true, favorites.albums())
-                        }
+                        SelectedArtistPopupSubtabMut::Albums(album_list) => album_list.render(
+                            content,
+                            frame.buffer_mut(),
+                            true,
+                            favorites.albums(),
+                            image_cache,
+                        ),
                         SelectedArtistPopupSubtabMut::TopTracks(track_list) => track_list.render(
                             content,
                             frame.buffer_mut(),
@@ -1308,7 +1303,7 @@ fn render_track_info(
     frame: &mut Frame,
     track: &Track,
     selected: usize,
-    image: &mut Option<(StatefulProtocol, f32)>,
+    image: &mut Option<AppImage>,
 ) {
     let title = Line::from(Span::styled(track.title.clone(), Style::new().bold()));
 
@@ -1388,7 +1383,7 @@ fn render_track_info(
 
     let image_width = image
         .as_ref()
-        .map(|(_, ratio)| (*ratio * (cover_height * 2) as f32) as u16)
+        .map(|image| (image.ratio * (cover_height * 2) as f32) as u16)
         .unwrap_or(0);
 
     let left_width = image_width.max(actions_width);
@@ -1425,7 +1420,7 @@ fn render_track_info(
     ])
     .split(horizontal[0]);
 
-    if let Some((protocol, _)) = image {
+    if let Some(AppImage { protocol, ratio: _ }) = image {
         let cover = Rect {
             width: image_width,
             ..left[0]
@@ -1449,11 +1444,7 @@ fn render_track_info(
     frame.render_widget(Paragraph::new(Text::from(info_lines)), horizontal[2]);
 }
 
-fn render_playlist_info(
-    frame: &mut Frame,
-    playlist: &Playlist,
-    image: &mut Option<(StatefulProtocol, f32)>,
-) {
+fn render_playlist_info(frame: &mut Frame, playlist: &Playlist, image: &mut Option<AppImage>) {
     let mut info_lines: Vec<Line> = Vec::new();
 
     info_lines.push(Line::from(playlist.title.clone()).style(Style::new().bold()));
@@ -1484,7 +1475,7 @@ fn render_playlist_info(
     frame.render_widget(Clear, area);
     frame.render_widget(outer_block, area);
 
-    let image_width = if let Some((_, ratio)) = image {
+    let image_width = if let Some(AppImage { protocol: _, ratio }) = image {
         (*ratio * (inner.height * 2) as f32) as u16
     } else {
         0
@@ -1496,7 +1487,11 @@ fn render_playlist_info(
     let info_paragraph = Paragraph::new(Text::from(info_lines));
     frame.render_widget(info_paragraph, horizontal[0]);
 
-    if let Some((protocol, _)) = image {
+    if let Some(AppImage {
+        protocol,
+        ratio: _ratio,
+    }) = image
+    {
         let stateful_image = StatefulImage::default();
         frame.render_stateful_widget(stateful_image, horizontal[1], protocol);
     }

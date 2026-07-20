@@ -208,7 +208,7 @@ impl Player {
     }
 
     fn set_target_status(&self, status: Status) {
-        self.target_status.send(status).expect("infallible");
+        self.target_status.send_replace(status);
     }
 
     async fn query_track(&mut self, track: &Track, next_track: bool) -> AppResult<()> {

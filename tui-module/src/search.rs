@@ -9,6 +9,7 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
+    image_cache::ImageManager,
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
@@ -39,7 +40,13 @@ pub struct SearchState {
 }
 
 impl SearchState {
-    pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        favorites: &FavoriteIds,
+        image_cache: &mut ImageManager,
+    ) {
         let tab_content_area_split = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
@@ -78,6 +85,7 @@ impl SearchState {
                 frame.buffer_mut(),
                 content_focused,
                 favorites.albums(),
+                image_cache,
             ),
             SubTab::Artists => self.artists.render(
                 chunks[1],

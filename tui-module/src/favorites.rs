@@ -9,6 +9,7 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     app::{NotificationList, Output},
+    image_cache::ImageManager,
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
@@ -55,7 +56,7 @@ impl FavoritesState {
         })
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, image_cache: &mut ImageManager) {
         let tab_content_area_split = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
@@ -93,6 +94,7 @@ impl FavoritesState {
                 frame.buffer_mut(),
                 content_focused,
                 &Default::default(),
+                image_cache,
             ),
             SubTab::Artists => self.artists.render(
                 chunks[1],

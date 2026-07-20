@@ -1,11 +1,13 @@
-use crate::ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds};
+use crate::{
+    image_cache::{AppImage, ImageManager},
+    ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds},
+};
 use controls_module::{Status, models::Track};
 use ratatui::{prelude::*, widgets::*};
-use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::StatefulImage;
 
 #[derive(Default)]
 pub struct NowPlayingState {
-    pub image: Option<(StatefulProtocol, f32)>,
     pub entity_title: Option<String>,
     pub playing_track: Option<Track>,
     pub tracklist_length: usize,
@@ -17,24 +19,25 @@ pub struct NowPlayingState {
 pub fn render(
     frame: &mut Frame,
     area: Rect,
-    state: &mut NowPlayingState,
+    state: &NowPlayingState,
     disable_tui_album_cover: bool,
+    image_cache: &mut ImageManager,
 ) {
     let track = match &state.playing_track {
         Some(t) => t,
         None => return,
     };
 
+    let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
+
     let block = block(Some(get_status(state.status)));
 
-    let length = state
-        .image
+    let length = image
         .as_ref()
-        .map(|image| image.1 * (area.height * 2 - 1) as f32)
-        .map(|x| x as u16)
+        .map(|image| (image.ratio * (area.height * 2 - 1) as f32) as u16)
         .unwrap_or(0);
 
-    let chunks = if disable_tui_album_cover {
+    let chunks = if disable_tui_album_cover || image.is_none() {
         vec![block.inner(area)]
     } else {
         Layout::default()
@@ -46,11 +49,10 @@ pub fn render(
 
     frame.render_widget(block, area);
 
-    if let Some(image) = &mut state.image
+    if let Some(AppImage { protocol, ratio: _ }) = image
         && !disable_tui_album_cover
     {
-        let stateful_image = StatefulImage::default();
-        frame.render_stateful_widget(stateful_image, chunks[0], &mut image.0);
+        frame.render_stateful_widget(StatefulImage::default(), chunks[0], protocol);
     }
 
     let info_chunks = Layout::default()

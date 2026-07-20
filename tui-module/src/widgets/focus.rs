@@ -1,4 +1,5 @@
 use crate::{
+    image_cache::ImageManager,
     now_playing::{NowPlayingState, get_status, render_progress},
     ui::{HIGHLIGHT_TEXT_STYLE, center},
 };
@@ -13,19 +14,22 @@ const CHAR_HEIGHT: u16 = 2;
 pub fn render(
     frame: &mut Frame,
     area: Rect,
-    state: &mut NowPlayingState,
+    state: &NowPlayingState,
     disable_tui_album_cover: bool,
+    image_cache: &mut ImageManager,
 ) {
     let track = match &state.playing_track {
         Some(track) => track,
         None => return,
     };
 
+    let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
+
     let image_size = if disable_tui_album_cover {
         None
     } else {
-        state.image.as_ref().map(|image| {
-            image.0.size_for(
+        image.as_deref().map(|image| {
+            image.protocol.size_for(
                 Resize::Scale(Some(FilterType::Triangle)),
                 Size::new(area.width * 2 / 5, area.height * 9 / 10),
             )
@@ -53,11 +57,11 @@ pub fn render(
                 Constraint::Length(size.height),
             );
 
-            if let Some(image) = &mut state.image {
+            if let Some(image) = image {
                 frame.render_stateful_widget(
                     StatefulImage::new().resize(Resize::Scale(Some(FilterType::Triangle))),
                     image_area,
-                    &mut image.0,
+                    &mut image.protocol,
                 );
             }
 

@@ -12,11 +12,13 @@ use ratatui::{
 };
 
 use crate::{
-    app::{FilteredListState, NotificationList, Output},
+    app::{NotificationList, Output},
+    image_cache::ImageManager,
     popup::{AlbumPopupState, Popup},
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
     },
+    widgets::filtered_list::FilteredListState,
 };
 
 #[derive(Default)]
@@ -42,6 +44,7 @@ impl AlbumList {
         buf: &mut Buffer,
         focus: bool,
         favorites: &HashSet<String>,
+        _image_cache: &mut ImageManager,
     ) {
         let table = album_table(self.items.filter(), focus, favorites);
         table.render(area, buf, &mut self.items.state);

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use app::{App, get_current_state_without_image};
+use app::{App, create_now_playing_state};
 use controls_module::{
     ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
 };
@@ -15,12 +15,16 @@ use ratatui_image::picker::Picker;
 use tokio::sync::{mpsc, watch};
 use ui::center;
 
-use crate::app::build_favorite_ids;
+use crate::{
+    app::build_favorite_ids,
+    image_cache::{ImageLoaded, ImageManager},
+};
 
 mod app;
 mod discover;
 mod favorites;
 mod genres;
+mod image_cache;
 mod now_playing;
 mod popup;
 mod preferences;
@@ -60,14 +64,14 @@ pub async fn init(
         .into_iter()
         .map(|x| x.track.clone())
         .collect();
-    let (now_playing, current_image_url) =
-        get_current_state_without_image(&tracklist_value, status_value);
+    let now_playing = create_now_playing_state(&tracklist_value, status_value);
 
     let initial_configuration = database.get_configuration().await?;
     let favorites = FavoritesState::new(&client).await?;
     let favorite_ids = build_favorite_ids(&favorites);
 
-    let http_client = reqwest::Client::new();
+    let (image_tx, image_rx) = mpsc::unbounded_channel::<ImageLoaded>();
+    let image_cache = ImageManager::new(picker, image_tx);
 
     let mut app = App {
         broadcast,
@@ -83,7 +87,6 @@ pub async fn init(
         should_draw: true,
         app_state: Default::default(),
         disable_tui_album_cover,
-        current_image_url,
         favorites,
         favorite_ids,
         search: Default::default(),
@@ -96,12 +99,12 @@ pub async fn init(
             initial_configuration,
         ),
         client,
-        picker,
+        image_cache,
+        image_rx,
         connect_available_devices,
         connect_active_device,
         set_connect_active_device,
         disconnect_client_config_sender,
-        http_client,
     };
 
     app.update_favorites().await;

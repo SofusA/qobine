@@ -12,12 +12,13 @@ use ratatui::{
 };
 
 use crate::{
-    app::{FilteredListState, NotificationList, Output},
+    app::{NotificationList, Output},
     popup::{DeletePlaylistPopupState, NewPlaylistPopupState, PlaylistPopupState, Popup},
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_favorite,
         mark_as_owned,
     },
+    widgets::filtered_list::FilteredListState,
 };
 
 #[derive(Default)]

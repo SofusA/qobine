@@ -2,12 +2,12 @@ use crate::{
     discover::DiscoverState,
     favorites::FavoritesState,
     genres::GenresState,
+    image_cache::{ImageLoaded, ImageManager},
     now_playing::NowPlayingState,
     popup::{AlbumPopupState, ArtistPopupState, Popup, TrackPopupState},
     preferences::PreferencesState,
     queue::QueueState,
     search::SearchState,
-    ui::fetch_image,
 };
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver,
@@ -25,8 +25,7 @@ use player_module::{
     database::Database,
     notification::{Notification, NotificationBroadcast},
 };
-use ratatui::{DefaultTerminal, widgets::*};
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use ratatui::DefaultTerminal;
 use std::{collections::HashSet, io, sync::Arc, time::Instant};
 use tokio::{
     sync::{mpsc, watch},
@@ -55,47 +54,6 @@ impl NotificationList {
     pub fn notifications(&self) -> Vec<&Notification> {
         self.notifications.iter().map(|x| &x.0).collect()
     }
-}
-
-pub struct App {
-    pub client: Arc<Client>,
-    pub picker: Picker,
-    pub http_client: reqwest::Client,
-    pub controls: Controls,
-    pub database: Arc<Database>,
-    pub position: PositionReceiver,
-    pub tracklist: TracklistReceiver,
-    pub status: StatusReceiver,
-    pub current_screen: Tab,
-    pub exit: bool,
-    pub should_draw: bool,
-    pub app_state: AppState,
-    pub now_playing: NowPlayingState,
-    pub favorites: FavoritesState,
-    pub favorite_ids: FavoriteIds,
-    pub search: SearchState,
-    pub queue: QueueState,
-    pub discover: DiscoverState,
-    pub genres: GenresState,
-    pub preferences: PreferencesState,
-    pub broadcast: Arc<NotificationBroadcast>,
-    pub notifications: NotificationList,
-    pub disable_tui_album_cover: bool,
-    pub current_image_url: Option<String>,
-    pub connect_available_devices: watch::Receiver<Vec<String>>,
-    pub connect_active_device: watch::Receiver<String>,
-    pub set_connect_active_device: mpsc::UnboundedSender<String>,
-    pub disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
-}
-
-#[derive(Default)]
-pub enum AppState {
-    #[default]
-    Normal,
-    Popup(Vec<Popup>),
-    Help,
-    ConnectPopup(usize),
-    Focus,
 }
 
 pub struct FavoriteIds {
@@ -169,61 +127,44 @@ impl Tab {
     ];
 }
 
-#[derive(Default)]
-pub struct FilteredListState<T> {
-    filter: Vec<T>,
-    all_items: Vec<T>,
-    pub state: TableState,
+pub struct App {
+    pub client: Arc<Client>,
+    pub image_cache: ImageManager,
+    pub image_rx: mpsc::UnboundedReceiver<ImageLoaded>,
+    pub controls: Controls,
+    pub database: Arc<Database>,
+    pub position: PositionReceiver,
+    pub tracklist: TracklistReceiver,
+    pub status: StatusReceiver,
+    pub current_screen: Tab,
+    pub exit: bool,
+    pub should_draw: bool,
+    pub app_state: AppState,
+    pub now_playing: NowPlayingState,
+    pub favorites: FavoritesState,
+    pub favorite_ids: FavoriteIds,
+    pub search: SearchState,
+    pub queue: QueueState,
+    pub discover: DiscoverState,
+    pub genres: GenresState,
+    pub preferences: PreferencesState,
+    pub broadcast: Arc<NotificationBroadcast>,
+    pub notifications: NotificationList,
+    pub disable_tui_album_cover: bool,
+    pub connect_available_devices: watch::Receiver<Vec<String>>,
+    pub connect_active_device: watch::Receiver<String>,
+    pub set_connect_active_device: mpsc::UnboundedSender<String>,
+    pub disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 }
 
-impl<T> FilteredListState<T>
-where
-    T: Clone,
-{
-    pub fn new(list: Vec<T>) -> Self {
-        Self {
-            filter: list.clone(),
-            all_items: list,
-            state: Default::default(),
-        }
-    }
-
-    pub fn filter(&self) -> &Vec<T> {
-        &self.filter
-    }
-
-    pub fn all_items(&self) -> &Vec<T> {
-        &self.all_items
-    }
-
-    pub fn set_all_items(&mut self, items: Vec<T>) {
-        self.all_items = items.clone();
-        self.filter = items;
-    }
-
-    pub fn set_filter(&mut self, items: Vec<T>) {
-        self.filter = items;
-    }
-
-    pub fn remove_at_index(&mut self, index: usize) {
-        if index >= self.all_items.len() {
-            return;
-        }
-
-        self.all_items.remove(index);
-        self.filter = self.all_items.clone();
-    }
-
-    pub fn move_index_to_new_index(&mut self, index: usize, new_index: usize) {
-        if index >= self.all_items.len() || new_index >= self.all_items.len() {
-            return;
-        }
-
-        let item = self.all_items.remove(index);
-        self.all_items.insert(new_index, item);
-
-        self.filter = self.all_items.clone();
-    }
+#[derive(Default)]
+pub enum AppState {
+    #[default]
+    Normal,
+    Popup(Vec<Popup>),
+    Help,
+    ConnectPopup(usize),
+    Focus,
 }
 
 impl App {
@@ -231,15 +172,9 @@ impl App {
         let mut notification_tick_interval = time::interval(Duration::from_millis(2000));
         let mut receiver = self.broadcast.subscribe();
         let mut event_stream = EventStream::new();
-        let (image_tx, mut image_rx) =
-            tokio::sync::mpsc::channel::<Option<(StatefulProtocol, f32)>>(1);
 
-        if let Some(image_url) = self.current_image_url.as_ref()
-            && !self.disable_tui_album_cover
-        {
-            let image = fetch_image(&self.picker, image_url, &self.http_client).await;
-            self.now_playing.image = image;
-        };
+        let tracklist = self.tracklist.borrow().clone();
+        self.now_playing = create_now_playing_state(&tracklist, self.now_playing.status);
 
         while !self.exit {
             tokio::select! {
@@ -259,36 +194,24 @@ impl App {
 
                 Ok(_) = self.tracklist.changed() => {
                     let tracklist = self.tracklist.borrow_and_update().clone();
-                    self.queue.set_items(tracklist
-                        .queue()
-                        .into_iter()
-                        .map(|x| x.track.clone())
-                        .collect());
-                    let status = self.now_playing.status;
-                    let (mut new_state, image_url) = get_current_state_without_image(&tracklist, status);
 
-                    if image_url == self.current_image_url {
-                        new_state.image = self.now_playing.image.take();
-                    } else if !self.disable_tui_album_cover {
-                        if let Some(url) = image_url.clone() {
-                            new_state.image = self.now_playing.image.take();
-                            let tx = image_tx.clone();
-                            let picker = self.picker.clone();
-                            let http_client = self.http_client.clone();
-                            tokio::spawn(async move {
-                                let result = fetch_image(&picker, &url, &http_client).await;
-                                let _ = tx.send(result).await;
-                            });
-                        }
-                        self.current_image_url = image_url;
-                    }
+                    self.queue.set_items(
+                        tracklist
+                            .queue()
+                            .into_iter()
+                            .map(|item| item.track.clone())
+                            .collect(),
+                    );
+
+                    let status = self.now_playing.status;
+                    let new_state = create_now_playing_state(&tracklist, status);
 
                     self.now_playing = new_state;
                     self.should_draw = true;
                 },
 
-                Some(image) = image_rx.recv() => {
-                    self.now_playing.image = image;
+                Some(message) = self.image_rx.recv() => {
+                    self.image_cache.insert(message);
                     self.should_draw = true;
                 }
 
@@ -343,12 +266,7 @@ impl App {
         }
     }
 
-    async fn push_popup(&mut self, mut popup: Popup) {
-        if let Some(url) = popup.image_url() {
-            let image = fetch_image(&self.picker, &url, &self.http_client).await;
-            popup.set_image(image);
-        }
-
+    async fn push_popup(&mut self, popup: Popup) {
         let mut popups = match std::mem::take(&mut self.app_state) {
             AppState::Popup(popups) => popups,
             _ => Vec::new(),
@@ -741,40 +659,25 @@ impl App {
     }
 }
 
-pub fn get_current_state_without_image(
-    tracklist: &Tracklist,
-    status: Status,
-) -> (NowPlayingState, Option<String>) {
+pub fn create_now_playing_state(tracklist: &Tracklist, status: Status) -> NowPlayingState {
     let track = tracklist.current_track().cloned();
-    let track_image = track.as_ref().and_then(|track| track.image.as_ref());
     let tracklist_type = tracklist.list_type();
 
-    let (title, image) = match tracklist_type {
-        TracklistType::Album(tracklist) => (
-            Some(tracklist.title.clone()),
-            tracklist.image.as_ref().or(track_image).cloned(),
-        ),
-        TracklistType::Playlist(tracklist) => (Some(tracklist.title.clone()), track_image.cloned()),
-        TracklistType::TopTracks(tracklist) => {
-            (Some(tracklist.artist_name.clone()), track_image.cloned())
-        }
-        TracklistType::Tracks => (
-            track.as_ref().and_then(|x| x.album_title.clone()),
-            track_image.cloned(),
-        ),
+    let title = match tracklist_type {
+        TracklistType::Album(tracklist) => Some(tracklist.title.clone()),
+        TracklistType::Playlist(tracklist) => Some(tracklist.title.clone()),
+        TracklistType::TopTracks(tracklist) => Some(tracklist.artist_name.clone()),
+        TracklistType::Tracks => track.as_ref().and_then(|x| x.album_title.clone()),
     };
 
-    let state = NowPlayingState {
-        image: None,
+    NowPlayingState {
         entity_title: title,
         playing_track: track,
         tracklist_length: tracklist.total(),
         status,
         tracklist_position: tracklist.current_position(),
         duration_ms: 0,
-    };
-
-    (state, image)
+    }
 }
 
 pub fn build_favorite_ids(favorite_state: &FavoritesState) -> FavoriteIds {

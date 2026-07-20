@@ -1,7 +1,5 @@
-use image::load_from_memory;
 use player_module::notification::Notification;
 use ratatui::{layout::Flex, prelude::*, widgets::*};
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use tui_input::Input;
 
 use crate::{
@@ -36,8 +34,9 @@ impl App {
                 focus::render(
                     frame,
                     area,
-                    &mut self.now_playing,
+                    &self.now_playing,
                     self.disable_tui_album_cover,
+                    &mut self.image_cache,
                 );
             }
         }
@@ -78,7 +77,13 @@ impl App {
         frame.render_widget(tabs, chunks[0]);
 
         if self.now_playing.playing_track.is_some() {
-            now_playing::render(frame, chunks[2], &mut self.now_playing, hide_album_cover);
+            now_playing::render(
+                frame,
+                chunks[2],
+                &self.now_playing,
+                hide_album_cover,
+                &mut self.image_cache,
+            );
         }
 
         let tab_content_area = if self.now_playing.playing_track.is_some() {
@@ -90,18 +95,29 @@ impl App {
         let favorite_ids = &self.favorite_ids;
 
         match self.current_screen {
-            Tab::Favorites => self.favorites.render(frame, tab_content_area),
-            Tab::Search => self.search.render(frame, tab_content_area, favorite_ids),
+            Tab::Favorites => self
+                .favorites
+                .render(frame, tab_content_area, &mut self.image_cache),
+            Tab::Search => {
+                self.search
+                    .render(frame, tab_content_area, favorite_ids, &mut self.image_cache)
+            }
             Tab::Queue => self.queue.render(frame, tab_content_area, favorite_ids),
-            Tab::Discover => self.discover.render(frame, tab_content_area, favorite_ids),
-            Tab::Genres => self.genres.render(frame, tab_content_area, favorite_ids),
+            Tab::Discover => {
+                self.discover
+                    .render(frame, tab_content_area, favorite_ids, &mut self.image_cache)
+            }
+            Tab::Genres => {
+                self.genres
+                    .render(frame, tab_content_area, favorite_ids, &mut self.image_cache)
+            }
             Tab::Preferences => self.preferences.render(frame, tab_content_area),
         }
 
         if let AppState::Popup(popups) = &mut self.app_state
             && let Some(popup) = popups.last_mut()
         {
-            popup.render(frame, favorite_ids);
+            popup.render(frame, favorite_ids, &mut self.image_cache);
         }
     }
 
@@ -469,22 +485,4 @@ pub fn format_seconds(seconds: u32) -> String {
     let minutes = seconds / 60;
     let seconds = seconds % 60;
     format!("{minutes:02}:{seconds:02}")
-}
-
-pub async fn fetch_image(
-    picker: &Picker,
-    image_url: &str,
-    http_client: &reqwest::Client,
-) -> Option<(StatefulProtocol, f32)> {
-    let response = http_client.get(image_url).send().await.ok()?;
-    let img_bytes = response.bytes().await.ok()?;
-    let picker = picker.clone();
-
-    tokio::task::spawn_blocking(move || {
-        let image = load_from_memory(&img_bytes).ok()?;
-        let ratio = image.width() as f32 / image.height() as f32;
-        Some((picker.new_resize_protocol(image), ratio))
-    })
-    .await
-    .ok()?
 }

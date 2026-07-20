@@ -11,9 +11,10 @@ use ratatui::{
 };
 
 use crate::{
-    app::{FilteredListState, NotificationList, Output},
+    app::{NotificationList, Output},
     popup::{ArtistPopupState, Popup},
     ui::{basic_list_table, mark_as_favorite},
+    widgets::filtered_list::FilteredListState,
 };
 
 #[derive(Default)]
