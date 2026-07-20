@@ -80,6 +80,11 @@ impl Tracklist {
         self.queue.iter().collect()
     }
 
+    pub fn clear_queue(&mut self) {
+        self.queue
+            .retain(|x| x.track.status != TrackStatus::Unplayed);
+    }
+
     pub fn total(&self) -> usize {
         self.queue.len()
     }

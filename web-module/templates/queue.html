@@ -17,14 +17,23 @@
       >
         {{ playing_info.entity_title }}
       </a>
-      <div
-        data-sse="autoplay"
-        hx-trigger="autoplay"
-        hx-get="/queue/autoplay"
-        hx-target="#autoplay"
-        hx-swap="outerHTML"
-      >
-        @defer (queue-auto-play.html; autoplay=autoplay) {}
+      <div class="flex flex-wrap justify-end gap-4">
+        <button
+          hx-post="/api/queue/clear"
+          hx-swap="none"
+          class="btn btn-secondary"
+        >
+          Clear queue
+        </button>
+        <div
+          data-sse="autoplay"
+          hx-trigger="autoplay"
+          hx-get="/queue/autoplay"
+          hx-target="#autoplay"
+          hx-swap="outerHTML"
+        >
+          @defer (queue-auto-play.html; autoplay=autoplay) {}
+        </div>
       </div>
     </div>
 

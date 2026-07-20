@@ -42,6 +42,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/api/track/play/{track_id}", put(play_track))
         .route("/api/track/action", put(track_action))
         .route("/api/queue/reorder", put(reorder_queue))
+        .route("/api/queue/clear", post(clear_queue))
         .route("/api/favorites/albums", get(favorite_albums))
         .route("/api/favorites/artists", get(favorite_artists))
         .route("/api/favorites/playlists", get(favorite_playlists))
@@ -125,6 +126,10 @@ async fn reorder_queue(
     Form(req): Form<ReorderQueueParameters>,
 ) -> impl IntoResponse {
     state.controls.reorder_queue(req.new_order);
+}
+
+async fn clear_queue(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    state.controls.clear_queue();
 }
 
 async fn remove_index_from_queue(

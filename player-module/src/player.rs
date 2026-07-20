@@ -433,12 +433,10 @@ impl Player {
     }
 
     async fn clear_queue(&mut self) -> AppResult<()> {
-        self.pause();
-        self.sink.clear()?;
-        self.next_track_is_queried = false;
-        self.next_track_in_sink_queue = false;
+        let mut tracklist = self.tracklist_rx.borrow().clone();
 
-        let tracklist = Tracklist::default();
+        tracklist.clear_queue();
+
         self.broadcast_tracklist(tracklist).await?;
         Ok(())
     }

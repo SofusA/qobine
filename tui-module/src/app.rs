@@ -380,6 +380,10 @@ impl App {
                     self.app_state = AppState::Help;
                     self.should_draw = true;
                 }
+                KeyCode::Char('X') => {
+                    self.controls.clear_queue();
+                    self.should_draw = true;
+                }
                 KeyCode::Char('c') => {
                     let enable_connect = self
                         .database

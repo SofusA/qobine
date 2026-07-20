@@ -408,7 +408,6 @@ impl ConnectState {
                 }
                 Notification::Disconnected { session_id, reason } => {
                     tracing::info!("Disconnect: {}, {:?}", session_id, reason);
-                    self.controls.clear_queue();
                     self.connected = false;
                 }
                 Notification::SessionClosed { device_uuid } => {
