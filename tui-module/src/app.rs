@@ -60,6 +60,7 @@ impl NotificationList {
 pub struct App {
     pub client: Arc<Client>,
     pub picker: Picker,
+    pub http_client: reqwest::Client,
     pub controls: Controls,
     pub database: Arc<Database>,
     pub position: PositionReceiver,
@@ -236,7 +237,7 @@ impl App {
         if let Some(image_url) = self.current_image_url.as_ref()
             && !self.disable_tui_album_cover
         {
-            let image = fetch_image(&self.picker, image_url).await;
+            let image = fetch_image(&self.picker, image_url, &self.http_client).await;
             self.now_playing.image = image;
         };
 
@@ -273,8 +274,9 @@ impl App {
                             new_state.image = self.now_playing.image.take();
                             let tx = image_tx.clone();
                             let picker = self.picker.clone();
+                            let http_client = self.http_client.clone();
                             tokio::spawn(async move {
-                                let result = fetch_image(&picker, &url).await;
+                                let result = fetch_image(&picker, &url, &http_client).await;
                                 let _ = tx.send(result).await;
                             });
                         }
@@ -343,7 +345,7 @@ impl App {
 
     async fn push_popup(&mut self, mut popup: Popup) {
         if let Some(url) = popup.image_url() {
-            let image = fetch_image(&self.picker, &url).await;
+            let image = fetch_image(&self.picker, &url, &self.http_client).await;
             popup.set_image(image);
         }
 

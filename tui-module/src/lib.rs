@@ -67,6 +67,8 @@ pub async fn init(
     let favorites = FavoritesState::new(&client).await?;
     let favorite_ids = build_favorite_ids(&favorites);
 
+    let http_client = reqwest::Client::new();
+
     let mut app = App {
         broadcast,
         notifications: Default::default(),
@@ -99,6 +101,7 @@ pub async fn init(
         connect_active_device,
         set_connect_active_device,
         disconnect_client_config_sender,
+        http_client,
     };
 
     app.update_favorites().await;
