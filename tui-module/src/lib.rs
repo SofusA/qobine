@@ -110,11 +110,11 @@ pub async fn init(
 
     app.update_favorites().await;
 
-    _ = app.run(&mut terminal).await;
+    let result = app.run(&mut terminal).await;
     ratatui::restore();
     let _ = exit_sender.send(true);
 
-    Ok(())
+    Ok(result?)
 }
 
 fn draw_loading_screen<B: Backend>(terminal: &mut Terminal<B>) {

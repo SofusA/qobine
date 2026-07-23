@@ -74,6 +74,18 @@ pub enum Error {
     StorageError {
         error: String,
     },
+    #[snafu(display("{message}"))]
+    IoError {
+        message: String,
+    },
+}
+
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::IoError {
+            message: error.to_string(),
+        }
+    }
 }
 
 impl From<sqlx::migrate::MigrateError> for Error {
