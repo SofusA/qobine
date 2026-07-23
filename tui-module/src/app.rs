@@ -25,7 +25,7 @@ use player_module::{
     database::Database,
     notification::{Notification, NotificationBroadcast},
 };
-use ratatui::DefaultTerminal;
+use ratatui::{DefaultTerminal, widgets::Clear};
 use std::{collections::HashSet, io, sync::Arc, time::Instant};
 use tokio::{
     sync::{mpsc, watch},
@@ -139,6 +139,7 @@ pub struct App {
     pub current_screen: Tab,
     pub exit: bool,
     pub should_draw: bool,
+    pub should_clear: bool,
     pub app_state: AppState,
     pub now_playing: NowPlayingState,
     pub favorites: FavoritesState,
@@ -224,6 +225,7 @@ impl App {
                 _ = notification_tick_interval.tick() => {
                     if self.notifications.tick() {
                         self.should_draw = true;
+                        self.should_clear = true;
                     };
                 }
 
@@ -233,6 +235,11 @@ impl App {
                         self.should_draw = true;
                     }
                 }
+            }
+
+            if self.should_clear {
+                terminal.draw(|frame| frame.render_widget(Clear, frame.area()))?;
+                self.should_clear = false;
             }
 
             if self.should_draw {

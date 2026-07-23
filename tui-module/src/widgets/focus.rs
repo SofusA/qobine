@@ -13,11 +13,11 @@ const CHAR_HEIGHT: u16 = 2;
 
 pub fn render(
     frame: &mut Frame,
-    area: Rect,
     state: &NowPlayingState,
     disable_tui_album_cover: bool,
     image_cache: &mut ImageManager,
 ) {
+    let area = frame.area();
     let track = match &state.playing_track {
         Some(track) => track,
         None => return,

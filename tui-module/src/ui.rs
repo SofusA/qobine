@@ -32,7 +32,6 @@ pub fn album_cover_area(area: Rect) -> Option<Rect> {
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
-        let area = frame.area();
         let favorite_ids = &self.favorite_ids;
 
         match &mut self.app_state {
@@ -51,7 +50,6 @@ impl App {
             AppState::Focus => {
                 focus::render(
                     frame,
-                    area,
                     &self.now_playing,
                     self.disable_tui_album_cover,
                     &mut self.image_cache,
@@ -64,7 +62,7 @@ impl App {
             }
         }
 
-        self.render_notifications(frame, area);
+        self.render_notifications(frame);
     }
 
     fn render_inner(&mut self, frame: &mut Frame) {
@@ -138,7 +136,8 @@ impl App {
         }
     }
 
-    fn render_notifications(&self, frame: &mut Frame, area: Rect) {
+    fn render_notifications(&self, frame: &mut Frame) {
+        let area = frame.area();
         let notifications: Vec<_> = self.notifications.notifications();
 
         if notifications.is_empty() {
