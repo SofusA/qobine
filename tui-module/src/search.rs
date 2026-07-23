@@ -13,7 +13,7 @@ use crate::{
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
-        album_list::AlbumList,
+        album_grid::AlbumGrid,
         artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
@@ -31,7 +31,7 @@ pub enum SearchFocus {
 #[derive(Default)]
 pub struct SearchState {
     filter: Input,
-    albums: AlbumList,
+    albums: AlbumGrid,
     artists: ArtistList,
     playlists: PlaylistList,
     tracks: TrackList,
@@ -146,7 +146,7 @@ impl SearchState {
                         self.cycle_subtab();
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                    KeyCode::Enter => {
                         self.focus = SearchFocus::Content;
                         Ok(Output::Consumed)
                     }
@@ -157,7 +157,7 @@ impl SearchState {
                         self.focus_editing();
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Left | KeyCode::Char('h') => {
+                    KeyCode::Esc => {
                         self.focus = SearchFocus::Sidebar;
                         Ok(Output::Consumed)
                     }

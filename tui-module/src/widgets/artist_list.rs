@@ -55,7 +55,7 @@ impl ArtistList {
         self.items.set_filter(items);
     }
 
-    pub fn all_items(&self) -> &Vec<Artist> {
+    pub fn all_items(&self) -> &[Artist] {
         self.items.all_items()
     }
 

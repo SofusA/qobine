@@ -57,7 +57,7 @@ impl TrackList {
         table.render(area, buf, &mut self.items.state);
     }
 
-    pub fn all_items(&self) -> &Vec<Track> {
+    pub fn all_items(&self) -> &[Track] {
         self.items.all_items()
     }
 
@@ -93,7 +93,7 @@ impl TrackList {
         self.items.move_index_to_new_index(index, new_index);
     }
 
-    pub fn filter(&self) -> &Vec<Track> {
+    pub fn filter(&self) -> &[Track] {
         self.items.filter()
     }
 
@@ -181,7 +181,7 @@ impl TrackList {
             }
 
             KeyCode::Char('S') => {
-                let tracks = self.filter().clone();
+                let tracks = self.filter();
                 controls.play_tracks(tracks, true, 0);
                 Ok(Output::Consumed)
             }
@@ -208,7 +208,7 @@ impl TrackList {
 
                 match event_type {
                     TrackListEvent::Track => {
-                        controls.play_tracks(self.items.filter().to_vec(), false, index);
+                        controls.play_tracks(self.items.filter(), false, index);
                     }
                     TrackListEvent::Album(id) => controls.play_album(&id, index),
                     TrackListEvent::Playlist(id, shuffle) => {

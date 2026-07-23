@@ -13,6 +13,23 @@ pub const HIGHLIGHT_TEXT_STYLE: Style = Style::new().blue();
 pub const SELECTED_STYLE: Style = Style::new().fg(Color::Cyan);
 pub const COLUMN_SPACING: u16 = 2;
 
+pub const ALBUM_COVER_WIDTH: u16 = 20;
+pub const ALBUM_COVER_HEIGHT: u16 = 9;
+pub const ALBUM_COVER_GAP: u16 = 2;
+
+pub fn album_cover_area(area: Rect) -> Option<Rect> {
+    if area.width < ALBUM_COVER_WIDTH || area.height < ALBUM_COVER_HEIGHT {
+        return None;
+    }
+
+    Some(Rect::new(
+        area.x,
+        area.y,
+        ALBUM_COVER_WIDTH,
+        ALBUM_COVER_HEIGHT,
+    ))
+}
+
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
@@ -53,7 +70,7 @@ impl App {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(1),
-                Constraint::Length(10),
+                Constraint::Length(11),
             ])
             .split(area);
 

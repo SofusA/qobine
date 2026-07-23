@@ -15,8 +15,8 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        HIGHLIGHT_STYLE, block, center, centered_rect_fixed, format_seconds, mark_as_favorite,
-        render_input, tab_bar,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_STYLE, block, center,
+        centered_rect_fixed, format_seconds, mark_as_favorite, render_input, tab_bar,
     },
     widgets::{
         album_list::AlbumList,
@@ -509,7 +509,7 @@ impl Popup {
             Popup::Album(album) => {
                 let visible_rows = (album.current_row_count() + 1).min(15) as u16;
 
-                let header_height: u16 = 6;
+                let header_height: u16 = ALBUM_COVER_HEIGHT + 1;
                 let tabs_height: u16 = 2;
                 let border_height: u16 = 2;
                 let min_height: u16 = 4;
@@ -541,12 +541,17 @@ impl Popup {
 
                 let image = image_cache.get_mut(&album.image_url);
 
-                let image_width = image
-                    .as_ref()
-                    .map(|image| (image.ratio * (header_height * 2) as f32) as u16)
-                    .unwrap_or(0);
+                let can_render_cover = image.is_some()
+                    && chunks[0].width >= ALBUM_COVER_WIDTH.saturating_add(2)
+                    && chunks[0].height >= ALBUM_COVER_HEIGHT;
 
-                let gap = if image_width > 0 { 2 } else { 0 };
+                let image_width = if can_render_cover {
+                    ALBUM_COVER_WIDTH
+                } else {
+                    0
+                };
+
+                let gap = if can_render_cover { ALBUM_COVER_GAP } else { 0 };
 
                 let header = Layout::default()
                     .direction(Direction::Horizontal)
@@ -557,8 +562,21 @@ impl Popup {
                     ])
                     .split(chunks[0]);
 
-                if let Some(AppImage { protocol, ratio: _ }) = image {
-                    frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
+                if can_render_cover {
+                    let image_area = Rect::new(
+                        header[0].x,
+                        header[0].y + header[0].height.saturating_sub(ALBUM_COVER_HEIGHT) / 2,
+                        ALBUM_COVER_WIDTH,
+                        ALBUM_COVER_HEIGHT,
+                    );
+
+                    if let Some(AppImage { protocol, .. }) = image {
+                        frame.render_stateful_widget(
+                            StatefulImage::default(),
+                            image_area,
+                            protocol,
+                        );
+                    }
                 }
 
                 let [title, artist, misc] = album.album_detail_lines(

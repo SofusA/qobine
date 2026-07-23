@@ -1,6 +1,9 @@
 use crate::{
     image_cache::{AppImage, ImageManager},
-    ui::{HIGHLIGHT_TEXT_STYLE, block, format_mseconds, format_seconds},
+    ui::{
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_TEXT_STYLE,
+        album_cover_area, block, format_mseconds, format_seconds,
+    },
 };
 use controls_module::{Status, models::Track};
 use ratatui::{prelude::*, widgets::*};
@@ -24,45 +27,55 @@ pub fn render(
     image_cache: &mut ImageManager,
 ) {
     let track = match &state.playing_track {
-        Some(t) => t,
+        Some(track) => track,
         None => return,
     };
 
-    let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
-
     let block = block(Some(get_status(state.status)));
-
-    let length = image
-        .as_ref()
-        .map(|image| (image.ratio * (area.height * 2 - 1) as f32) as u16)
-        .unwrap_or(0);
-
-    let chunks = if disable_tui_album_cover || image.is_none() {
-        vec![block.inner(area)]
-    } else {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(length), Constraint::Min(1)])
-            .split(block.inner(area))
-            .to_vec()
-    };
+    let inner = block.inner(area);
 
     frame.render_widget(block, area);
 
-    if let Some(AppImage { protocol, ratio: _ }) = image
-        && !disable_tui_album_cover
-    {
-        frame.render_stateful_widget(StatefulImage::default(), chunks[0], protocol);
-    }
+    let image = track
+        .image
+        .as_ref()
+        .and_then(|key| image_cache.get_mut(key));
+
+    let can_render_cover = !disable_tui_album_cover
+        && image.is_some()
+        && inner.height >= ALBUM_COVER_HEIGHT
+        && inner.width
+            >= ALBUM_COVER_WIDTH
+                .saturating_add(ALBUM_COVER_GAP)
+                .saturating_add(1);
+
+    let info_area = if can_render_cover {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(ALBUM_COVER_WIDTH),
+                Constraint::Length(ALBUM_COVER_GAP),
+                Constraint::Min(1),
+            ])
+            .split(inner);
+
+        if let Some(image_area) = album_cover_area(chunks[0])
+            && let Some(AppImage { protocol, .. }) = image
+        {
+            frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
+        }
+
+        chunks[2]
+    } else {
+        inner
+    };
 
     let info_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(*chunks.last().unwrap());
+        .split(info_area);
 
-    let mut lines = vec![];
-
-    lines.push(Line::from(track.title.as_str()).bold());
+    let mut lines = vec![Line::from(track.title.as_str()).bold()];
 
     if let Some(artist) = &track.artist_name {
         lines.push(Line::from(artist.as_str()));
@@ -75,7 +88,7 @@ pub fn render(
     lines.push(Line::from(format!(
         "{} of {}",
         state.tracklist_position + 1,
-        state.tracklist_length
+        state.tracklist_length,
     )));
 
     render_progress(frame, info_chunks[1], state.duration_ms, track);

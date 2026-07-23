@@ -138,9 +138,9 @@ impl Controls {
         self.send(ControlCommand::Track { id });
     }
 
-    pub fn play_tracks(&self, tracks: Vec<Track>, shuffle: bool, index: usize) {
+    pub fn play_tracks(&self, tracks: &[Track], shuffle: bool, index: usize) {
         self.send(ControlCommand::Tracks {
-            tracks,
+            tracks: tracks.to_vec(),
             shuffle,
             index,
         });

@@ -15,7 +15,7 @@ use crate::ui::sidebar;
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::{album_list::AlbumList, playlist_list::PlaylistList},
+    widgets::{album_grid::AlbumGrid, playlist_list::PlaylistList},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,7 +26,7 @@ enum DiscoverFocus {
 }
 
 pub struct DiscoverState {
-    featured_albums: Vec<(String, AlbumList)>,
+    featured_albums: Vec<(String, AlbumGrid)>,
     featured_playlists: Vec<(String, PlaylistList)>,
     selected_sub_tab: usize,
     focus: DiscoverFocus,
@@ -39,27 +39,27 @@ impl DiscoverState {
         let featured_albums = vec![
             (
                 "New releases".to_string(),
-                AlbumList::new(discover.new_releases),
+                AlbumGrid::new(discover.new_releases),
             ),
             (
                 "Qobuzissime".to_string(),
-                AlbumList::new(discover.qobuzissims),
+                AlbumGrid::new(discover.qobuzissims),
             ),
             (
                 "Essential Discography".to_string(),
-                AlbumList::new(discover.ideal_discography),
+                AlbumGrid::new(discover.ideal_discography),
             ),
             (
                 "Album of the week".to_string(),
-                AlbumList::new(discover.album_of_the_week),
+                AlbumGrid::new(discover.album_of_the_week),
             ),
             (
                 "Press Accolades".to_string(),
-                AlbumList::new(discover.press_awards),
+                AlbumGrid::new(discover.press_awards),
             ),
             (
                 "Most streamed".to_string(),
-                AlbumList::new(discover.most_streamed),
+                AlbumGrid::new(discover.most_streamed),
             ),
         ];
 
@@ -157,14 +157,14 @@ impl DiscoverState {
                         self.cycle_subtab();
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                    KeyCode::Enter => {
                         self.focus = DiscoverFocus::Content;
                         Ok(Output::Consumed)
                     }
                     _ => Ok(Output::NotConsumed),
                 },
                 DiscoverFocus::Content => match key_event.code {
-                    KeyCode::Left | KeyCode::Char('h') => {
+                    KeyCode::Esc => {
                         self.focus = DiscoverFocus::Sidebar;
                         Ok(Output::Consumed)
                     }
@@ -200,7 +200,7 @@ impl DiscoverState {
         Ok(Output::NotConsumed)
     }
 
-    fn selected_album_mut(&mut self) -> Option<&mut (String, AlbumList)> {
+    fn selected_album_mut(&mut self) -> Option<&mut (String, AlbumGrid)> {
         self.featured_albums.get_mut(self.selected_sub_tab)
     }
 

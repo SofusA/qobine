@@ -47,7 +47,7 @@ async fn tracks_partial(State(state): State<Arc<AppState>>) -> ResponseResult {
 
 async fn shuffle_favorite_tracks(State(state): State<Arc<AppState>>) -> ResponseResult {
     let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
-    state.controls.play_tracks(favorites.tracks, true, 0);
+    state.controls.play_tracks(&favorites.tracks, true, 0);
 
     Ok(().into_response())
 }
@@ -59,7 +59,7 @@ async fn play_favorite_track(
     let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
     state
         .controls
-        .play_tracks(favorites.tracks, false, track_index);
+        .play_tracks(&favorites.tracks, false, track_index);
 
     Ok(().into_response())
 }

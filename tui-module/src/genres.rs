@@ -19,7 +19,7 @@ use crate::{
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::{album_list::AlbumList, playlist_list::PlaylistList},
+    widgets::{album_grid::AlbumGrid, playlist_list::PlaylistList},
 };
 
 pub struct GenresState {
@@ -33,7 +33,7 @@ pub struct GenresState {
 struct GenreItem {
     id: u32,
     name: String,
-    albums: Vec<(String, AlbumList)>,
+    albums: Vec<(String, AlbumGrid)>,
     playlists: Vec<(String, PlaylistList)>,
 }
 
@@ -93,27 +93,27 @@ impl GenresState {
         let albums = vec![
             (
                 "New releases".to_string(),
-                AlbumList::new(discover.new_releases),
+                AlbumGrid::new(discover.new_releases),
             ),
             (
                 "Qobuzissime".to_string(),
-                AlbumList::new(discover.qobuzissims),
+                AlbumGrid::new(discover.qobuzissims),
             ),
             (
                 "Essential Discography".to_string(),
-                AlbumList::new(discover.ideal_discography),
+                AlbumGrid::new(discover.ideal_discography),
             ),
             (
                 "Album of the week".to_string(),
-                AlbumList::new(discover.album_of_the_week),
+                AlbumGrid::new(discover.album_of_the_week),
             ),
             (
                 "Press Accolades".to_string(),
-                AlbumList::new(discover.press_awards),
+                AlbumGrid::new(discover.press_awards),
             ),
             (
                 "Most streamed".to_string(),
-                AlbumList::new(discover.most_streamed),
+                AlbumGrid::new(discover.most_streamed),
             ),
         ];
 
@@ -364,7 +364,7 @@ impl GenresState {
 
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                    KeyCode::Enter => {
                         self.focus = GenresFocus::Content;
 
                         Ok(Output::Consumed)
@@ -372,7 +372,7 @@ impl GenresState {
                     _ => Ok(Output::NotConsumed),
                 },
                 GenresFocus::Content => match code {
-                    KeyCode::Left | KeyCode::Char('h') => {
+                    KeyCode::Esc => {
                         self.focus = GenresFocus::Sidebar;
 
                         Ok(Output::Consumed)
@@ -469,7 +469,7 @@ impl GenresState {
 }
 
 enum Selected<'a> {
-    Album(&'a mut AlbumList),
+    Album(&'a mut AlbumGrid),
     Playlist(&'a mut PlaylistList),
 }
 

@@ -19,11 +19,11 @@ where
         }
     }
 
-    pub fn filter(&self) -> &Vec<T> {
+    pub fn filter(&self) -> &[T] {
         &self.filter
     }
 
-    pub fn all_items(&self) -> &Vec<T> {
+    pub fn all_items(&self) -> &[T] {
         &self.all_items
     }
 

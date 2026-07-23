@@ -50,24 +50,8 @@ impl AlbumList {
         table.render(area, buf, &mut self.items.state);
     }
 
-    pub fn filter(&self) -> &Vec<AlbumSimple> {
+    pub fn filter(&self) -> &[AlbumSimple] {
         self.items.filter()
-    }
-
-    pub fn set_filter(&mut self, items: Vec<AlbumSimple>) {
-        self.items.set_filter(items);
-    }
-
-    pub fn all_items(&self) -> &Vec<AlbumSimple> {
-        self.items.all_items()
-    }
-
-    pub fn set_all_items(&mut self, items: Vec<AlbumSimple>) {
-        let is_empty = items.is_empty();
-        self.items.set_all_items(items);
-        if !is_empty {
-            self.items.state.select(Some(0));
-        }
     }
 
     pub async fn handle_events(

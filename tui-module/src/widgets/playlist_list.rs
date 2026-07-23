@@ -48,7 +48,7 @@ impl PlaylistList {
         self.items.set_filter(items);
     }
 
-    pub fn all_items(&self) -> &Vec<PlaylistSimple> {
+    pub fn all_items(&self) -> &[PlaylistSimple] {
         self.items.all_items()
     }
 

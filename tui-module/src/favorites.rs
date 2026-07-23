@@ -13,7 +13,7 @@ use crate::{
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
-        album_list::AlbumList,
+        album_grid::AlbumGrid,
         artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
@@ -29,7 +29,7 @@ enum FavoritesFocus {
 
 pub struct FavoritesState {
     pub filter: Input,
-    pub albums: AlbumList,
+    pub albums: AlbumGrid,
     pub artists: ArtistList,
     pub playlists: PlaylistList,
     pub tracks: TrackList,
@@ -45,7 +45,7 @@ impl FavoritesState {
         Ok(Self {
             editing: Default::default(),
             filter: Default::default(),
-            albums: AlbumList::new(favorites.albums),
+            albums: AlbumGrid::new(favorites.albums),
             artists: ArtistList::new(favorites.artists),
             playlists: PlaylistList::new(
                 favorites.playlists.into_iter().map(|x| x.into()).collect(),
@@ -142,14 +142,14 @@ impl FavoritesState {
                                 self.cycle_subtab();
                                 Ok(Output::Consumed)
                             }
-                            KeyCode::Right | KeyCode::Char('l') | KeyCode::Enter => {
+                            KeyCode::Enter => {
                                 self.focus = FavoritesFocus::Content;
                                 Ok(Output::Consumed)
                             }
                             _ => Ok(Output::NotConsumed),
                         },
                         FavoritesFocus::Content => match key_event.code {
-                            KeyCode::Left | KeyCode::Char('h') => {
+                            KeyCode::Esc => {
                                 self.focus = FavoritesFocus::Sidebar;
                                 Ok(Output::Consumed)
                             }
