@@ -85,6 +85,7 @@ pub async fn init(
         current_screen: Default::default(),
         exit: Default::default(),
         should_draw: true,
+        should_clear: false,
         app_state: Default::default(),
         disable_tui_album_cover,
         favorites,

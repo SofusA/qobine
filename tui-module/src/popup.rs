@@ -888,26 +888,26 @@ impl Popup {
     ) -> AppResult<Output> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self {
-                Popup::PlaylistInfo(_, _) => Ok(Output::Consumed),
+                Popup::PlaylistInfo(_, _) => Ok(Output::ConsumedAndClear),
                 Popup::TrackInfo(track, _, selected) => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
                         *selected = 1 - *selected;
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Char('I') => open_track_album(track, client).await,
                     KeyCode::Char('G') => open_track_artist(track, client).await,
                     KeyCode::Enter if *selected == 0 => open_track_album(track, client).await,
                     KeyCode::Enter => open_track_artist(track, client).await,
-                    _ => Ok(Output::Consumed),
+                    _ => Ok(Output::ConsumedAndClear),
                 },
                 Popup::Album(album_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         album_state.cycle_subtab_backwards();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         album_state.cycle_subtab();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Char('G') => {
                         let state = ArtistPopupState::new(&album_state.artist, client).await?;
@@ -918,7 +918,7 @@ impl Popup {
                             if let Some(delta) = about_scroll_delta(key_event.code) {
                                 album_state.scroll_about(delta);
                             }
-                            return Ok(Output::Consumed);
+                            return Ok(Output::ConsumedAndClear);
                         }
 
                         if album_state.selected_tab_kind() == Some(AlbumTabKind::GoToArtist) {
@@ -927,7 +927,7 @@ impl Popup {
                                     ArtistPopupState::new(&album_state.artist, client).await?;
                                 return Ok(Output::Popup(Popup::Artist(state)));
                             }
-                            return Ok(Output::Consumed);
+                            return Ok(Output::ConsumedAndClear);
                         }
 
                         let album_id = album_state.id.clone();
@@ -948,26 +948,26 @@ impl Popup {
                                     .handle_events(key_event.code, client, controls, notifications)
                                     .await
                             }
-                            None => Ok(Output::Consumed),
+                            None => Ok(Output::ConsumedAndClear),
                         }
                     }
                 },
                 Popup::Artist(artist_popup_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         artist_popup_state.cycle_subtab_backwards();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
 
                     KeyCode::Right | KeyCode::Char('l') => {
                         artist_popup_state.cycle_subtab();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     _ => {
                         if artist_popup_state.selected_tab_kind() == Some(TabKind::About) {
                             if let Some(delta) = about_scroll_delta(key_event.code) {
                                 artist_popup_state.scroll_about(delta);
                             }
-                            return Ok(Output::Consumed);
+                            return Ok(Output::ConsumedAndClear);
                         }
 
                         let artist_id = artist_popup_state.id;
@@ -1001,14 +1001,14 @@ impl Popup {
                                         .await
                                 }
                             },
-                            None => Ok(Output::Consumed),
+                            None => Ok(Output::ConsumedAndClear),
                         }
                     }
                 },
                 Popup::Playlist(playlist_popup_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
                         playlist_popup_state.shuffle = !playlist_popup_state.shuffle;
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Char('D') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1032,7 +1032,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Char('u') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1063,7 +1063,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Char('d') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1094,7 +1094,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     _ => {
                         playlist_popup_state
@@ -1115,11 +1115,11 @@ impl Popup {
                 Popup::Track(track_popup_state) => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') => {
                         track_popup_state.select_previous();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         track_popup_state.select_next();
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     KeyCode::Enter => {
                         let index = track_popup_state.playlists.selected();
@@ -1134,7 +1134,7 @@ impl Popup {
                             )));
                         }
 
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                     _ => Ok(Output::NotConsumed),
                 },
@@ -1148,7 +1148,7 @@ impl Popup {
                     }
                     _ => {
                         state.name.handle_event(&event);
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
                 },
                 Popup::DeletePlaylist(state) => match key_event.code {
@@ -1162,12 +1162,12 @@ impl Popup {
                     }
                     KeyCode::Left | KeyCode::Right => {
                         state.confirm = !state.confirm;
-                        Ok(Output::Consumed)
+                        Ok(Output::ConsumedAndClear)
                     }
-                    _ => Ok(Output::Consumed),
+                    _ => Ok(Output::ConsumedAndClear),
                 },
             },
-            _ => Ok(Output::Consumed),
+            _ => Ok(Output::ConsumedAndClear),
         }
     }
 }
@@ -1182,7 +1182,7 @@ async fn open_track_artist(track: &Track, client: &Client) -> AppResult<Output> 
         let state = ArtistPopupState::new(&artist, client).await?;
         Ok(Output::Popup(Popup::Artist(state)))
     } else {
-        Ok(Output::Consumed)
+        Ok(Output::ConsumedAndClear)
     }
 }
 
@@ -1193,7 +1193,7 @@ async fn open_track_album(track: &Track, client: &Client) -> AppResult<Output> {
             AlbumPopupState::new(album, client).await,
         )))
     } else {
-        Ok(Output::Consumed)
+        Ok(Output::ConsumedAndClear)
     }
 }
 

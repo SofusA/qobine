@@ -84,6 +84,7 @@ impl FavoriteIds {
 #[allow(clippy::large_enum_variant)]
 pub enum Output {
     Consumed,
+    ConsumedAndClear,
     NotConsumed,
     UpdateFavorites,
     Popup(Popup),
@@ -139,6 +140,7 @@ pub struct App {
     pub current_screen: Tab,
     pub exit: bool,
     pub should_draw: bool,
+    pub should_clear: bool,
     pub app_state: AppState,
     pub now_playing: NowPlayingState,
     pub favorites: FavoritesState,
@@ -235,6 +237,11 @@ impl App {
                 }
             }
 
+            if self.should_clear {
+                terminal.clear()?;
+                self.should_clear = false;
+            }
+
             if self.should_draw {
                 terminal.draw(|frame| self.render(frame))?;
                 self.should_draw = false;
@@ -290,6 +297,10 @@ impl App {
         match output {
             Output::Consumed => {
                 self.should_draw = true;
+            }
+            Output::ConsumedAndClear => {
+                self.should_draw = true;
+                self.should_clear = true;
             }
             Output::UpdateFavorites => {
                 self.update_favorites().await;
@@ -416,6 +427,7 @@ impl App {
                     }
                     self.update_favorites().await;
                     self.should_draw = true;
+                    self.should_clear = true;
                 }
             }
             Output::AddTrackToPlaylistPopup(track) => {
@@ -464,6 +476,7 @@ impl App {
                     }
                 };
                 self.should_draw = true;
+                self.should_clear = true;
             }
         }
     }
@@ -528,6 +541,7 @@ impl App {
                                 self.app_state = AppState::Normal;
                             }
                             self.should_draw = true;
+                            self.should_clear = true;
                             return Ok(());
                         }
 
@@ -553,6 +567,7 @@ impl App {
                         self.handle_output(key_event.code, outcome_opt).await;
 
                         self.should_draw = true;
+                        self.should_clear = true;
                         return Ok(());
                     }
                     AppState::Normal => {}
