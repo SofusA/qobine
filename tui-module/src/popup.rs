@@ -16,7 +16,7 @@ use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_STYLE, block, center,
-        centered_rect_fixed, format_seconds, mark_as_favorite, render_input, tab_bar,
+        format_seconds, mark_as_favorite, render_input, tab_bar,
     },
     widgets::{
         album_list::AlbumList,
@@ -169,19 +169,6 @@ impl ArtistPopupState {
             }
             TabKind::Similar => Some(SelectedArtistPopupSubtabMut::Similar(&mut self.similar)),
             TabKind::About => None,
-        }
-    }
-
-    fn current_row_count(&self) -> usize {
-        match self.selected_tab_kind() {
-            Some(TabKind::Albums) => self.albums.filter().len(),
-            Some(TabKind::TopTracks) => self.top_tracks.filter().len(),
-            Some(TabKind::Singles) => self.singles.filter().len(),
-            Some(TabKind::Live) => self.live.filter().len(),
-            Some(TabKind::Compilations) => self.compilations.filter().len(),
-            Some(TabKind::Similar) => self.similar.all_items().len(),
-            Some(TabKind::About) => 12,
-            None => 0,
         }
     }
 
@@ -380,16 +367,6 @@ impl AlbumPopupState {
         }
     }
 
-    fn current_row_count(&self) -> usize {
-        match self.selected_tab_kind() {
-            Some(AlbumTabKind::Tracks) => self.tracks.filter().len(),
-            Some(AlbumTabKind::Similar) => self.similar.filter().len(),
-            Some(AlbumTabKind::About) => 12,
-            Some(AlbumTabKind::GoToArtist) => 0,
-            None => 0,
-        }
-    }
-
     fn tabs(&self) -> Vec<&'static str> {
         vec![
             Tab {
@@ -505,29 +482,32 @@ impl Popup {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
+        let screen = frame.area();
+
+        let areas = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // "<- back"
+                Constraint::Min(1),    // Popup content
+            ])
+            .split(screen);
+
+        let back_area = areas[0];
+        let popup_area = areas[1];
+
+        frame.render_widget(Clear, screen);
+        frame.render_widget(Paragraph::new("<- back"), back_area);
+
         match self {
             Popup::Album(album) => {
-                let visible_rows = (album.current_row_count() + 1).min(15) as u16;
-
-                let header_height: u16 = ALBUM_COVER_HEIGHT + 1;
-                let tabs_height: u16 = 2;
-                let border_height: u16 = 2;
-                let min_height: u16 = 4;
-
-                let popup_height = (visible_rows + border_height + tabs_height + header_height)
-                    .clamp(min_height, frame.area().height.saturating_sub(2));
-
-                let popup_width = (frame.area().width * 75 / 100).max(30);
-
-                let area = centered_rect_fixed(popup_width, popup_height, frame.area());
+                let area = popup_area;
+                let header_height = ALBUM_COVER_HEIGHT + 1;
+                let tabs_height = 2;
 
                 let outer_block = block(Some(&album.title));
-
                 let tabs = tab_bar(album.tabs(), album.selected_sub_tab);
 
-                frame.render_widget(Clear, area);
                 frame.render_widget(&outer_block, area);
-
                 let inner = outer_block.inner(area);
 
                 let chunks = Layout::default()
@@ -659,28 +639,16 @@ impl Popup {
                     }
                 }
             }
+
             Popup::Artist(artist) => {
-                let visible_rows = (artist.current_row_count() + 1).min(15) as u16;
-
-                let header_height: u16 = 6;
-                let tabs_height: u16 = 2;
-                let border_height: u16 = 2;
-                let min_height: u16 = 4;
-
-                let popup_height = (visible_rows + border_height + tabs_height + header_height)
-                    .clamp(min_height, frame.area().height.saturating_sub(2));
-
-                let popup_width = (frame.area().width * 75 / 100).max(30);
-
-                let area = centered_rect_fixed(popup_width, popup_height, frame.area());
+                let area = popup_area;
+                let header_height = 6;
+                let tabs_height = 2;
 
                 let outer_block = block(Some(&artist.artist_name));
-
                 let tabs = tab_bar(artist.tabs(), artist.selected_sub_tab);
 
-                frame.render_widget(Clear, area);
                 frame.render_widget(&outer_block, area);
-
                 let inner = outer_block.inner(area);
 
                 let chunks = Layout::default()
@@ -781,29 +749,18 @@ impl Popup {
                     }
                 }
             }
+
             Popup::Playlist(playlist_state) => {
-                let visible_rows = playlist_state.tracks.filter().len().min(15) as u16;
-
-                let inner_content_height = visible_rows + 3;
-                let block_border_height = 2;
-
-                let popup_height = (inner_content_height + block_border_height)
-                    .clamp(4, frame.area().height.saturating_sub(2));
-
-                let popup_width = (frame.area().width * 75 / 100).max(30);
-
-                let area = centered_rect_fixed(popup_width, popup_height, frame.area());
+                let area = popup_area;
 
                 let buttons = tab_bar(
                     ["Play", "Shuffle"].into(),
-                    if playlist_state.shuffle { 1 } else { 0 },
+                    usize::from(playlist_state.shuffle),
                 );
 
                 let block = block(Some(&playlist_state.title));
-
-                frame.render_widget(Clear, area);
-
                 let inner = block.inner(area);
+
                 frame.render_widget(block, area);
 
                 let chunks = Layout::default()
@@ -822,19 +779,15 @@ impl Popup {
                     true,
                     favorites.tracks(),
                 );
+
                 frame.render_widget(buttons, chunks[2]);
             }
+
             Popup::Track(track_state) => {
-                let area = center(
-                    frame.area(),
-                    Constraint::Percentage(75),
-                    Constraint::Percentage(50),
-                );
+                let area = popup_area;
+                let title = format!("Add {} to playlist", track_state.track.title);
+                let block = block(Some(&title));
 
-                let block_title = format!("Add {} to playlist", track_state.track.title);
-                let block = block(Some(&block_title));
-
-                frame.render_widget(Clear, area);
                 frame.render_widget(&block, area);
                 track_state.playlists.render(
                     block.inner(area),
@@ -843,32 +796,21 @@ impl Popup {
                     favorites.playlists(),
                 );
             }
-            Popup::NewPlaylist(state) => {
-                let area = center(
-                    frame.area(),
-                    Constraint::Percentage(75),
-                    Constraint::Length(3),
-                );
 
-                frame.render_widget(Clear, area);
-                render_input(&state.name, false, area, frame, "Create playlist");
+            Popup::NewPlaylist(state) => {
+                render_input(&state.name, false, popup_area, frame, "Create playlist");
             }
+
             Popup::DeletePlaylist(state) => {
-                let block_title = format!("Delete {}?", state.title);
-                let area = center(
-                    frame.area(),
-                    Constraint::Length(block_title.chars().count() as u16 + 6),
-                    Constraint::Length(3),
-                );
+                let title = format!("Delete {}?", state.title);
 
                 let tabs = tab_bar(
                     ["Delete", "Cancel"].into(),
                     if state.confirm { 0 } else { 1 },
                 )
-                .block(block(Some(&block_title)));
+                .block(block(Some(&title)));
 
-                frame.render_widget(Clear, area);
-                frame.render_widget(tabs, area);
+                frame.render_widget(tabs, popup_area);
             }
             Popup::PlaylistInfo(playlist, image) => {
                 render_playlist_info(frame, playlist, image);
@@ -888,26 +830,26 @@ impl Popup {
     ) -> AppResult<Output> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self {
-                Popup::PlaylistInfo(_, _) => Ok(Output::ConsumedAndClear),
+                Popup::PlaylistInfo(_, _) => Ok(Output::Consumed),
                 Popup::TrackInfo(track, _, selected) => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
                         *selected = 1 - *selected;
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Char('I') => open_track_album(track, client).await,
                     KeyCode::Char('G') => open_track_artist(track, client).await,
                     KeyCode::Enter if *selected == 0 => open_track_album(track, client).await,
                     KeyCode::Enter => open_track_artist(track, client).await,
-                    _ => Ok(Output::ConsumedAndClear),
+                    _ => Ok(Output::Consumed),
                 },
                 Popup::Album(album_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         album_state.cycle_subtab_backwards();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         album_state.cycle_subtab();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Char('G') => {
                         let state = ArtistPopupState::new(&album_state.artist, client).await?;
@@ -918,7 +860,7 @@ impl Popup {
                             if let Some(delta) = about_scroll_delta(key_event.code) {
                                 album_state.scroll_about(delta);
                             }
-                            return Ok(Output::ConsumedAndClear);
+                            return Ok(Output::Consumed);
                         }
 
                         if album_state.selected_tab_kind() == Some(AlbumTabKind::GoToArtist) {
@@ -927,7 +869,7 @@ impl Popup {
                                     ArtistPopupState::new(&album_state.artist, client).await?;
                                 return Ok(Output::Popup(Popup::Artist(state)));
                             }
-                            return Ok(Output::ConsumedAndClear);
+                            return Ok(Output::Consumed);
                         }
 
                         let album_id = album_state.id.clone();
@@ -948,26 +890,26 @@ impl Popup {
                                     .handle_events(key_event.code, client, controls, notifications)
                                     .await
                             }
-                            None => Ok(Output::ConsumedAndClear),
+                            None => Ok(Output::Consumed),
                         }
                     }
                 },
                 Popup::Artist(artist_popup_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') => {
                         artist_popup_state.cycle_subtab_backwards();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
 
                     KeyCode::Right | KeyCode::Char('l') => {
                         artist_popup_state.cycle_subtab();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     _ => {
                         if artist_popup_state.selected_tab_kind() == Some(TabKind::About) {
                             if let Some(delta) = about_scroll_delta(key_event.code) {
                                 artist_popup_state.scroll_about(delta);
                             }
-                            return Ok(Output::ConsumedAndClear);
+                            return Ok(Output::Consumed);
                         }
 
                         let artist_id = artist_popup_state.id;
@@ -1001,14 +943,14 @@ impl Popup {
                                         .await
                                 }
                             },
-                            None => Ok(Output::ConsumedAndClear),
+                            None => Ok(Output::Consumed),
                         }
                     }
                 },
                 Popup::Playlist(playlist_popup_state) => match key_event.code {
                     KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
                         playlist_popup_state.shuffle = !playlist_popup_state.shuffle;
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Char('D') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1032,7 +974,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Char('u') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1063,7 +1005,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Char('d') => {
                         let index = playlist_popup_state.tracks.selected();
@@ -1094,7 +1036,7 @@ impl Popup {
                             }
                         }
 
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     _ => {
                         playlist_popup_state
@@ -1115,11 +1057,11 @@ impl Popup {
                 Popup::Track(track_popup_state) => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') => {
                         track_popup_state.select_previous();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         track_popup_state.select_next();
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     KeyCode::Enter => {
                         let index = track_popup_state.playlists.selected();
@@ -1134,7 +1076,7 @@ impl Popup {
                             )));
                         }
 
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                     _ => Ok(Output::NotConsumed),
                 },
@@ -1148,7 +1090,7 @@ impl Popup {
                     }
                     _ => {
                         state.name.handle_event(&event);
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
                 },
                 Popup::DeletePlaylist(state) => match key_event.code {
@@ -1162,12 +1104,12 @@ impl Popup {
                     }
                     KeyCode::Left | KeyCode::Right => {
                         state.confirm = !state.confirm;
-                        Ok(Output::ConsumedAndClear)
+                        Ok(Output::Consumed)
                     }
-                    _ => Ok(Output::ConsumedAndClear),
+                    _ => Ok(Output::Consumed),
                 },
             },
-            _ => Ok(Output::ConsumedAndClear),
+            _ => Ok(Output::Consumed),
         }
     }
 }
@@ -1182,7 +1124,7 @@ async fn open_track_artist(track: &Track, client: &Client) -> AppResult<Output> 
         let state = ArtistPopupState::new(&artist, client).await?;
         Ok(Output::Popup(Popup::Artist(state)))
     } else {
-        Ok(Output::ConsumedAndClear)
+        Ok(Output::Consumed)
     }
 }
 
@@ -1193,7 +1135,7 @@ async fn open_track_album(track: &Track, client: &Client) -> AppResult<Output> {
             AlbumPopupState::new(album, client).await,
         )))
     } else {
-        Ok(Output::ConsumedAndClear)
+        Ok(Output::Consumed)
     }
 }
 

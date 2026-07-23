@@ -33,9 +33,10 @@ pub fn album_cover_area(area: Rect) -> Option<Rect> {
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let area = frame.area();
+        let favorite_ids = &self.favorite_ids;
 
-        match self.app_state {
-            AppState::Normal | AppState::Popup(_) => {
+        match &mut self.app_state {
+            AppState::Normal => {
                 self.render_inner(frame);
             }
             AppState::Help => {
@@ -45,7 +46,7 @@ impl App {
                 let available_devices: Vec<String> =
                     self.connect_available_devices.borrow().to_vec();
                 let active_device: String = self.connect_active_device.borrow().to_string();
-                render_connect(frame, available_devices, active_device, selected);
+                render_connect(frame, available_devices, active_device, *selected);
             }
             AppState::Focus => {
                 focus::render(
@@ -55,6 +56,12 @@ impl App {
                     self.disable_tui_album_cover,
                     &mut self.image_cache,
                 );
+            }
+            AppState::Popup(popups) => {
+                if let Some(popup) = popups.last_mut() {
+                    popup.render(frame, favorite_ids, &mut self.image_cache);
+                    return;
+                }
             }
         }
 
@@ -130,12 +137,6 @@ impl App {
             }
             Tab::Preferences => self.preferences.render(frame, tab_content_area),
         }
-
-        if let AppState::Popup(popups) = &mut self.app_state
-            && let Some(popup) = popups.last_mut()
-        {
-            popup.render(frame, favorite_ids, &mut self.image_cache);
-        }
     }
 
     fn render_notifications(&self, frame: &mut Frame, area: Rect) {
@@ -200,31 +201,6 @@ pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect 
         .areas(area);
     let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
     area
-}
-
-pub fn centered_rect_fixed(width: u16, height: u16, area: Rect) -> Rect {
-    let w = width.min(area.width);
-    let h = height.min(area.height);
-
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(area.height.saturating_sub(h) / 2),
-            Constraint::Length(h),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let horizontal = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(area.width.saturating_sub(w) / 2),
-            Constraint::Length(w),
-            Constraint::Min(0),
-        ])
-        .split(vertical[1]);
-
-    horizontal[1]
 }
 
 fn render_connect(
