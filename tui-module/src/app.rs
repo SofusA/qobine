@@ -4,7 +4,7 @@ use crate::{
     genres::GenresState,
     image_cache::{ImageLoaded, ImageManager},
     now_playing::NowPlayingState,
-    popup::{AlbumPopupState, ArtistPopupState, Popup, TrackPopupState},
+    popup::{AlbumPopupState, ArtistPopupState, Popup, TrackInfoPopupState, TrackPopupState},
     preferences::PreferencesState,
     queue::QueueState,
     search::SearchState,
@@ -355,7 +355,8 @@ impl App {
                     if let Some(id) = self.now_playing.playing_track.as_ref().map(|t| t.id)
                         && let Ok(track) = self.client.track(id).await
                     {
-                        self.push_popup(Popup::TrackInfo(track, None, 0)).await;
+                        let state = TrackInfoPopupState::new(track);
+                        self.push_popup(Popup::TrackInfo(state)).await;
                     }
                 }
                 KeyCode::Char('q') => {
@@ -443,7 +444,9 @@ impl App {
                     }
                 };
 
-                popups.push(Popup::Track(TrackPopupState::new(track, playlists)));
+                popups.push(Popup::AddTrackToPlaylist(TrackPopupState::new(
+                    track, playlists,
+                )));
 
                 self.app_state = AppState::Popup(popups);
                 self.should_draw = true;

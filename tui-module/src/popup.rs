@@ -15,8 +15,8 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_STYLE, block, center,
-        format_seconds, mark_as_favorite, render_input, sidebar, tab_bar,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds,
+        mark_as_favorite, render_input, sidebar, tab_bar,
     },
     widgets::{
         album_grid::AlbumGrid,
@@ -496,15 +496,56 @@ impl NewPlaylistPopupState {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum TrackTabKind {
+    Info,
+    GoToAlbum,
+    GoToArtist,
+}
+
+pub struct TrackInfoPopupState {
+    track: Track,
+    selected_sub_tab: usize,
+}
+
+impl TrackInfoPopupState {
+    pub fn new(track: Track) -> Self {
+        Self {
+            track,
+            selected_sub_tab: 0,
+        }
+    }
+
+    fn tabs(&self) -> Vec<&'static str> {
+        vec!["Info", "Go to Album", "Go to Artist"]
+    }
+
+    fn selected_tab_kind(&self) -> TrackTabKind {
+        match self.selected_sub_tab {
+            0 => TrackTabKind::Info,
+            1 => TrackTabKind::GoToAlbum,
+            _ => TrackTabKind::GoToArtist,
+        }
+    }
+
+    fn cycle_subtab(&mut self) {
+        self.selected_sub_tab = (self.selected_sub_tab + 1) % self.tabs().len();
+    }
+
+    fn cycle_subtab_backwards(&mut self) {
+        self.selected_sub_tab = (self.selected_sub_tab + self.tabs().len() - 1) % self.tabs().len();
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum Popup {
     Artist(ArtistPopupState),
     Album(AlbumPopupState),
     Playlist(PlaylistPopupState),
-    Track(TrackPopupState),
+    AddTrackToPlaylist(TrackPopupState),
     NewPlaylist(NewPlaylistPopupState),
     DeletePlaylist(DeletePlaylistPopupState),
-    TrackInfo(Track, Option<AppImage>, usize),
+    TrackInfo(TrackInfoPopupState),
 }
 
 impl Popup {
@@ -569,21 +610,8 @@ impl Popup {
                     ])
                     .split(chunks[0]);
 
-                if can_render_cover {
-                    let image_area = Rect::new(
-                        header[0].x,
-                        header[0].y + header[0].height.saturating_sub(ALBUM_COVER_HEIGHT) / 2,
-                        ALBUM_COVER_WIDTH,
-                        ALBUM_COVER_HEIGHT,
-                    );
-
-                    if let Some(AppImage { protocol, .. }) = image {
-                        frame.render_stateful_widget(
-                            StatefulImage::default(),
-                            image_area,
-                            protocol,
-                        );
-                    }
+                if can_render_cover && let Some(AppImage { protocol, .. }) = image {
+                    frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
                 }
 
                 let [title, artist, misc] = album.album_detail_lines(
@@ -873,7 +901,7 @@ impl Popup {
                 frame.render_widget(buttons, chunks[2]);
             }
 
-            Popup::Track(track_state) => {
+            Popup::AddTrackToPlaylist(track_state) => {
                 let area = popup_area;
                 let title = format!("Add {} to playlist", track_state.track.title);
                 let block = block(Some(&title));
@@ -902,8 +930,162 @@ impl Popup {
 
                 frame.render_widget(tabs, popup_area);
             }
-            Popup::TrackInfo(track, image, selected) => {
-                render_track_info(frame, track, *selected, image);
+            Popup::TrackInfo(state) => {
+                let area = popup_area;
+                let track = &state.track;
+                let image = track
+                    .image
+                    .as_ref()
+                    .and_then(|url| image_cache.get_mut(url));
+
+                let header_height = ALBUM_COVER_HEIGHT + 1;
+
+                let outer_block = block(Some("Track Info"));
+
+                frame.render_widget(&outer_block, area);
+
+                let inner = outer_block.inner(area);
+
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Length(header_height), Constraint::Min(1)])
+                    .split(inner);
+
+                let can_render_cover = image.is_some()
+                    && chunks[0].width >= ALBUM_COVER_WIDTH.saturating_add(2)
+                    && chunks[0].height >= ALBUM_COVER_HEIGHT;
+
+                let image_width = if can_render_cover {
+                    ALBUM_COVER_WIDTH
+                } else {
+                    0
+                };
+
+                let gap = if can_render_cover { ALBUM_COVER_GAP } else { 0 };
+
+                let header = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Length(image_width),
+                        Constraint::Length(gap),
+                        Constraint::Min(1),
+                    ])
+                    .split(chunks[0]);
+
+                if can_render_cover && let Some(AppImage { protocol, .. }) = image {
+                    frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
+                }
+
+                let title = Line::from(Span::styled(track.title.clone(), Style::new().bold()));
+
+                let artist_name = track
+                    .artist_name
+                    .clone()
+                    .unwrap_or_else(|| "Unknown artist".to_string());
+
+                let album_title = track
+                    .album_title
+                    .clone()
+                    .unwrap_or_else(|| "Unknown album".to_string());
+
+                let mut meta = vec![Span::styled(
+                    format_seconds(track.duration_seconds),
+                    Style::new().dim(),
+                )];
+
+                if track.hires_available {
+                    meta.push(Span::styled(" · ", Style::new().dim()));
+                    meta.push(Span::styled("󰐵", Style::new().dim()));
+
+                    if let (Some(bit_depth), Some(sampling_rate)) =
+                        (track.bit_depth, track.sampling_rate)
+                    {
+                        meta.push(Span::styled(
+                            format!(" {bit_depth} bit - {sampling_rate}kHz"),
+                            Style::new().dim(),
+                        ));
+                    }
+                }
+
+                if track.explicit {
+                    meta.push(Span::styled(" · ", Style::new().dim()));
+                    meta.push(Span::styled("󰬌", Style::new().dim()));
+                }
+
+                let header_lines = vec![
+                    title,
+                    Line::from(artist_name),
+                    Line::from(album_title),
+                    Line::from(meta),
+                ];
+
+                frame.render_widget(Paragraph::new(header_lines), header[2]);
+
+                let tabs = vec!["Info", "Go to Album", "Go to Artist"];
+
+                let (sidebar_widget, sidebar_width) = sidebar(tabs, true);
+
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
+                    .split(chunks[1]);
+
+                let mut sidebar_state = ListState::default();
+                sidebar_state.select(Some(state.selected_sub_tab));
+
+                frame.render_stateful_widget(sidebar_widget, body[0], &mut sidebar_state);
+
+                let content = body[1];
+
+                match state.selected_sub_tab {
+                    0 => {
+                        let mut lines = vec![];
+
+                        if let Some(release_date) = &track.release_date {
+                            lines.push(Line::from(format!("Released: {release_date}")));
+                        }
+
+                        if let Some(performers) = &track.performers {
+                            if !lines.is_empty() {
+                                lines.push(Line::from(""));
+                            }
+
+                            lines.push(Line::styled("Credits", Style::new().bold()));
+
+                            for credit in performers.split(" - ") {
+                                lines.push(Line::from(credit.trim().to_string()));
+                            }
+                        }
+
+                        if let Some(copyright) = &track.copyright {
+                            if !lines.is_empty() {
+                                lines.push(Line::from(""));
+                            }
+
+                            lines.push(Line::styled("Copyright", Style::new().bold()));
+
+                            lines.push(Line::from(copyright.clone()));
+                        }
+
+                        frame.render_widget(Paragraph::new(lines), content);
+                    }
+
+                    1 => {
+                        frame.render_widget(
+                            Paragraph::new("Press Enter to open album").style(Style::new().dim()),
+                            content,
+                        );
+                    }
+
+                    2 => {
+                        frame.render_widget(
+                            Paragraph::new("Press Enter to open artist").style(Style::new().dim()),
+                            content,
+                        );
+                    }
+
+                    _ => {}
+                }
             }
         };
     }
@@ -917,16 +1099,26 @@ impl Popup {
     ) -> AppResult<Output> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self {
-                Popup::TrackInfo(track, _, selected) => match key_event.code {
-                    KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
-                        *selected = 1 - *selected;
+                Popup::TrackInfo(state) => match key_event.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        state.cycle_subtab_backwards();
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Char('I') => open_track_album(track, client).await,
-                    KeyCode::Char('G') => open_track_artist(track, client).await,
-                    KeyCode::Enter if *selected == 0 => open_track_album(track, client).await,
-                    KeyCode::Enter => open_track_artist(track, client).await,
-                    _ => Ok(Output::Consumed),
+
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        state.cycle_subtab();
+                        Ok(Output::Consumed)
+                    }
+
+                    KeyCode::Enter if state.selected_tab_kind() == TrackTabKind::GoToAlbum => {
+                        open_track_album(&state.track, client).await
+                    }
+
+                    KeyCode::Enter if state.selected_tab_kind() == TrackTabKind::GoToArtist => {
+                        open_track_artist(&state.track, client).await
+                    }
+
+                    _ => Ok(Output::NotConsumed),
                 },
                 Popup::Album(album_state) => match album_state.focus {
                     PopupFocus::Sidebar => match key_event.code {
@@ -1200,7 +1392,7 @@ impl Popup {
                             .await
                     }
                 },
-                Popup::Track(track_popup_state) => match key_event.code {
+                Popup::AddTrackToPlaylist(track_popup_state) => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') => {
                         track_popup_state.select_previous();
                         Ok(Output::Consumed)
@@ -1403,149 +1595,4 @@ fn header_blurb(description: &str, width: usize) -> Line<'static> {
         Span::raw(head),
         Span::styled(hint, Style::new().italic()),
     ])
-}
-
-fn render_track_info(
-    frame: &mut Frame,
-    track: &Track,
-    selected: usize,
-    image: &mut Option<AppImage>,
-) {
-    let title = Line::from(Span::styled(track.title.clone(), Style::new().bold()));
-
-    let artist_name = track
-        .artist_name
-        .clone()
-        .unwrap_or_else(|| "Unknown artist".to_string());
-
-    let album_title = track
-        .album_title
-        .clone()
-        .unwrap_or_else(|| "Unknown album".to_string());
-
-    let mut meta = vec![Span::styled(
-        format_seconds(track.duration_seconds),
-        Style::new().dim(),
-    )];
-
-    if track.hires_available {
-        meta.push(Span::styled(" · ", Style::new().dim()));
-        meta.push(Span::styled("\u{f0435}", Style::new().dim()));
-        if let (Some(bit_depth), Some(sampling_rate)) = (track.bit_depth, track.sampling_rate) {
-            meta.push(Span::styled(
-                format!(" {bit_depth} bit - {sampling_rate}kHz"),
-                Style::new().dim(),
-            ));
-        }
-    }
-
-    if track.explicit {
-        meta.push(Span::styled(" · ", Style::new().dim()));
-        meta.push(Span::styled("\u{f0b0c}", Style::new().dim()));
-    }
-
-    let mut info_lines = vec![
-        title,
-        Line::from(artist_name),
-        Line::from(album_title),
-        Line::from(""),
-        Line::from(meta),
-    ];
-
-    if let Some(release_date) = &track.release_date {
-        info_lines.push(Line::from(format!("Released: {release_date}")).style(Style::new().dim()));
-    }
-
-    if let Some(performers) = &track.performers {
-        info_lines.push(Line::from(""));
-        for credit in performers.split(" - ") {
-            info_lines.push(Line::from(credit.trim().to_string()).style(Style::new().dim()));
-        }
-    }
-
-    if let Some(copyright) = &track.copyright {
-        info_lines.push(Line::from(""));
-        info_lines.push(Line::from(copyright.clone()).style(Style::new().dim()));
-    }
-
-    let info_height = info_lines.len() as u16;
-    let text_width = info_lines
-        .iter()
-        .map(|line| line.width() as u16)
-        .max()
-        .unwrap_or(0);
-
-    let actions_width = ["Go to Album", "Go to Artist"]
-        .iter()
-        .map(|a| a.chars().count() as u16)
-        .max()
-        .unwrap_or(0);
-
-    let cover_height = if image.is_some() {
-        info_height.min(8)
-    } else {
-        0
-    };
-
-    let image_width = image
-        .as_ref()
-        .map(|image| (image.ratio * (cover_height * 2) as f32) as u16)
-        .unwrap_or(0);
-
-    let left_width = image_width.max(actions_width);
-
-    let content_height = info_height.max(cover_height + 3);
-    let total_height = (content_height + 2).min(frame.area().height.saturating_sub(2));
-    let box_width = (left_width + 2 + text_width + 3).min(frame.area().width);
-
-    let area = center(
-        frame.area(),
-        Constraint::Length(box_width),
-        Constraint::Length(total_height),
-    );
-
-    let outer_block = block(Some("Track info"));
-    let inner = outer_block.inner(area);
-
-    frame.render_widget(Clear, area);
-    frame.render_widget(outer_block, area);
-
-    let horizontal = Layout::horizontal([
-        Constraint::Length(left_width),
-        Constraint::Length(2),
-        Constraint::Min(1),
-    ])
-    .split(inner);
-
-    let left = Layout::vertical([
-        Constraint::Length(cover_height),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(0),
-    ])
-    .split(horizontal[0]);
-
-    if let Some(AppImage { protocol, ratio: _ }) = image {
-        let cover = Rect {
-            width: image_width,
-            ..left[0]
-        };
-        frame.render_stateful_widget(StatefulImage::default(), cover, protocol);
-    }
-
-    let album_style = if selected == 0 {
-        HIGHLIGHT_STYLE
-    } else {
-        Style::new().white()
-    };
-    let artist_style = if selected == 1 {
-        HIGHLIGHT_STYLE
-    } else {
-        Style::new().white()
-    };
-    frame.render_widget(Paragraph::new("Go to Album").style(album_style), left[2]);
-    frame.render_widget(Paragraph::new("Go to Artist").style(artist_style), left[3]);
-
-    frame.render_widget(Paragraph::new(Text::from(info_lines)), horizontal[2]);
 }

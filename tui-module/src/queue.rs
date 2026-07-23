@@ -11,7 +11,7 @@ use ratatui::{
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
-    popup::Popup,
+    popup::{Popup, TrackInfoPopupState},
     ui::{basic_list_table, block, mark_explicit_and_hifi},
 };
 
@@ -181,7 +181,8 @@ impl QueueState {
 
                         if let Some(id) = id {
                             let track = client.track(id).await?;
-                            return Ok(Output::Popup(Popup::TrackInfo(track, None, 0)));
+                            let state = TrackInfoPopupState::new(track);
+                            return Ok(Output::Popup(Popup::TrackInfo(state)));
                         }
                         Ok(Output::Consumed)
                     }
