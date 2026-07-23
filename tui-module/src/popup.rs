@@ -851,11 +851,11 @@ impl Popup {
                     && chunks[0].width >= ALBUM_COVER_WIDTH.saturating_add(2)
                     && chunks[0].height >= ALBUM_COVER_HEIGHT;
 
-                let image_width = if can_render_cover {
-                    ALBUM_COVER_WIDTH
-                } else {
-                    0
-                };
+                let image_width = image
+                    .as_ref()
+                    .filter(|_| can_render_cover)
+                    .map(|image| (image.ratio * (ALBUM_COVER_HEIGHT * 2) as f32) as u16)
+                    .unwrap_or(0);
 
                 let gap = if can_render_cover { ALBUM_COVER_GAP } else { 0 };
 
@@ -868,8 +868,17 @@ impl Popup {
                     ])
                     .split(chunks[0]);
 
-                if can_render_cover && let Some(AppImage { protocol, .. }) = image {
-                    frame.render_stateful_widget(StatefulImage::default(), header[0], protocol);
+                if can_render_cover && let Some(AppImage { protocol, ratio }) = image {
+                    let width = (*ratio * (ALBUM_COVER_HEIGHT * 2) as f32) as u16;
+
+                    let image_area = Rect::new(
+                        header[0].x,
+                        header[0].y + header[0].height.saturating_sub(ALBUM_COVER_HEIGHT) / 2,
+                        width,
+                        ALBUM_COVER_HEIGHT,
+                    );
+
+                    frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
                 }
 
                 let info = vec![
