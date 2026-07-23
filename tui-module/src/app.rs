@@ -521,17 +521,8 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
-                    AppState::Popup(popups) => {
-                        if key_event.code == KeyCode::Esc {
-                            _ = popups.pop();
-                            if popups.is_empty() {
-                                self.app_state = AppState::Normal;
-                            }
-                            self.should_draw = true;
-                            return Ok(());
-                        }
-
-                        let outcome_opt = {
+                    AppState::Popup(_) => {
+                        let outcome = {
                             if let AppState::Popup(popups) = &mut self.app_state {
                                 if let Some(popup) = popups.last_mut() {
                                     popup
@@ -550,11 +541,26 @@ impl App {
                             }
                         };
 
-                        self.handle_output(key_event.code, outcome_opt).await;
+                        match outcome {
+                            Ok(Output::NotConsumed) if key_event.code == KeyCode::Esc => {
+                                if let AppState::Popup(popups) = &mut self.app_state {
+                                    popups.pop();
+
+                                    if popups.is_empty() {
+                                        self.app_state = AppState::Normal;
+                                    }
+                                }
+                            }
+
+                            other => {
+                                self.handle_output(key_event.code, other).await;
+                            }
+                        }
 
                         self.should_draw = true;
                         return Ok(());
                     }
+
                     AppState::Normal => {}
                 };
 

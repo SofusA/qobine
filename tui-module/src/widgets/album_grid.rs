@@ -200,6 +200,10 @@ impl AlbumGrid {
         self.items.state.select(Some(next));
     }
 
+    pub fn filter(&self) -> &[AlbumSimple] {
+        self.items.filter()
+    }
+
     pub fn all_items(&self) -> &[AlbumSimple] {
         self.items.all_items()
     }

@@ -60,7 +60,6 @@ impl App {
             AppState::Popup(popups) => {
                 if let Some(popup) = popups.last_mut() {
                     popup.render(frame, favorite_ids, &mut self.image_cache);
-                    return;
                 }
             }
         }

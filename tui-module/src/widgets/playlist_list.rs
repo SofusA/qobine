@@ -167,20 +167,6 @@ impl PlaylistList {
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Char('i') => {
-                let index = self.items.state.selected();
-
-                let id = index
-                    .and_then(|index| self.items.filter().get(index))
-                    .map(|playlist| playlist.id);
-
-                if let Some(id) = id {
-                    let playlist = client.playlist(id).await?;
-                    return Ok(Output::Popup(Popup::PlaylistInfo(playlist, None)));
-                }
-                Ok(Output::Consumed)
-            }
-
             KeyCode::Enter => {
                 let index = self.items.state.selected();
                 let selected = index.and_then(|index| self.items.filter().get(index));
