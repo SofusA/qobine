@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
 };
 use ratatui_image::StatefulImage;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
     app::{NotificationList, Output},
@@ -118,13 +119,6 @@ impl AlbumGrid {
                 Paragraph::new("Loading...").render(image_area, buf);
             }
 
-            let title = mark_explicit_and_hifi(
-                album.title.clone(),
-                album.explicit,
-                album.hires_available,
-                favorites.contains(&album.id),
-            );
-
             let text_area = Rect::new(
                 inner.x,
                 image_area.bottom(),
@@ -132,9 +126,34 @@ impl AlbumGrid {
                 inner.bottom().saturating_sub(image_area.bottom()),
             );
 
+            let is_favorite = favorites.contains(&album.id);
+
+            let marked_title = mark_explicit_and_hifi(
+                album.title.clone(),
+                album.explicit,
+                album.hires_available,
+                is_favorite,
+            );
+
+            let original_title_width = UnicodeWidthStr::width(album.title.as_str());
+            let marker_width = marked_title.width().saturating_sub(original_title_width);
+
+            let available_title_width = usize::from(text_area.width).saturating_sub(marker_width);
+
+            let truncated_title = truncate_to_width(&album.title, available_title_width);
+
+            let title = mark_explicit_and_hifi(
+                truncated_title,
+                album.explicit,
+                album.hires_available,
+                is_favorite,
+            );
+
+            let artist = truncate_to_width(&album.artist.name, usize::from(text_area.width));
+
             Paragraph::new(Text::from(vec![
                 title.patch_style(style.add_modifier(Modifier::BOLD)),
-                Line::from(album.artist.name.clone()),
+                Line::from(artist),
                 Line::from(album.release_year.to_string()).style(Style::default().italic()),
             ]))
             .render(text_area, buf);
@@ -313,4 +332,40 @@ impl AlbumGrid {
             _ => Ok(Output::NotConsumed),
         }
     }
+}
+
+fn truncate_to_width(value: &str, max_width: usize) -> String {
+    if UnicodeWidthStr::width(value) <= max_width {
+        return value.to_owned();
+    }
+
+    if max_width == 0 {
+        return String::new();
+    }
+
+    let ellipsis = "…";
+    let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+
+    if max_width < ellipsis_width {
+        return String::new();
+    }
+
+    let content_width = max_width - ellipsis_width;
+    let mut result = String::new();
+    let mut width = 0;
+
+    for character in value.chars() {
+        let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
+
+        if width + character_width > content_width {
+            break;
+        }
+
+        result.push(character);
+        width += character_width;
+    }
+
+    result.truncate(result.trim_end().len());
+    result.push_str(ellipsis);
+    result
 }

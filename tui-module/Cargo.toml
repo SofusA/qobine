@@ -26,6 +26,7 @@ ratatui.workspace = true
 crossterm.workspace = true
 futures.workspace = true
 ratatui-image.workspace = true
+unicode-width.workspace = true
 tui-big-text.workspace = true
 tui-input.workspace = true
 image.workspace = true

@@ -55,6 +55,7 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 tokio_schedule = "0.3"
 rppal = "0.22"
 ratatui-image = { version = "11", default-features = false, features = ["image-defaults", "crossterm"] }
+unicode-width = "0.2"
 tui-big-text = "0.8"
 tui-input = "0.15"
 image = "0.25"
