@@ -11,7 +11,10 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Text},
-    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
+    widgets::{
+        Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        StatefulWidget, Widget,
+    },
 };
 use ratatui_image::StatefulImage;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -91,8 +94,24 @@ where
             return;
         }
 
-        self.columns = usize::from(area.width / T::CARD_WIDTH);
         let visible_rows = usize::from(area.height / T::CARD_HEIGHT);
+        let item_count = self.items.filter().len();
+
+        // First calculate assuming no scrollbar.
+        let full_columns = usize::from(area.width / T::CARD_WIDTH).max(1);
+        let full_total_rows = item_count.div_ceil(full_columns);
+
+        let show_scrollbar = full_total_rows > visible_rows;
+
+        let grid_area = if show_scrollbar {
+            Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height)
+        } else {
+            area
+        };
+
+        self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
+
+        let total_rows = item_count.div_ceil(self.columns);
 
         self.update_scroll(visible_rows);
 
@@ -108,8 +127,8 @@ where
             let visible_row = absolute_row - self.scroll_row;
 
             let card_area = Rect::new(
-                area.x + column as u16 * T::CARD_WIDTH,
-                area.y + visible_row as u16 * T::CARD_HEIGHT,
+                grid_area.x + column as u16 * T::CARD_WIDTH,
+                grid_area.y + visible_row as u16 * T::CARD_HEIGHT,
                 T::CARD_WIDTH,
                 T::CARD_HEIGHT,
             );
@@ -123,6 +142,20 @@ where
             };
 
             item.render_card(card_area, buf, style, favorites, image_cache);
+        }
+
+        if show_scrollbar {
+            let max_scroll_row = total_rows.saturating_sub(visible_rows);
+
+            let scrollbar_area = Rect::new(area.right().saturating_sub(1), area.y, 1, area.height);
+
+            let mut scrollbar_state = ScrollbarState::new(max_scroll_row).position(self.scroll_row);
+
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .render(scrollbar_area, buf, &mut scrollbar_state);
         }
     }
 
