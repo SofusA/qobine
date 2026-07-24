@@ -87,6 +87,7 @@ pub enum Output {
     NotConsumed,
     UpdateFavorites,
     Popup(Popup),
+    PopPopup,
     PopPopupUpdateFavorites,
     AddTrackToPlaylistPopup(Track),
     AddTrackToPlaylistAndPopPopup((u32, u32)),
@@ -416,6 +417,15 @@ impl App {
             Output::Popup(popup) => {
                 self.push_popup(popup).await;
             }
+            Output::PopPopup => {
+                if let AppState::Popup(popups) = &mut self.app_state {
+                    popups.pop();
+                    if popups.is_empty() {
+                        self.app_state = AppState::Normal;
+                    }
+                    self.should_draw = true;
+                }
+            }
             Output::PopPopupUpdateFavorites => {
                 if let AppState::Popup(popups) = &mut self.app_state {
                     popups.pop();
@@ -551,23 +561,7 @@ impl App {
                             }
                         };
 
-                        match outcome {
-                            Ok(Output::NotConsumed) if key_event.code == KeyCode::Esc => {
-                                if let AppState::Popup(popups) = &mut self.app_state {
-                                    popups.pop();
-
-                                    if popups.is_empty() {
-                                        self.app_state = AppState::Normal;
-                                    }
-                                }
-                            }
-
-                            other => {
-                                self.handle_output(key_event.code, other).await;
-                            }
-                        }
-
-                        self.should_draw = true;
+                        self.handle_output(key_event.code, outcome).await;
                         return Ok(());
                     }
 

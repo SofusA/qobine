@@ -1137,7 +1137,9 @@ impl Popup {
                         open_track_artist(&state.track, client).await
                     }
 
-                    _ => Ok(Output::NotConsumed),
+                    KeyCode::Esc => Ok(Output::PopPopup),
+
+                    _ => Ok(Output::Consumed),
                 },
                 Popup::Album(album_state) => match album_state.focus {
                     PopupFocus::Sidebar => match key_event.code {
@@ -1163,7 +1165,9 @@ impl Popup {
                             Ok(Output::Consumed)
                         }
 
-                        _ => Ok(Output::NotConsumed),
+                        KeyCode::Esc => Ok(Output::PopPopup),
+
+                        _ => Ok(Output::Consumed),
                     },
 
                     PopupFocus::Content => match key_event.code {
@@ -1246,7 +1250,9 @@ impl Popup {
                             Ok(Output::Consumed)
                         }
 
-                        _ => Ok(Output::NotConsumed),
+                        KeyCode::Esc => Ok(Output::PopPopup),
+
+                        _ => Ok(Output::Consumed),
                     },
 
                     PopupFocus::Content => match key_event.code {
@@ -1400,6 +1406,9 @@ impl Popup {
 
                         Ok(Output::Consumed)
                     }
+
+                    KeyCode::Esc => Ok(Output::PopPopup),
+
                     _ => {
                         playlist_popup_state
                             .tracks
@@ -1440,7 +1449,10 @@ impl Popup {
 
                         Ok(Output::Consumed)
                     }
-                    _ => Ok(Output::NotConsumed),
+
+                    KeyCode::Esc => Ok(Output::PopPopup),
+
+                    _ => Ok(Output::Consumed),
                 },
                 Popup::NewPlaylist(state) => match key_event.code {
                     KeyCode::Enter => {
@@ -1450,6 +1462,9 @@ impl Popup {
                             .await?;
                         Ok(Output::PopPopupUpdateFavorites)
                     }
+
+                    KeyCode::Esc => Ok(Output::PopPopup),
+
                     _ => {
                         state.name.handle_event(&event);
                         Ok(Output::Consumed)
@@ -1468,6 +1483,9 @@ impl Popup {
                         state.confirm = !state.confirm;
                         Ok(Output::Consumed)
                     }
+
+                    KeyCode::Esc => Ok(Output::PopPopup),
+
                     _ => Ok(Output::Consumed),
                 },
             },
