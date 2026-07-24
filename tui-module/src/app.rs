@@ -1,5 +1,5 @@
 use crate::{
-    detail_pages::{AddTrackPopup, AlbumPopup, ArtistPopup, Popup, TrackInfoPopup},
+    detail_pages::{AddTrackOverlay, AlbumOverlay, ArtistOverlay, Overlay, TrackInfoOverlay},
     discover::DiscoverState,
     favorites::FavoritesState,
     genres::GenresState,
@@ -86,11 +86,11 @@ pub enum Output {
     Consumed,
     NotConsumed,
     UpdateFavorites,
-    Popup(Popup),
-    PopPopup,
-    PopPopupUpdateFavorites,
-    AddTrackToPlaylistPopup(Track),
-    AddTrackToPlaylistAndPopPopup((u32, u32)),
+    Overlay(Overlay),
+    PopOverlay,
+    PopOverlayUpdateFavorites,
+    AddTrackToPlaylistOverlay(Track),
+    AddTrackToPlaylistAndPopOverlay((u32, u32)),
 }
 
 #[derive(Default, PartialEq)]
@@ -163,9 +163,9 @@ pub struct App {
 pub enum AppState {
     #[default]
     Normal,
-    Popup(Vec<Popup>),
+    Overlay(Vec<Overlay>),
     Help,
-    ConnectPopup(usize),
+    ConnectOverlay(usize),
     Focus,
 }
 
@@ -274,14 +274,14 @@ impl App {
         }
     }
 
-    async fn push_popup(&mut self, popup: Popup) {
+    async fn push_popup(&mut self, popup: Overlay) {
         let mut popups = match std::mem::take(&mut self.app_state) {
-            AppState::Popup(popups) => popups,
+            AppState::Overlay(popups) => popups,
             _ => Vec::new(),
         };
 
         popups.push(popup);
-        self.app_state = AppState::Popup(popups);
+        self.app_state = AppState::Overlay(popups);
         self.should_draw = true;
     }
 
@@ -321,7 +321,7 @@ impl App {
                         .unwrap_or(false);
 
                     if enable_connect {
-                        self.app_state = AppState::ConnectPopup(0);
+                        self.app_state = AppState::ConnectOverlay(0);
                         self.should_draw = true;
                     }
                 }
@@ -333,7 +333,7 @@ impl App {
                         .and_then(|t| t.album_id.clone())
                         && let Ok(album) = self.client.album(&album_id).await
                     {
-                        let popup = Popup::Album(AlbumPopup::new(album, &self.client).await);
+                        let popup = Overlay::Album(AlbumOverlay::new(album, &self.client).await);
                         self.push_popup(popup).await;
                     }
                 }
@@ -347,8 +347,8 @@ impl App {
                             image: None,
                         };
 
-                        if let Ok(state) = ArtistPopup::new(&artist, &self.client).await {
-                            self.push_popup(Popup::Artist(state)).await;
+                        if let Ok(state) = ArtistOverlay::new(&artist, &self.client).await {
+                            self.push_popup(Overlay::Artist(state)).await;
                         }
                     }
                 }
@@ -356,8 +356,8 @@ impl App {
                     if let Some(id) = self.now_playing.playing_track.as_ref().map(|t| t.id)
                         && let Ok(track) = self.client.track(id).await
                     {
-                        let state = TrackInfoPopup::new(track);
-                        self.push_popup(Popup::TrackInfo(state)).await;
+                        let state = TrackInfoOverlay::new(track);
+                        self.push_popup(Overlay::TrackInfo(state)).await;
                     }
                 }
                 KeyCode::Char('q') => {
@@ -414,11 +414,11 @@ impl App {
                 }
                 _ => {}
             },
-            Output::Popup(popup) => {
+            Output::Overlay(popup) => {
                 self.push_popup(popup).await;
             }
-            Output::PopPopup => {
-                if let AppState::Popup(popups) = &mut self.app_state {
+            Output::PopOverlay => {
+                if let AppState::Overlay(popups) = &mut self.app_state {
                     popups.pop();
                     if popups.is_empty() {
                         self.app_state = AppState::Normal;
@@ -426,8 +426,8 @@ impl App {
                     self.should_draw = true;
                 }
             }
-            Output::PopPopupUpdateFavorites => {
-                if let AppState::Popup(popups) = &mut self.app_state {
+            Output::PopOverlayUpdateFavorites => {
+                if let AppState::Overlay(popups) = &mut self.app_state {
                     popups.pop();
                     if popups.is_empty() {
                         self.app_state = AppState::Normal;
@@ -436,7 +436,7 @@ impl App {
                     self.should_draw = true;
                 }
             }
-            Output::AddTrackToPlaylistPopup(track) => {
+            Output::AddTrackToPlaylistOverlay(track) => {
                 let playlists = self
                     .favorites
                     .playlists
@@ -447,28 +447,28 @@ impl App {
                     .collect();
 
                 let mut popups = match std::mem::take(&mut self.app_state) {
-                    AppState::Popup(v) => v,
+                    AppState::Overlay(v) => v,
                     other => {
                         self.app_state = other;
                         Vec::new()
                     }
                 };
 
-                popups.push(Popup::AddTrackToPlaylist(AddTrackPopup::new(
+                popups.push(Overlay::AddTrackToPlaylist(AddTrackOverlay::new(
                     track, playlists,
                 )));
 
-                self.app_state = AppState::Popup(popups);
+                self.app_state = AppState::Overlay(popups);
                 self.should_draw = true;
             }
-            Output::AddTrackToPlaylistAndPopPopup((track_id, playlist_id)) => {
+            Output::AddTrackToPlaylistAndPopOverlay((track_id, playlist_id)) => {
                 match self
                     .client
                     .playlist_add_track(playlist_id, &[track_id])
                     .await
                 {
                     Ok(_) => {
-                        if let AppState::Popup(popups) = &mut self.app_state {
+                        if let AppState::Overlay(popups) = &mut self.app_state {
                             popups.pop();
                             if popups.is_empty() {
                                 self.app_state = AppState::Normal;
@@ -503,7 +503,7 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
-                    AppState::ConnectPopup(selected_device) => {
+                    AppState::ConnectOverlay(selected_device) => {
                         match key_event.code {
                             KeyCode::Enter => {
                                 let available_devices = self.connect_available_devices.borrow();
@@ -541,9 +541,9 @@ impl App {
                         self.should_draw = true;
                         return Ok(());
                     }
-                    AppState::Popup(_) => {
+                    AppState::Overlay(_) => {
                         let outcome = {
-                            if let AppState::Popup(popups) = &mut self.app_state {
+                            if let AppState::Overlay(popups) = &mut self.app_state {
                                 if let Some(popup) = popups.last_mut() {
                                     popup
                                         .handle_event(

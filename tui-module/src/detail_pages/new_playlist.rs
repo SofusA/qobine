@@ -7,11 +7,11 @@ use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{app::Output, ui::render_input};
 
-pub struct NewPlaylistPopup {
+pub struct NewPlaylistOverlay {
     name: Input,
 }
 
-impl NewPlaylistPopup {
+impl NewPlaylistOverlay {
     pub fn new() -> Self {
         Self {
             name: Input::default(),
@@ -40,10 +40,10 @@ impl NewPlaylistPopup {
                     .create_playlist(name.to_owned(), false, Default::default(), None)
                     .await?;
 
-                Ok(Output::PopPopupUpdateFavorites)
+                Ok(Output::PopOverlayUpdateFavorites)
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => {
                 self.name.handle_event(event);
@@ -53,7 +53,7 @@ impl NewPlaylistPopup {
     }
 }
 
-impl Default for NewPlaylistPopup {
+impl Default for NewPlaylistOverlay {
     fn default() -> Self {
         Self::new()
     }

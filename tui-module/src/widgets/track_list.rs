@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     app::{NotificationList, Output},
-    detail_pages::{Popup, TrackInfoPopup},
+    detail_pages::{Overlay, TrackInfoOverlay},
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
     },
@@ -122,7 +122,7 @@ impl TrackList {
                 let track = index.and_then(|index| self.items.filter().get(index));
 
                 if let Some(id) = track {
-                    return Ok(Output::AddTrackToPlaylistPopup(id.clone()));
+                    return Ok(Output::AddTrackToPlaylistOverlay(id.clone()));
                 }
                 Ok(Output::Consumed)
             }
@@ -196,8 +196,8 @@ impl TrackList {
 
                 if let Some(id) = id {
                     let track = client.track(id).await?;
-                    let state = TrackInfoPopup::new(track);
-                    return Ok(Output::Popup(Popup::TrackInfo(state)));
+                    let state = TrackInfoOverlay::new(track);
+                    return Ok(Output::Overlay(Overlay::TrackInfo(state)));
                 }
                 Ok(Output::Consumed)
             }

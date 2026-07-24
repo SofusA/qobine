@@ -10,7 +10,7 @@ use crate::{
     widgets::track_list::{TrackList, TrackListEvent},
 };
 
-pub struct PlaylistPopup {
+pub struct PlaylistOverlay {
     shuffle: bool,
     tracks: TrackList,
     title: String,
@@ -21,7 +21,7 @@ pub struct PlaylistPopup {
     duration_seconds: u32,
 }
 
-impl PlaylistPopup {
+impl PlaylistOverlay {
     pub fn new(playlist: Playlist) -> Self {
         Self {
             shuffle: false,
@@ -105,7 +105,7 @@ impl PlaylistPopup {
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => {
                 self.tracks

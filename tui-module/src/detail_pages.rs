@@ -19,42 +19,44 @@ mod new_playlist;
 mod playlist;
 mod track_info;
 
-pub use add_track::AddTrackPopup;
-pub use album::AlbumPopup;
-pub use artist::ArtistPopup;
-pub use delete_playlist::DeletePlaylistPopup;
-pub use new_playlist::NewPlaylistPopup;
-pub use playlist::PlaylistPopup;
-pub use track_info::TrackInfoPopup;
+pub use add_track::AddTrackOverlay;
+pub use album::AlbumOverlay;
+pub use artist::ArtistOverlay;
+pub use delete_playlist::DeletePlaylistOverlay;
+pub use new_playlist::NewPlaylistOverlay;
+pub use playlist::PlaylistOverlay;
+pub use track_info::TrackInfoOverlay;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum PopupFocus {
+pub(super) enum OverlayFocus {
     #[default]
     Sidebar,
     Content,
 }
 
 #[allow(clippy::large_enum_variant)]
-pub enum Popup {
-    Artist(ArtistPopup),
-    Album(AlbumPopup),
-    Playlist(PlaylistPopup),
-    AddTrackToPlaylist(AddTrackPopup),
-    NewPlaylist(NewPlaylistPopup),
-    DeletePlaylist(DeletePlaylistPopup),
-    TrackInfo(TrackInfoPopup),
+pub enum Overlay {
+    Artist(ArtistOverlay),
+    Album(AlbumOverlay),
+    Playlist(PlaylistOverlay),
+    AddTrackToPlaylist(AddTrackOverlay),
+    NewPlaylist(NewPlaylistOverlay),
+    DeletePlaylist(DeletePlaylistOverlay),
+    TrackInfo(TrackInfoOverlay),
 }
 
-impl Popup {
+impl Overlay {
     pub fn title(&self) -> String {
         match self {
-            Popup::Artist(state) => state.title().to_string(),
-            Popup::Album(state) => state.title().to_string(),
-            Popup::Playlist(state) => state.title().to_string(),
-            Popup::AddTrackToPlaylist(state) => format!("Add {} to playlist", state.track_title()),
-            Popup::NewPlaylist(_) => "New playlist".to_string(),
-            Popup::DeletePlaylist(_) => "Delete playlist".to_string(),
-            Popup::TrackInfo(state) => state.title().to_string(),
+            Overlay::Artist(state) => state.title().to_string(),
+            Overlay::Album(state) => state.title().to_string(),
+            Overlay::Playlist(state) => state.title().to_string(),
+            Overlay::AddTrackToPlaylist(state) => {
+                format!("Add {} to playlist", state.track_title())
+            }
+            Overlay::NewPlaylist(_) => "New playlist".to_string(),
+            Overlay::DeletePlaylist(_) => "Delete playlist".to_string(),
+            Overlay::TrackInfo(state) => state.title().to_string(),
         }
     }
 

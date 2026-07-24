@@ -41,7 +41,7 @@ impl App {
             AppState::Help => {
                 render_help(frame);
             }
-            AppState::ConnectPopup(selected) => {
+            AppState::ConnectOverlay(selected) => {
                 let available_devices: Vec<String> =
                     self.connect_available_devices.borrow().to_vec();
                 let active_device: String = self.connect_active_device.borrow().to_string();
@@ -55,7 +55,7 @@ impl App {
                     &mut self.image_cache,
                 );
             }
-            AppState::Popup(popups) => {
+            AppState::Overlay(popups) => {
                 let breadcrumb_titles: Vec<String> = popups
                     .iter()
                     .rev()

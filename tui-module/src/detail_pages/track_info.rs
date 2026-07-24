@@ -7,14 +7,14 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use super::{AlbumPopup, ArtistPopup, Popup};
+use super::{AlbumOverlay, ArtistOverlay, Overlay};
 use crate::{
     app::Output,
     image_cache::{AppImage, ImageManager},
     ui::{ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds, sidebar},
 };
 
-pub struct TrackInfoPopup {
+pub struct TrackInfoOverlay {
     track: Track,
     selected_sub_tab: usize,
 }
@@ -26,7 +26,7 @@ enum TrackTabKind {
     GoToArtist,
 }
 
-impl TrackInfoPopup {
+impl TrackInfoOverlay {
     pub fn new(track: Track) -> Self {
         Self {
             track,
@@ -77,7 +77,7 @@ impl TrackInfoPopup {
                 self.open_artist(client).await
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => Ok(Output::Consumed),
         }
@@ -265,9 +265,9 @@ impl TrackInfoPopup {
         };
 
         let album = client.album(album_id).await?;
-        let popup = AlbumPopup::new(album, client).await;
+        let popup = AlbumOverlay::new(album, client).await;
 
-        Ok(Output::Popup(Popup::Album(popup)))
+        Ok(Output::Overlay(Overlay::Album(popup)))
     }
 
     async fn open_artist(&self, client: &Client) -> AppResult<Output> {
@@ -281,9 +281,9 @@ impl TrackInfoPopup {
             image: None,
         };
 
-        let popup = ArtistPopup::new(&artist, client).await?;
+        let popup = ArtistOverlay::new(&artist, client).await?;
 
-        Ok(Output::Popup(Popup::Artist(popup)))
+        Ok(Output::Overlay(Overlay::Artist(popup)))
     }
 
     fn selected_tab_kind(&self) -> TrackTabKind {

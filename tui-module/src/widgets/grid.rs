@@ -22,7 +22,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::{
     app::{NotificationList, Output},
     detail_pages::{
-        AlbumPopup, ArtistPopup, DeletePlaylistPopup, NewPlaylistPopup, PlaylistPopup, Popup,
+        AlbumOverlay, ArtistOverlay, DeletePlaylistOverlay, NewPlaylistOverlay, Overlay,
+        PlaylistOverlay,
     },
     image_cache::ImageManager,
     ui::{
@@ -393,8 +394,8 @@ impl GridItem for AlbumSimple {
             KeyCode::Enter | KeyCode::Char('i') => {
                 let album = context.client.album(&self.id).await?;
 
-                Ok(Output::Popup(Popup::Album(
-                    AlbumPopup::new(album, context.client).await,
+                Ok(Output::Overlay(Overlay::Album(
+                    AlbumOverlay::new(album, context.client).await,
                 )))
             }
 
@@ -489,9 +490,9 @@ impl GridItem for Artist {
             }
 
             KeyCode::Enter | KeyCode::Char('i') => {
-                let state = ArtistPopup::new(self, context.client).await?;
+                let state = ArtistOverlay::new(self, context.client).await?;
 
-                Ok(Output::Popup(Popup::Artist(state)))
+                Ok(Output::Overlay(Overlay::Artist(state)))
             }
 
             _ => Ok(Output::NotConsumed),
@@ -589,8 +590,8 @@ impl GridItem for PlaylistSimple {
                 Ok(Output::UpdateFavorites)
             }
 
-            KeyCode::Char('U') if self.is_owned => Ok(Output::Popup(Popup::DeletePlaylist(
-                DeletePlaylistPopup::new(self.clone()),
+            KeyCode::Char('U') if self.is_owned => Ok(Output::Overlay(Overlay::DeletePlaylist(
+                DeletePlaylistOverlay::new(self.clone()),
             ))),
 
             KeyCode::Char('U') => {
@@ -604,7 +605,9 @@ impl GridItem for PlaylistSimple {
                 Ok(Output::UpdateFavorites)
             }
 
-            KeyCode::Char('C') => Ok(Output::Popup(Popup::NewPlaylist(NewPlaylistPopup::new()))),
+            KeyCode::Char('C') => Ok(Output::Overlay(Overlay::NewPlaylist(
+                NewPlaylistOverlay::new(),
+            ))),
 
             KeyCode::Char('B') => {
                 let tracks = context.client.playlist(self.id).await?.tracks;
@@ -623,7 +626,9 @@ impl GridItem for PlaylistSimple {
             KeyCode::Enter | KeyCode::Char('i') => {
                 let playlist = context.client.playlist(self.id).await?;
 
-                Ok(Output::Popup(Popup::Playlist(PlaylistPopup::new(playlist))))
+                Ok(Output::Overlay(Overlay::Playlist(PlaylistOverlay::new(
+                    playlist,
+                ))))
             }
 
             _ => Ok(Output::NotConsumed),

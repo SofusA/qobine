@@ -10,7 +10,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use super::{PopupFocus, about_scroll_delta, header_blurb, render_about, scroll_about};
+use super::{OverlayFocus, about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
@@ -21,8 +21,8 @@ use crate::{
     },
 };
 
-pub struct ArtistPopup {
-    focus: PopupFocus,
+pub struct ArtistOverlay {
+    focus: OverlayFocus,
     artist_name: String,
     albums: Grid<AlbumSimple>,
     singles: Grid<AlbumSimple>,
@@ -54,12 +54,12 @@ enum SelectedTabMut<'a> {
     SimilarArtists(&'a mut Grid<Artist>),
 }
 
-impl ArtistPopup {
+impl ArtistOverlay {
     pub async fn new(artist: &Artist, client: &Client) -> AppResult<Self> {
         let artist_page = client.artist_page(artist.id).await?;
 
         Ok(Self {
-            focus: PopupFocus::default(),
+            focus: OverlayFocus::default(),
             artist_name: artist.name.clone(),
             albums: Grid::new(artist_page.albums),
             singles: Grid::new(artist_page.singles),
@@ -109,9 +109,9 @@ impl ArtistPopup {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match self.focus {
-            PopupFocus::Sidebar => self.handle_sidebar_event(code),
+            OverlayFocus::Sidebar => self.handle_sidebar_event(code),
 
-            PopupFocus::Content => {
+            OverlayFocus::Content => {
                 self.handle_content_event(code, client, controls, notifications)
                     .await
             }
@@ -189,7 +189,7 @@ impl ArtistPopup {
         image_cache: &mut ImageManager,
     ) {
         let (sidebar_widget, sidebar_width) =
-            sidebar(self.tabs(), self.focus == PopupFocus::Sidebar);
+            sidebar(self.tabs(), self.focus == OverlayFocus::Sidebar);
 
         let [sidebar_area, content_area] =
             Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)]).areas(area);
@@ -272,11 +272,11 @@ impl ArtistPopup {
             }
 
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                self.focus = PopupFocus::Content;
+                self.focus = OverlayFocus::Content;
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => Ok(Output::Consumed),
         }
@@ -290,7 +290,7 @@ impl ArtistPopup {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         if matches!(code, KeyCode::Esc) {
-            self.focus = PopupFocus::Sidebar;
+            self.focus = OverlayFocus::Sidebar;
             return Ok(Output::Consumed);
         }
 

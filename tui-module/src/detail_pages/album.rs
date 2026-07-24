@@ -11,7 +11,8 @@ use ratatui::{
 use ratatui_image::StatefulImage;
 
 use super::{
-    ArtistPopup, Popup, PopupFocus, about_scroll_delta, header_blurb, render_about, scroll_about,
+    ArtistOverlay, Overlay, OverlayFocus, about_scroll_delta, header_blurb, render_about,
+    scroll_about,
 };
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
@@ -26,8 +27,8 @@ use crate::{
     },
 };
 
-pub struct AlbumPopup {
-    focus: PopupFocus,
+pub struct AlbumOverlay {
+    focus: OverlayFocus,
     title: String,
     artist: Artist,
     tracks: TrackList,
@@ -60,12 +61,12 @@ enum SelectedTabMut<'a> {
     Similar(&'a mut Grid<AlbumSimple>),
 }
 
-impl AlbumPopup {
+impl AlbumOverlay {
     pub async fn new(album: Album, client: &Client) -> Self {
         let similar = client.suggested_albums(&album.id).await.unwrap_or_default();
 
         Self {
-            focus: PopupFocus::default(),
+            focus: OverlayFocus::default(),
             title: album.title,
             artist: album.artist,
             tracks: TrackList::new(album.tracks),
@@ -118,9 +119,9 @@ impl AlbumPopup {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match self.focus {
-            PopupFocus::Sidebar => self.handle_sidebar_event(code, client).await,
+            OverlayFocus::Sidebar => self.handle_sidebar_event(code, client).await,
 
-            PopupFocus::Content => {
+            OverlayFocus::Content => {
                 self.handle_content_event(code, client, controls, notifications)
                     .await
             }
@@ -214,7 +215,7 @@ impl AlbumPopup {
         image_cache: &mut ImageManager,
     ) {
         let (sidebar_widget, sidebar_width) =
-            sidebar(self.tabs(), self.focus == PopupFocus::Sidebar);
+            sidebar(self.tabs(), self.focus == OverlayFocus::Sidebar);
 
         let [sidebar_area, content_area] =
             Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)]).areas(area);
@@ -288,11 +289,11 @@ impl AlbumPopup {
                     return self.open_artist(client).await;
                 }
 
-                self.focus = PopupFocus::Content;
+                self.focus = OverlayFocus::Content;
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => Ok(Output::Consumed),
         }
@@ -307,7 +308,7 @@ impl AlbumPopup {
     ) -> AppResult<Output> {
         match code {
             KeyCode::Esc => {
-                self.focus = PopupFocus::Sidebar;
+                self.focus = OverlayFocus::Sidebar;
                 return Ok(Output::Consumed);
             }
 
@@ -366,8 +367,8 @@ impl AlbumPopup {
     }
 
     async fn open_artist(&self, client: &Client) -> AppResult<Output> {
-        let popup = ArtistPopup::new(&self.artist, client).await?;
-        Ok(Output::Popup(Popup::Artist(popup)))
+        let popup = ArtistOverlay::new(&self.artist, client).await?;
+        Ok(Output::Overlay(Overlay::Artist(popup)))
     }
 
     fn album_detail_lines(

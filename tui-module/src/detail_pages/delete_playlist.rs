@@ -7,13 +7,13 @@ use crate::{
     ui::{block, tab_bar},
 };
 
-pub struct DeletePlaylistPopup {
+pub struct DeletePlaylistOverlay {
     title: String,
     id: u32,
     confirm: bool,
 }
 
-impl DeletePlaylistPopup {
+impl DeletePlaylistOverlay {
     pub fn new(playlist: PlaylistSimple) -> Self {
         Self {
             title: playlist.title,
@@ -36,17 +36,17 @@ impl DeletePlaylistPopup {
         match code {
             KeyCode::Enter if self.confirm => {
                 client.delete_playlist(self.id).await?;
-                Ok(Output::PopPopupUpdateFavorites)
+                Ok(Output::PopOverlayUpdateFavorites)
             }
 
-            KeyCode::Enter => Ok(Output::PopPopupUpdateFavorites),
+            KeyCode::Enter => Ok(Output::PopOverlayUpdateFavorites),
 
             KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
                 self.confirm = !self.confirm;
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => Ok(Output::Consumed),
         }

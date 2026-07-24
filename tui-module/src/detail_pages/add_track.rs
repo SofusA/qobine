@@ -8,12 +8,12 @@ use crate::{
     widgets::playlist_list::PlaylistList,
 };
 
-pub struct AddTrackPopup {
+pub struct AddTrackOverlay {
     playlists: PlaylistList,
     track: Track,
 }
 
-impl AddTrackPopup {
+impl AddTrackOverlay {
     pub fn new(track: Track, owned_playlists: Vec<PlaylistSimple>) -> Self {
         Self {
             playlists: PlaylistList::new(owned_playlists),
@@ -57,7 +57,7 @@ impl AddTrackPopup {
                     .map(|playlist| playlist.id);
 
                 match playlist_id {
-                    Some(playlist_id) => Ok(Output::AddTrackToPlaylistAndPopPopup((
+                    Some(playlist_id) => Ok(Output::AddTrackToPlaylistAndPopOverlay((
                         self.track.id,
                         playlist_id,
                     ))),
@@ -66,7 +66,7 @@ impl AddTrackPopup {
                 }
             }
 
-            KeyCode::Esc => Ok(Output::PopPopup),
+            KeyCode::Esc => Ok(Output::PopOverlay),
 
             _ => Ok(Output::Consumed),
         }
