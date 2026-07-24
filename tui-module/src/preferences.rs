@@ -1,4 +1,5 @@
 use controls_module::{ExitSender, controls::Controls};
+use crossterm::event::KeyModifiers;
 use disconnect_module::DisconnectClientConfig;
 use player_module::{
     AudioQuality,
@@ -10,13 +11,46 @@ use ratatui::{
     widgets::*,
 };
 use tokio::sync::{mpsc, watch};
-use tui_input::Input;
-use tui_input::backend::crossterm::EventHandler;
+use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
     app::Output,
-    ui::{HIGHLIGHT_TEXT_STYLE, block},
+    ui::{HIGHLIGHT_TEXT_STYLE, block, sidebar},
 };
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum PreferencesTab {
+    #[default]
+    Cache,
+    Audio,
+    Disconnect,
+    Logout,
+}
+
+impl PreferencesTab {
+    const ALL: [Self; 4] = [Self::Cache, Self::Audio, Self::Disconnect, Self::Logout];
+
+    fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|x| *x == self).unwrap();
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    fn previous(self) -> Self {
+        let i = Self::ALL.iter().position(|x| *x == self).unwrap();
+        Self::ALL[(i + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+
+    fn labels() -> Vec<&'static str> {
+        vec!["Cache", "Audio", "Disconnect", "Logout"]
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum PreferencesPane {
+    #[default]
+    Sidebar,
+    Content,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum PreferenceFocus {
@@ -30,67 +64,18 @@ enum PreferenceFocus {
     DisconnectServerUrl,
     DisconnectPassword,
     DisconnectDeviceName,
-    Save,
     Logout,
-}
-
-impl PreferenceFocus {
-    const ALL: [PreferenceFocus; 11] = [
-        PreferenceFocus::CacheDirectory,
-        PreferenceFocus::CacheTimeToLive,
-        PreferenceFocus::AudioQuality,
-        PreferenceFocus::FileBasedStreaming,
-        PreferenceFocus::AutoPlay,
-        PreferenceFocus::DisconnectEnabled,
-        PreferenceFocus::DisconnectServerUrl,
-        PreferenceFocus::DisconnectPassword,
-        PreferenceFocus::DisconnectDeviceName,
-        PreferenceFocus::Save,
-        PreferenceFocus::Logout,
-    ];
-
-    fn next(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|focus| *focus == self)
-            .unwrap_or_default();
-
-        Self::ALL[(index + 1) % Self::ALL.len()]
-    }
-
-    fn previous(self) -> Self {
-        let index = Self::ALL
-            .iter()
-            .position(|focus| *focus == self)
-            .unwrap_or_default();
-
-        Self::ALL[(index + Self::ALL.len() - 1) % Self::ALL.len()]
-    }
-}
-
-fn next_audio_quality(current: AudioQuality) -> AudioQuality {
-    match current {
-        AudioQuality::Mp3 => AudioQuality::CD,
-        AudioQuality::CD => AudioQuality::HIFI96,
-        AudioQuality::HIFI96 => AudioQuality::HIFI192,
-        AudioQuality::HIFI192 => AudioQuality::Mp3,
-    }
-}
-
-fn previous_audio_quality(current: AudioQuality) -> AudioQuality {
-    match current {
-        AudioQuality::Mp3 => AudioQuality::HIFI192,
-        AudioQuality::CD => AudioQuality::Mp3,
-        AudioQuality::HIFI96 => AudioQuality::CD,
-        AudioQuality::HIFI192 => AudioQuality::HIFI96,
-    }
 }
 
 pub struct PreferencesState {
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     configuration: Configuration,
-    focus: Option<PreferenceFocus>,
+
+    tab: PreferencesTab,
+    pane: PreferencesPane,
+    field: PreferenceFocus,
+    editing: bool,
 
     cache_path_input: Input,
     cache_ttl_input: Input,
@@ -146,7 +131,6 @@ impl PreferencesState {
             exit_sender,
             audio_cache_ttl_sender,
             configuration,
-            focus: Some(PreferenceFocus::CacheDirectory),
             cache_path_input: Input::default().with_value(cache_path_value),
             cache_ttl_input: Input::default().with_value(cache_ttl_value),
             audio_quality,
@@ -157,42 +141,86 @@ impl PreferencesState {
             disconnect_password: Input::default().with_value(disconnect_password_value),
             disconnect_device_name: Input::default().with_value(disconnect_device_name_value),
             disconnect_saved_config,
+            tab: Default::default(),
+            pane: Default::default(),
+            field: Default::default(),
+            editing: false,
         }
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let outer = block(Some("Preferences"));
         let inner = outer.inner(area);
-
         frame.render_widget(outer, area);
 
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(15),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(0),
-            ])
-            .split(inner);
+        let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
+
+        let content_area = rows[0];
+        let footer_area = rows[1];
+
+        let (sidebar, width) = sidebar(
+            PreferencesTab::labels(),
+            self.pane == PreferencesPane::Sidebar,
+        );
+
+        let chunks =
+            Layout::horizontal([Constraint::Length(width), Constraint::Min(1)]).split(content_area);
+
+        let mut state = ListState::default();
+        state.select(Some(self.tab as usize));
+        frame.render_stateful_widget(sidebar, chunks[0], &mut state);
+
+        match self.tab {
+            PreferencesTab::Cache => self.render_cache(frame, chunks[1]),
+            PreferencesTab::Audio => self.render_audio(frame, chunks[1]),
+            PreferencesTab::Disconnect => self.render_disconnect(frame, chunks[1]),
+            PreferencesTab::Logout => {
+                frame.render_widget(
+                    Paragraph::new("Enter to logout").alignment(Alignment::Center),
+                    chunks[1],
+                );
+            }
+        }
+
+        if self.has_unsaved_changes() {
+            frame.render_widget(
+                Paragraph::new("Ctrl+S to save")
+                    .alignment(Alignment::Right)
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
+                footer_area,
+            );
+        }
+    }
+
+    fn render_cache(&mut self, frame: &mut Frame, area: Rect) {
+        let rows = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
 
         self.render_cache_directory(frame, rows[0]);
         self.render_cache_ttl(frame, rows[1]);
-        self.render_audio_quality(frame, rows[2]);
-        self.render_file_based_streaming(frame, rows[3]);
-        self.render_auto_play(frame, rows[4]);
-        self.render_disconnect(frame, rows[5]);
-        self.render_save(frame, rows[6]);
-        self.render_logout(frame, rows[7]);
+    }
+
+    fn render_audio(&self, frame: &mut Frame, area: Rect) {
+        let rows = Layout::vertical([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+        self.render_audio_quality(frame, rows[0]);
+        self.render_file_based_streaming(frame, rows[1]);
+        self.render_auto_play(frame, rows[2]);
     }
 
     fn render_cache_directory(&mut self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::CacheDirectory);
+        let focused =
+            self.pane == PreferencesPane::Content && self.field == PreferenceFocus::CacheDirectory;
 
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -210,7 +238,7 @@ impl PreferencesState {
 
         frame.render_widget(paragraph, area);
 
-        if focused {
+        if focused && self.editing {
             let cursor_x = area.x + 1 + self.cache_path_input.visual_cursor() as u16;
             let cursor_y = area.y + 1;
 
@@ -219,7 +247,8 @@ impl PreferencesState {
     }
 
     fn render_cache_ttl(&mut self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::CacheTimeToLive);
+        let focused =
+            self.pane == PreferencesPane::Content && self.field == PreferenceFocus::CacheTimeToLive;
 
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -237,7 +266,7 @@ impl PreferencesState {
 
         frame.render_widget(paragraph, area);
 
-        if focused {
+        if focused && self.editing {
             let cursor_x = area.x + 1 + self.cache_ttl_input.visual_cursor() as u16;
             let cursor_y = area.y + 1;
 
@@ -246,7 +275,8 @@ impl PreferencesState {
     }
 
     fn render_audio_quality(&self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::AudioQuality);
+        let focused =
+            self.pane == PreferencesPane::Content && self.field == PreferenceFocus::AudioQuality;
 
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -266,7 +296,8 @@ impl PreferencesState {
     }
 
     fn render_file_based_streaming(&self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::FileBasedStreaming);
+        let focused = self.pane == PreferencesPane::Content
+            && self.field == PreferenceFocus::FileBasedStreaming;
 
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -290,7 +321,8 @@ impl PreferencesState {
     }
 
     fn render_auto_play(&self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::AutoPlay);
+        let focused =
+            self.pane == PreferencesPane::Content && self.field == PreferenceFocus::AutoPlay;
 
         let style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -319,9 +351,9 @@ impl PreferencesState {
         area: Rect,
         title: &str,
         input: &Input,
-        focus: PreferenceFocus,
+        field: PreferenceFocus,
     ) {
-        let focused = self.focus == Some(focus);
+        let focused = self.pane == PreferencesPane::Content && self.field == field;
 
         let mut style = if focused {
             HIGHLIGHT_TEXT_STYLE
@@ -344,7 +376,7 @@ impl PreferencesState {
             area,
         );
 
-        if focused && self.disconnect_enabled {
+        if focused && self.editing && self.disconnect_enabled {
             let cursor_x = area.x + 1 + input.visual_cursor() as u16;
             let cursor_y = area.y + 1;
 
@@ -361,7 +393,8 @@ impl PreferencesState {
         ])
         .split(area);
 
-        let enabled_focus = self.focus == Some(PreferenceFocus::DisconnectEnabled);
+        let focused = self.pane == PreferencesPane::Content
+            && self.field == PreferenceFocus::DisconnectEnabled;
 
         frame.render_widget(
             Paragraph::new(if self.disconnect_enabled {
@@ -369,7 +402,7 @@ impl PreferencesState {
             } else {
                 "[ disabled ]"
             })
-            .style(if enabled_focus {
+            .style(if focused {
                 HIGHLIGHT_TEXT_STYLE
             } else {
                 Style::default()
@@ -403,45 +436,16 @@ impl PreferencesState {
         );
     }
 
-    fn render_save(&self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::Save);
-        let title = if self.has_unsaved_changes() {
-            "Save (unsaved changes)"
-        } else {
-            "Save"
-        };
+    fn field_is_input(&self) -> bool {
+        match self.field {
+            PreferenceFocus::CacheDirectory | PreferenceFocus::CacheTimeToLive => true,
 
-        let style = if focused {
-            HIGHLIGHT_TEXT_STYLE.add_modifier(Modifier::BOLD)
-        } else if self.has_unsaved_changes() {
-            Style::default().add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
-        };
+            PreferenceFocus::DisconnectServerUrl
+            | PreferenceFocus::DisconnectPassword
+            | PreferenceFocus::DisconnectDeviceName => self.disconnect_enabled,
 
-        let paragraph = Paragraph::new("Apply")
-            .alignment(Alignment::Center)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title(title));
-
-        frame.render_widget(paragraph, area);
-    }
-
-    fn render_logout(&self, frame: &mut Frame, area: Rect) {
-        let focused = self.focus == Some(PreferenceFocus::Logout);
-
-        let style = if focused {
-            HIGHLIGHT_TEXT_STYLE.add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Red)
-        };
-
-        let paragraph = Paragraph::new("Logout")
-            .alignment(Alignment::Center)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL));
-
-        frame.render_widget(paragraph, area);
+            _ => false,
+        }
     }
 
     pub async fn handle_events(
@@ -453,95 +457,56 @@ impl PreferencesState {
     ) -> Output {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                let focus = self.focus.unwrap_or_default();
-
-                match key_event.code {
-                    KeyCode::Down => {
-                        self.focus = Some(focus.next());
-                        Output::Consumed
-                    }
-
-                    KeyCode::Up => {
-                        self.focus = Some(focus.previous());
-                        Output::Consumed
-                    }
-
-                    KeyCode::Left => {
-                        self.handle_left();
-                        Output::Consumed
-                    }
-
-                    KeyCode::Right => {
-                        self.handle_right();
-                        Output::Consumed
-                    }
-
-                    KeyCode::Enter => {
-                        self.apply_focused_action(
-                            controls,
-                            database,
-                            disconnect_client_config_sender,
-                        )
+                if key_event.code == KeyCode::Char('s')
+                    && key_event.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    self.save_all_settings(controls, database, disconnect_client_config_sender)
                         .await;
-                        Output::Consumed
-                    }
 
-                    KeyCode::Backspace
-                    | KeyCode::Delete
-                    | KeyCode::Char(_)
-                    | KeyCode::Home
-                    | KeyCode::End => match focus {
-                        PreferenceFocus::CacheDirectory => {
-                            self.cache_path_input.handle_event(&Event::Key(key_event));
-                            Output::Consumed
-                        }
+                    return Output::Consumed;
+                }
 
-                        PreferenceFocus::CacheTimeToLive => {
-                            match key_event.code {
-                                KeyCode::Char(c) if c.is_ascii_digit() => {
-                                    self.cache_ttl_input.handle_event(&Event::Key(key_event));
-                                }
-                                KeyCode::Backspace
-                                | KeyCode::Delete
-                                | KeyCode::Home
-                                | KeyCode::End => {
-                                    self.cache_ttl_input.handle_event(&Event::Key(key_event));
-                                }
-                                _ => {}
+                match self.pane {
+                    PreferencesPane::Sidebar => match key_event.code {
+                        KeyCode::Up | KeyCode::Char('k') => self.tab = self.tab.previous(),
+                        KeyCode::Down | KeyCode::Char('j') => self.tab = self.tab.next(),
+                        KeyCode::Enter if self.tab == PreferencesTab::Logout => {
+                            if database.set_credentials(None).await.is_ok() {
+                                let _ = self.exit_sender.send(true);
                             }
-
-                            Output::Consumed
                         }
-
-                        PreferenceFocus::DisconnectServerUrl => {
-                            if self.disconnect_enabled {
-                                self.disconnect_server_url
-                                    .handle_event(&Event::Key(key_event));
-                            }
-                            Output::Consumed
+                        KeyCode::Enter => {
+                            self.select_first_field();
+                            self.pane = PreferencesPane::Content;
                         }
-
-                        PreferenceFocus::DisconnectPassword => {
-                            if self.disconnect_enabled {
-                                self.disconnect_password
-                                    .handle_event(&Event::Key(key_event));
-                            }
-                            Output::Consumed
-                        }
-
-                        PreferenceFocus::DisconnectDeviceName => {
-                            if self.disconnect_enabled {
-                                self.disconnect_device_name
-                                    .handle_event(&Event::Key(key_event));
-                            }
-                            Output::Consumed
-                        }
-
-                        _ => Output::NotConsumed,
+                        _ => return Output::NotConsumed,
                     },
 
-                    _ => Output::NotConsumed,
+                    PreferencesPane::Content => match key_event.code {
+                        KeyCode::Esc => {
+                            if self.editing {
+                                self.editing = false;
+                            } else {
+                                self.pane = PreferencesPane::Sidebar;
+                            }
+                        }
+                        KeyCode::Enter if self.field_is_input() => {
+                            self.editing = !self.editing;
+                        }
+                        _ if self.editing => {
+                            self.handle_input_event(event);
+                        }
+
+                        KeyCode::Up | KeyCode::Char('k') => self.previous_field(),
+                        KeyCode::Down | KeyCode::Char('j') => self.next_field(),
+                        KeyCode::Left | KeyCode::Char('h') => self.handle_left(),
+                        KeyCode::Right | KeyCode::Char('l') => self.handle_right(),
+
+                        _ => return Output::NotConsumed,
+                    },
                 }
+
+                Output::Consumed
             }
 
             _ => Output::NotConsumed,
@@ -549,12 +514,10 @@ impl PreferencesState {
     }
 
     fn handle_left(&mut self) {
-        match self.focus.unwrap_or_default() {
+        match self.field {
             PreferenceFocus::CacheTimeToLive => {
-                let current = self.parse_cache_ttl();
-                let new_hours = current.saturating_sub(1);
-
-                self.cache_ttl_input = Input::default().with_value(new_hours.to_string());
+                let hours = self.parse_cache_ttl().saturating_sub(1);
+                self.cache_ttl_input = Input::default().with_value(hours.to_string());
             }
 
             PreferenceFocus::AudioQuality => {
@@ -571,6 +534,7 @@ impl PreferencesState {
 
             PreferenceFocus::DisconnectEnabled => {
                 self.disconnect_enabled = !self.disconnect_enabled;
+                self.editing = false;
             }
 
             _ => {}
@@ -578,12 +542,10 @@ impl PreferencesState {
     }
 
     fn handle_right(&mut self) {
-        match self.focus.unwrap_or_default() {
+        match self.field {
             PreferenceFocus::CacheTimeToLive => {
-                let current = self.parse_cache_ttl();
-                let new_hours = current.saturating_add(1);
-
-                self.cache_ttl_input = Input::default().with_value(new_hours.to_string());
+                let hours = self.parse_cache_ttl().saturating_add(1);
+                self.cache_ttl_input = Input::default().with_value(hours.to_string());
             }
 
             PreferenceFocus::AudioQuality => {
@@ -600,34 +562,139 @@ impl PreferencesState {
 
             PreferenceFocus::DisconnectEnabled => {
                 self.disconnect_enabled = !self.disconnect_enabled;
+                self.editing = false;
             }
 
             _ => {}
         }
     }
 
-    async fn apply_focused_action(
-        &mut self,
-        controls: &Controls,
-        database: &Database,
-        disconnect_client_config_sender: &watch::Sender<Option<DisconnectClientConfig>>,
-    ) {
-        let Some(focus) = self.focus else {
-            return;
+    fn select_first_field(&mut self) {
+        self.editing = false;
+
+        self.field = match self.tab {
+            PreferencesTab::Cache => PreferenceFocus::CacheDirectory,
+            PreferencesTab::Audio => PreferenceFocus::AudioQuality,
+            PreferencesTab::Disconnect => PreferenceFocus::DisconnectEnabled,
+            PreferencesTab::Logout => PreferenceFocus::Logout,
         };
+    }
 
-        match focus {
-            PreferenceFocus::Save => {
-                self.save_all_settings(controls, database, disconnect_client_config_sender)
-                    .await;
+    fn next_field(&mut self) {
+        self.editing = false;
+
+        self.field = match self.tab {
+            PreferencesTab::Cache => match self.field {
+                PreferenceFocus::CacheDirectory => PreferenceFocus::CacheTimeToLive,
+                _ => PreferenceFocus::CacheDirectory,
+            },
+
+            PreferencesTab::Audio => match self.field {
+                PreferenceFocus::AudioQuality => PreferenceFocus::FileBasedStreaming,
+                PreferenceFocus::FileBasedStreaming => PreferenceFocus::AutoPlay,
+                _ => PreferenceFocus::AudioQuality,
+            },
+
+            PreferencesTab::Disconnect => {
+                if !self.disconnect_enabled {
+                    PreferenceFocus::DisconnectEnabled
+                } else {
+                    match self.field {
+                        PreferenceFocus::DisconnectEnabled => PreferenceFocus::DisconnectServerUrl,
+                        PreferenceFocus::DisconnectServerUrl => PreferenceFocus::DisconnectPassword,
+                        PreferenceFocus::DisconnectPassword => {
+                            PreferenceFocus::DisconnectDeviceName
+                        }
+                        _ => PreferenceFocus::DisconnectEnabled,
+                    }
+                }
             }
 
-            PreferenceFocus::Logout if database.set_credentials(None).await.is_ok() => {
-                let _ = self.exit_sender.send(true);
+            PreferencesTab::Logout => PreferenceFocus::Logout,
+        };
+    }
+
+    fn previous_field(&mut self) {
+        self.editing = false;
+
+        self.field = match self.tab {
+            PreferencesTab::Cache => match self.field {
+                PreferenceFocus::CacheDirectory => PreferenceFocus::CacheTimeToLive,
+                _ => PreferenceFocus::CacheDirectory,
+            },
+
+            PreferencesTab::Audio => match self.field {
+                PreferenceFocus::AudioQuality => PreferenceFocus::AutoPlay,
+                PreferenceFocus::FileBasedStreaming => PreferenceFocus::AudioQuality,
+                _ => PreferenceFocus::FileBasedStreaming,
+            },
+
+            PreferencesTab::Disconnect => {
+                if !self.disconnect_enabled {
+                    PreferenceFocus::DisconnectEnabled
+                } else {
+                    match self.field {
+                        PreferenceFocus::DisconnectEnabled => PreferenceFocus::DisconnectDeviceName,
+                        PreferenceFocus::DisconnectServerUrl => PreferenceFocus::DisconnectEnabled,
+                        PreferenceFocus::DisconnectPassword => PreferenceFocus::DisconnectServerUrl,
+                        _ => PreferenceFocus::DisconnectPassword,
+                    }
+                }
             }
 
-            _ => {}
+            PreferencesTab::Logout => PreferenceFocus::Logout,
+        };
+    }
+
+    fn handle_input_event(&mut self, event: Event) -> Output {
+        if !self.editing {
+            return Output::NotConsumed;
         }
+
+        match self.field {
+            PreferenceFocus::CacheDirectory => {
+                self.cache_path_input.handle_event(&event);
+            }
+
+            PreferenceFocus::CacheTimeToLive => {
+                let allowed = matches!(
+                    &event,
+                    Event::Key(key_event)
+                        if matches!(
+                            key_event.code,
+                            KeyCode::Char(c) if c.is_ascii_digit()
+                        ) || matches!(
+                            key_event.code,
+                            KeyCode::Backspace
+                                | KeyCode::Delete
+                                | KeyCode::Home
+                                | KeyCode::End
+                                | KeyCode::Left
+                                | KeyCode::Right
+                        )
+                );
+
+                if allowed {
+                    self.cache_ttl_input.handle_event(&event);
+                }
+            }
+
+            PreferenceFocus::DisconnectServerUrl if self.disconnect_enabled => {
+                self.disconnect_server_url.handle_event(&event);
+            }
+
+            PreferenceFocus::DisconnectPassword if self.disconnect_enabled => {
+                self.disconnect_password.handle_event(&event);
+            }
+
+            PreferenceFocus::DisconnectDeviceName if self.disconnect_enabled => {
+                self.disconnect_device_name.handle_event(&event);
+            }
+
+            _ => return Output::NotConsumed,
+        }
+
+        Output::Consumed
     }
 
     async fn save_all_settings(
@@ -729,7 +796,13 @@ impl PreferencesState {
     }
 
     fn disconnect_has_unsaved_changes(&self) -> bool {
-        self.disconnect_config() != self.disconnect_saved_config
+        self.disconnect_enabled != self.configuration.enable_disconnect
+            || self.trimmed_optional_value(&self.disconnect_server_url)
+                != self.configuration.disconnect_server_url
+            || self.trimmed_optional_value(&self.disconnect_password)
+                != self.configuration.disconnect_password
+            || self.trimmed_optional_value(&self.disconnect_device_name)
+                != self.configuration.device_name
     }
 
     fn disconnect_field_error(value: &Input) -> bool {
@@ -744,5 +817,23 @@ impl PreferencesState {
         } else {
             Some(value.to_string())
         }
+    }
+}
+
+fn next_audio_quality(current: AudioQuality) -> AudioQuality {
+    match current {
+        AudioQuality::Mp3 => AudioQuality::CD,
+        AudioQuality::CD => AudioQuality::HIFI96,
+        AudioQuality::HIFI96 => AudioQuality::HIFI192,
+        AudioQuality::HIFI192 => AudioQuality::Mp3,
+    }
+}
+
+fn previous_audio_quality(current: AudioQuality) -> AudioQuality {
+    match current {
+        AudioQuality::Mp3 => AudioQuality::HIFI192,
+        AudioQuality::CD => AudioQuality::Mp3,
+        AudioQuality::HIFI96 => AudioQuality::CD,
+        AudioQuality::HIFI192 => AudioQuality::HIFI96,
     }
 }

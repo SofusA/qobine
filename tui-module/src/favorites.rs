@@ -29,7 +29,7 @@ enum FavoritesFocus {
 }
 
 pub struct FavoritesState {
-    pub filter: Input,
+    filter: Input,
     pub albums: Grid<AlbumSimple>,
     pub artists: Grid<Artist>,
     pub playlists: Grid<PlaylistSimple>,
