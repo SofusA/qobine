@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{Album, Artist, Playlist, PlaylistSimple, Track},
+    models::{Album, AlbumSimple, Artist, Playlist, PlaylistSimple, Track},
 };
 use player_module::{AppResult, client::Client};
 use ratatui::{
@@ -19,7 +19,7 @@ use crate::{
         mark_as_favorite, render_input, sidebar, tab_bar,
     },
     widgets::{
-        album_grid::AlbumGrid,
+        album_grid::Grid,
         artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
@@ -36,10 +36,10 @@ enum PopupFocus {
 pub struct ArtistPopupState {
     focus: PopupFocus,
     artist_name: String,
-    albums: AlbumGrid,
-    singles: AlbumGrid,
-    live: AlbumGrid,
-    compilations: AlbumGrid,
+    albums: Grid<AlbumSimple>,
+    singles: Grid<AlbumSimple>,
+    live: Grid<AlbumSimple>,
+    compilations: Grid<AlbumSimple>,
     similar: ArtistList,
     description: Option<String>,
     image_url: Option<String>,
@@ -50,7 +50,7 @@ pub struct ArtistPopupState {
 }
 
 enum SelectedArtistPopupSubtabMut<'a> {
-    Albums(&'a mut AlbumGrid),
+    Albums(&'a mut Grid<AlbumSimple>),
     TopTracks(&'a mut TrackList),
     Similar(&'a mut ArtistList),
 }
@@ -78,10 +78,10 @@ impl ArtistPopupState {
 
         let state = Self {
             artist_name: artist.name.clone(),
-            albums: AlbumGrid::new(artist_page.albums),
-            singles: AlbumGrid::new(artist_page.singles),
-            live: AlbumGrid::new(artist_page.live),
-            compilations: AlbumGrid::new(artist_page.compilations),
+            albums: Grid::new(artist_page.albums),
+            singles: Grid::new(artist_page.singles),
+            live: Grid::new(artist_page.live),
+            compilations: Grid::new(artist_page.compilations),
             similar: ArtistList::new(artist_page.similar_artists),
             description: artist_page.description,
             image_url: artist_page.image,
@@ -232,7 +232,7 @@ pub struct AlbumPopupState {
     title: String,
     artist: Artist,
     tracks: TrackList,
-    similar: AlbumGrid,
+    similar: Grid<AlbumSimple>,
     description: Option<String>,
     image_url: String,
     release_year: u32,
@@ -258,7 +258,7 @@ enum AlbumTabKind {
 
 enum SelectedAlbumPopupSubtabMut<'a> {
     Tracks(&'a mut TrackList),
-    Similar(&'a mut AlbumGrid),
+    Similar(&'a mut Grid<AlbumSimple>),
 }
 
 impl AlbumPopupState {
@@ -270,7 +270,7 @@ impl AlbumPopupState {
             title: album.title,
             artist: album.artist,
             tracks: TrackList::new(album.tracks),
-            similar: AlbumGrid::new(similar),
+            similar: Grid::new(similar),
             description: album.description,
             image_url: album.image,
             release_year: album.release_year,

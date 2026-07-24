@@ -1,4 +1,5 @@
 use controls_module::controls::Controls;
+use controls_module::models::AlbumSimple;
 use futures::future::try_join_all;
 use player_module::AppResult;
 use player_module::client::{Client, GenrePlaylistSlug};
@@ -12,10 +13,11 @@ use ratatui::{
 use crate::app::FavoriteIds;
 use crate::image_cache::ImageManager;
 use crate::ui::sidebar;
+use crate::widgets::album_grid::Grid;
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::{album_grid::AlbumGrid, playlist_list::PlaylistList},
+    widgets::playlist_list::PlaylistList,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -26,7 +28,7 @@ enum DiscoverFocus {
 }
 
 pub struct DiscoverState {
-    featured_albums: Vec<(String, AlbumGrid)>,
+    featured_albums: Vec<(String, Grid<AlbumSimple>)>,
     featured_playlists: Vec<(String, PlaylistList)>,
     selected_sub_tab: usize,
     focus: DiscoverFocus,
@@ -37,29 +39,23 @@ impl DiscoverState {
         let discover = client.discover_page(None).await?;
 
         let featured_albums = vec![
-            (
-                "New releases".to_string(),
-                AlbumGrid::new(discover.new_releases),
-            ),
-            (
-                "Qobuzissime".to_string(),
-                AlbumGrid::new(discover.qobuzissims),
-            ),
+            ("New releases".to_string(), Grid::new(discover.new_releases)),
+            ("Qobuzissime".to_string(), Grid::new(discover.qobuzissims)),
             (
                 "Essential Discography".to_string(),
-                AlbumGrid::new(discover.ideal_discography),
+                Grid::new(discover.ideal_discography),
             ),
             (
                 "Album of the week".to_string(),
-                AlbumGrid::new(discover.album_of_the_week),
+                Grid::new(discover.album_of_the_week),
             ),
             (
                 "Press Accolades".to_string(),
-                AlbumGrid::new(discover.press_awards),
+                Grid::new(discover.press_awards),
             ),
             (
                 "Most streamed".to_string(),
-                AlbumGrid::new(discover.most_streamed),
+                Grid::new(discover.most_streamed),
             ),
         ];
 
@@ -200,7 +196,7 @@ impl DiscoverState {
         Ok(Output::NotConsumed)
     }
 
-    fn selected_album_mut(&mut self) -> Option<&mut (String, AlbumGrid)> {
+    fn selected_album_mut(&mut self) -> Option<&mut (String, Grid<AlbumSimple>)> {
         self.featured_albums.get_mut(self.selected_sub_tab)
     }
 

@@ -24,22 +24,51 @@ use crate::{
     widgets::filtered_list::FilteredListState,
 };
 
-const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
-const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 5;
+pub trait GridItem: Sized {
+    const CARD_WIDTH: u16;
+    const CARD_HEIGHT: u16;
+
+    fn render_card(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        style: Style,
+        favorites: &HashSet<String>,
+        image_cache: &mut ImageManager,
+    );
+
+    async fn on_add_to_favorites(
+        &self,
+        client: &Client,
+        notifications: &mut NotificationList,
+    ) -> AppResult<Output>;
+
+    async fn on_remove_from_favorites(
+        &self,
+        client: &Client,
+        notifications: &mut NotificationList,
+    ) -> AppResult<Output>;
+
+    async fn on_add_to_queue(&self, client: &Client, controls: &Controls) -> AppResult<Output>;
+
+    async fn on_select(&self, client: &Client) -> AppResult<Output>;
+}
 
 #[derive(Default)]
-pub struct AlbumGrid {
-    items: FilteredListState<AlbumSimple>,
+pub struct Grid<T> {
+    items: FilteredListState<T>,
     scroll_row: usize,
     columns: usize,
 }
 
-impl AlbumGrid {
-    pub fn new(albums: Vec<AlbumSimple>) -> Self {
-        let is_empty = albums.is_empty();
-        let mut items = FilteredListState::new(albums);
+impl<T: GridItem> Grid<T>
+where
+    T: Clone,
+{
+    pub fn new(items: Vec<T>) -> Self {
+        let mut items = FilteredListState::new(items);
 
-        if !is_empty {
+        if !items.filter().is_empty() {
             items.state.select(Some(0));
         }
 
@@ -58,176 +87,43 @@ impl AlbumGrid {
         favorites: &HashSet<String>,
         image_cache: &mut ImageManager,
     ) {
-        if area.width < CARD_WIDTH || area.height < CARD_HEIGHT {
+        if area.width < T::CARD_WIDTH || area.height < T::CARD_HEIGHT {
             return;
         }
 
-        self.columns = usize::from(area.width / CARD_WIDTH);
-        let visible_rows = usize::from(area.height / CARD_HEIGHT);
+        self.columns = usize::from(area.width / T::CARD_WIDTH);
+        let visible_rows = usize::from(area.height / T::CARD_HEIGHT);
 
         self.update_scroll(visible_rows);
 
-        let albums = self.items.filter();
-
+        let items = self.items.filter();
         let first_index = self.scroll_row * self.columns;
         let last_index = first_index
             .saturating_add(visible_rows * self.columns)
-            .min(albums.len());
+            .min(items.len());
 
-        for (index, album) in albums.iter().enumerate().take(last_index).skip(first_index) {
+        for (index, item) in items.iter().enumerate().take(last_index).skip(first_index) {
             let absolute_row = index / self.columns;
             let column = index % self.columns;
             let visible_row = absolute_row - self.scroll_row;
 
-            let x = area.x + column as u16 * CARD_WIDTH;
-            let y = area.y + visible_row as u16 * CARD_HEIGHT;
-
-            let card_area = Rect::new(x, y, CARD_WIDTH, CARD_HEIGHT);
+            let card_area = Rect::new(
+                area.x + column as u16 * T::CARD_WIDTH,
+                area.y + visible_row as u16 * T::CARD_HEIGHT,
+                T::CARD_WIDTH,
+                T::CARD_HEIGHT,
+            );
 
             let selected = self.items.state.selected() == Some(index);
 
-            let style = if selected {
-                if focus {
-                    HIGHLIGHT_TEXT_STYLE
-                } else {
-                    SELECTED_STYLE
-                }
-            } else {
-                Style::default()
+            let style = match (selected, focus) {
+                (true, true) => HIGHLIGHT_TEXT_STYLE,
+                (true, false) => SELECTED_STYLE,
+                _ => Style::default(),
             };
 
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(style)
-                .border_type(BorderType::Rounded)
-                .render(card_area, buf);
-
-            let inner = Rect::new(
-                card_area.x + 1,
-                card_area.y + 1,
-                card_area.width.saturating_sub(2),
-                card_area.height.saturating_sub(2),
-            );
-
-            let Some(image_area) = album_cover_area(inner) else {
-                continue;
-            };
-
-            if let Some(image) = image_cache.get_mut(&album.image) {
-                StatefulImage::default().render(image_area, buf, &mut image.protocol);
-            } else {
-                Paragraph::new("Loading...").render(image_area, buf);
-            }
-
-            let text_area = Rect::new(
-                inner.x,
-                image_area.bottom(),
-                inner.width,
-                inner.bottom().saturating_sub(image_area.bottom()),
-            );
-
-            let is_favorite = favorites.contains(&album.id);
-
-            let marked_title = mark_explicit_and_hifi(
-                album.title.clone(),
-                album.explicit,
-                album.hires_available,
-                is_favorite,
-            );
-
-            let original_title_width = UnicodeWidthStr::width(album.title.as_str());
-            let marker_width = marked_title.width().saturating_sub(original_title_width);
-
-            let available_title_width = usize::from(text_area.width).saturating_sub(marker_width);
-
-            let truncated_title = truncate_to_width(&album.title, available_title_width);
-
-            let title = mark_explicit_and_hifi(
-                truncated_title,
-                album.explicit,
-                album.hires_available,
-                is_favorite,
-            );
-
-            let artist = truncate_to_width(&album.artist.name, usize::from(text_area.width));
-
-            Paragraph::new(Text::from(vec![
-                title.patch_style(style.add_modifier(Modifier::BOLD)),
-                Line::from(artist),
-                Line::from(album.release_year.to_string()).style(Style::default().italic()),
-            ]))
-            .render(text_area, buf);
+            item.render_card(card_area, buf, style, favorites, image_cache);
         }
-    }
-
-    fn update_scroll(&mut self, visible_rows: usize) {
-        if visible_rows == 0 || self.columns == 0 {
-            return;
-        }
-
-        let Some(selected) = self.items.state.selected() else {
-            return;
-        };
-
-        let selected_row = selected / self.columns;
-
-        if selected_row < self.scroll_row {
-            self.scroll_row = selected_row;
-        } else if selected_row >= self.scroll_row + visible_rows {
-            self.scroll_row = selected_row.saturating_sub(visible_rows - 1);
-        }
-
-        let item_count = self.items.filter().len();
-        let total_rows = item_count.div_ceil(self.columns);
-        let max_scroll_row = total_rows.saturating_sub(visible_rows);
-
-        self.scroll_row = self.scroll_row.min(max_scroll_row);
-    }
-
-    fn move_selection(&mut self, delta: isize) {
-        let len = self.items.filter().len();
-
-        if len == 0 {
-            return;
-        }
-
-        let current = self.items.state.selected().unwrap_or(0);
-
-        let next = current
-            .saturating_add_signed(delta)
-            .min(len.saturating_sub(1));
-
-        self.items.state.select(Some(next));
-    }
-
-    pub fn filter(&self) -> &[AlbumSimple] {
-        self.items.filter()
-    }
-
-    pub fn all_items(&self) -> &[AlbumSimple] {
-        self.items.all_items()
-    }
-
-    fn reset_view(&mut self) {
-        self.scroll_row = 0;
-
-        let selection = if self.items.filter().is_empty() {
-            None
-        } else {
-            Some(0)
-        };
-
-        self.items.state.select(selection);
-    }
-
-    pub fn set_filter(&mut self, items: Vec<AlbumSimple>) {
-        self.items.set_filter(items);
-        self.reset_view();
-    }
-
-    pub fn set_all_items(&mut self, items: Vec<AlbumSimple>) {
-        self.items.set_all_items(items);
-        self.reset_view();
     }
 
     pub async fn handle_events(
@@ -259,82 +155,231 @@ impl AlbumGrid {
             }
 
             KeyCode::Char('A') => {
-                let index = self.items.state.selected();
-                let selected = index.and_then(|index| self.items.filter().get(index));
+                let Some(item) = self.selected() else {
+                    return Ok(Output::Consumed);
+                };
 
-                if let Some(selected) = selected {
-                    client.add_favorite_album(&selected.id).await?;
-                    notifications.push(Notification::Info(format!(
-                        "{} added to favorites",
-                        selected.title
-                    )));
-                    return Ok(Output::UpdateFavorites);
-                }
-
-                Ok(Output::Consumed)
+                item.on_add_to_favorites(client, notifications).await
             }
 
             KeyCode::Char('U') => {
-                let index = self.items.state.selected();
-                let selected = index.and_then(|index| self.items.filter().get(index));
+                let Some(item) = self.selected() else {
+                    return Ok(Output::Consumed);
+                };
 
-                if let Some(selected) = selected {
-                    client.remove_favorite_album(&selected.id).await?;
-
-                    notifications.push(Notification::Info(format!(
-                        "{} removed from favorites",
-                        selected.title
-                    )));
-                    return Ok(Output::UpdateFavorites);
-                }
-
-                Ok(Output::Consumed)
+                item.on_remove_from_favorites(client, notifications).await
             }
 
             KeyCode::Char('B') => {
-                let index = self.items.state.selected();
-                let selected = index.and_then(|index| self.items.filter().get(index));
+                let Some(item) = self.selected() else {
+                    return Ok(Output::Consumed);
+                };
 
-                if let Some(selected) = selected {
-                    let tracks = client.album(&selected.id).await?.tracks;
-                    controls.add_tracks_to_queue(tracks);
-                }
-
-                Ok(Output::Consumed)
-            }
-
-            KeyCode::Char('N') => {
-                let index = self.items.state.selected();
-                let selected = index.and_then(|index| self.items.filter().get(index));
-
-                if let Some(selected) = selected {
-                    let tracks = client.album(&selected.id).await?.tracks;
-                    controls.play_tracks_next(tracks);
-                }
-
-                Ok(Output::Consumed)
+                item.on_add_to_queue(client, controls).await
             }
 
             KeyCode::Enter | KeyCode::Char('i') => {
-                let index = self.items.state.selected();
+                let Some(item) = self.selected() else {
+                    return Ok(Output::Consumed);
+                };
 
-                let id = index
-                    .and_then(|index| self.items.filter().get(index))
-                    .map(|album| album.id.clone());
-
-                if let Some(id) = id {
-                    let album = client.album(&id).await?;
-
-                    return Ok(Output::Popup(Popup::Album(
-                        AlbumPopupState::new(album, client).await,
-                    )));
-                }
-
-                Ok(Output::Consumed)
+                item.on_select(client).await
             }
 
             _ => Ok(Output::NotConsumed),
         }
+    }
+
+    pub fn selected(&self) -> Option<&T> {
+        self.items
+            .state
+            .selected()
+            .and_then(|index| self.items.filter().get(index))
+    }
+
+    pub fn filter(&self) -> &[T] {
+        self.items.filter()
+    }
+
+    pub fn all_items(&self) -> &[T] {
+        self.items.all_items()
+    }
+
+    pub fn set_filter(&mut self, items: Vec<T>) {
+        self.items.set_filter(items);
+        self.reset_view();
+    }
+
+    pub fn set_all_items(&mut self, items: Vec<T>) {
+        self.items.set_all_items(items);
+        self.reset_view();
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        let len = self.items.filter().len();
+
+        if len == 0 {
+            return;
+        }
+
+        let current = self.items.state.selected().unwrap_or(0);
+        let next = current
+            .saturating_add_signed(delta)
+            .min(len.saturating_sub(1));
+
+        self.items.state.select(Some(next));
+    }
+
+    fn update_scroll(&mut self, visible_rows: usize) {
+        if visible_rows == 0 || self.columns == 0 {
+            return;
+        }
+
+        let Some(selected) = self.items.state.selected() else {
+            return;
+        };
+
+        let selected_row = selected / self.columns;
+
+        if selected_row < self.scroll_row {
+            self.scroll_row = selected_row;
+        } else if selected_row >= self.scroll_row + visible_rows {
+            self.scroll_row = selected_row.saturating_sub(visible_rows - 1);
+        }
+
+        let item_count = self.items.filter().len();
+        let total_rows = item_count.div_ceil(self.columns);
+        let max_scroll_row = total_rows.saturating_sub(visible_rows);
+
+        self.scroll_row = self.scroll_row.min(max_scroll_row);
+    }
+
+    fn reset_view(&mut self) {
+        self.scroll_row = 0;
+
+        self.items
+            .state
+            .select((!self.items.filter().is_empty()).then_some(0));
+    }
+}
+
+impl GridItem for AlbumSimple {
+    const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
+    const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 5;
+
+    fn render_card(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        style: Style,
+        favorites: &HashSet<String>,
+        image_cache: &mut ImageManager,
+    ) {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(style)
+            .border_type(BorderType::Rounded)
+            .render(area, buf);
+
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
+
+        let Some(image_area) = album_cover_area(inner) else {
+            return;
+        };
+
+        if let Some(image) = image_cache.get_mut(&self.image) {
+            StatefulImage::default().render(image_area, buf, &mut image.protocol);
+        } else {
+            Paragraph::new("Loading...").render(image_area, buf);
+        }
+
+        let text_area = Rect::new(
+            inner.x,
+            image_area.bottom(),
+            inner.width,
+            inner.bottom().saturating_sub(image_area.bottom()),
+        );
+
+        let is_favorite = favorites.contains(&self.id);
+
+        let marked_title = mark_explicit_and_hifi(
+            self.title.clone(),
+            self.explicit,
+            self.hires_available,
+            is_favorite,
+        );
+
+        let original_width = UnicodeWidthStr::width(self.title.as_str());
+
+        let marker_width = marked_title.width().saturating_sub(original_width);
+
+        let available_width = usize::from(text_area.width).saturating_sub(marker_width);
+
+        let title = mark_explicit_and_hifi(
+            truncate_to_width(&self.title, available_width),
+            self.explicit,
+            self.hires_available,
+            is_favorite,
+        );
+
+        let artist = truncate_to_width(&self.artist.name, usize::from(text_area.width));
+
+        Paragraph::new(Text::from(vec![
+            title.patch_style(style.add_modifier(Modifier::BOLD)),
+            Line::from(artist),
+            Line::from(self.release_year.to_string()).style(Style::default().italic()),
+        ]))
+        .render(text_area, buf);
+    }
+
+    async fn on_add_to_favorites(
+        &self,
+        client: &Client,
+        notifications: &mut NotificationList,
+    ) -> AppResult<Output> {
+        client.add_favorite_album(&self.id).await?;
+
+        notifications.push(Notification::Info(format!(
+            "{} added to favorites",
+            self.title
+        )));
+
+        Ok(Output::UpdateFavorites)
+    }
+
+    async fn on_remove_from_favorites(
+        &self,
+        client: &Client,
+        notifications: &mut NotificationList,
+    ) -> AppResult<Output> {
+        client.remove_favorite_album(&self.id).await?;
+
+        notifications.push(Notification::Info(format!(
+            "{} removed from favorites",
+            self.title
+        )));
+
+        Ok(Output::UpdateFavorites)
+    }
+
+    async fn on_add_to_queue(&self, client: &Client, controls: &Controls) -> AppResult<Output> {
+        let tracks = client.album(&self.id).await?.tracks;
+        controls.add_tracks_to_queue(tracks);
+
+        Ok(Output::Consumed)
+    }
+
+    async fn on_select(&self, client: &Client) -> AppResult<Output> {
+        let album = client.album(&self.id).await?;
+
+        Ok(Output::Popup(Popup::Album(
+            AlbumPopupState::new(album, client).await,
+        )))
     }
 }
 

@@ -1,4 +1,4 @@
-use controls_module::controls::Controls;
+use controls_module::{controls::Controls, models::AlbumSimple};
 use futures::future::try_join_all;
 use player_module::{
     AppResult,
@@ -15,11 +15,12 @@ use crate::{
     app::FavoriteIds,
     image_cache::ImageManager,
     ui::{SELECTED_STYLE, sidebar},
+    widgets::album_grid::Grid,
 };
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::{album_grid::AlbumGrid, playlist_list::PlaylistList},
+    widgets::playlist_list::PlaylistList,
 };
 
 pub struct GenresState {
@@ -33,7 +34,7 @@ pub struct GenresState {
 struct GenreItem {
     id: u32,
     name: String,
-    albums: Vec<(String, AlbumGrid)>,
+    albums: Vec<(String, Grid<AlbumSimple>)>,
     playlists: Vec<(String, PlaylistList)>,
 }
 
@@ -91,29 +92,23 @@ impl GenresState {
         .await?;
 
         let albums = vec![
-            (
-                "New releases".to_string(),
-                AlbumGrid::new(discover.new_releases),
-            ),
-            (
-                "Qobuzissime".to_string(),
-                AlbumGrid::new(discover.qobuzissims),
-            ),
+            ("New releases".to_string(), Grid::new(discover.new_releases)),
+            ("Qobuzissime".to_string(), Grid::new(discover.qobuzissims)),
             (
                 "Essential Discography".to_string(),
-                AlbumGrid::new(discover.ideal_discography),
+                Grid::new(discover.ideal_discography),
             ),
             (
                 "Album of the week".to_string(),
-                AlbumGrid::new(discover.album_of_the_week),
+                Grid::new(discover.album_of_the_week),
             ),
             (
                 "Press Accolades".to_string(),
-                AlbumGrid::new(discover.press_awards),
+                Grid::new(discover.press_awards),
             ),
             (
                 "Most streamed".to_string(),
-                AlbumGrid::new(discover.most_streamed),
+                Grid::new(discover.most_streamed),
             ),
         ];
 
@@ -469,7 +464,7 @@ impl GenresState {
 }
 
 enum Selected<'a> {
-    Album(&'a mut AlbumGrid),
+    Album(&'a mut Grid<AlbumSimple>),
     Playlist(&'a mut PlaylistList),
 }
 

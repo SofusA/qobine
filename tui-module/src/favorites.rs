@@ -1,4 +1,4 @@
-use controls_module::controls::Controls;
+use controls_module::{controls::Controls, models::AlbumSimple};
 use player_module::{AppResult, client::Client};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -13,7 +13,7 @@ use crate::{
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
-        album_grid::AlbumGrid,
+        album_grid::Grid,
         artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
@@ -29,7 +29,7 @@ enum FavoritesFocus {
 
 pub struct FavoritesState {
     pub filter: Input,
-    pub albums: AlbumGrid,
+    pub albums: Grid<AlbumSimple>,
     pub artists: ArtistList,
     pub playlists: PlaylistList,
     pub tracks: TrackList,
@@ -45,7 +45,7 @@ impl FavoritesState {
         Ok(Self {
             editing: Default::default(),
             filter: Default::default(),
-            albums: AlbumGrid::new(favorites.albums),
+            albums: Grid::new(favorites.albums),
             artists: ArtistList::new(favorites.artists),
             playlists: PlaylistList::new(
                 favorites.playlists.into_iter().map(|x| x.into()).collect(),
