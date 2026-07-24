@@ -21,12 +21,12 @@ use crate::{
 };
 
 mod app;
+mod detail_pages;
 mod discover;
 mod favorites;
 mod genres;
 mod image_cache;
 mod now_playing;
-mod popup;
 mod preferences;
 mod queue;
 mod search;

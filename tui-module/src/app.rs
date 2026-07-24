@@ -1,10 +1,10 @@
 use crate::{
+    detail_pages::{AddTrackPopup, AlbumPopup, ArtistPopup, Popup, TrackInfoPopup},
     discover::DiscoverState,
     favorites::FavoritesState,
     genres::GenresState,
     image_cache::{ImageLoaded, ImageManager},
     now_playing::NowPlayingState,
-    popup::{AlbumPopupState, ArtistPopupState, Popup, TrackInfoPopupState, TrackPopupState},
     preferences::PreferencesState,
     queue::QueueState,
     search::SearchState,
@@ -333,7 +333,7 @@ impl App {
                         .and_then(|t| t.album_id.clone())
                         && let Ok(album) = self.client.album(&album_id).await
                     {
-                        let popup = Popup::Album(AlbumPopupState::new(album, &self.client).await);
+                        let popup = Popup::Album(AlbumPopup::new(album, &self.client).await);
                         self.push_popup(popup).await;
                     }
                 }
@@ -347,7 +347,7 @@ impl App {
                             image: None,
                         };
 
-                        if let Ok(state) = ArtistPopupState::new(&artist, &self.client).await {
+                        if let Ok(state) = ArtistPopup::new(&artist, &self.client).await {
                             self.push_popup(Popup::Artist(state)).await;
                         }
                     }
@@ -356,7 +356,7 @@ impl App {
                     if let Some(id) = self.now_playing.playing_track.as_ref().map(|t| t.id)
                         && let Ok(track) = self.client.track(id).await
                     {
-                        let state = TrackInfoPopupState::new(track);
+                        let state = TrackInfoPopup::new(track);
                         self.push_popup(Popup::TrackInfo(state)).await;
                     }
                 }
@@ -454,7 +454,7 @@ impl App {
                     }
                 };
 
-                popups.push(Popup::AddTrackToPlaylist(TrackPopupState::new(
+                popups.push(Popup::AddTrackToPlaylist(AddTrackPopup::new(
                     track, playlists,
                 )));
 

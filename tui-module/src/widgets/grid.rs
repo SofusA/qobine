@@ -21,11 +21,10 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
     app::{NotificationList, Output},
-    image_cache::ImageManager,
-    popup::{
-        AlbumPopupState, ArtistPopupState, DeletePlaylistPopupState, NewPlaylistPopupState,
-        PlaylistPopupState, Popup,
+    detail_pages::{
+        AlbumPopup, ArtistPopup, DeletePlaylistPopup, NewPlaylistPopup, PlaylistPopup, Popup,
     },
+    image_cache::ImageManager,
     ui::{
         ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_TEXT_STYLE, SELECTED_STYLE,
         album_cover_area, format_duration, mark_as_favorite, mark_as_owned, mark_explicit_and_hifi,
@@ -395,7 +394,7 @@ impl GridItem for AlbumSimple {
                 let album = context.client.album(&self.id).await?;
 
                 Ok(Output::Popup(Popup::Album(
-                    AlbumPopupState::new(album, context.client).await,
+                    AlbumPopup::new(album, context.client).await,
                 )))
             }
 
@@ -490,7 +489,7 @@ impl GridItem for Artist {
             }
 
             KeyCode::Enter | KeyCode::Char('i') => {
-                let state = ArtistPopupState::new(self, context.client).await?;
+                let state = ArtistPopup::new(self, context.client).await?;
 
                 Ok(Output::Popup(Popup::Artist(state)))
             }
@@ -591,7 +590,7 @@ impl GridItem for PlaylistSimple {
             }
 
             KeyCode::Char('U') if self.is_owned => Ok(Output::Popup(Popup::DeletePlaylist(
-                DeletePlaylistPopupState::new(self.clone()),
+                DeletePlaylistPopup::new(self.clone()),
             ))),
 
             KeyCode::Char('U') => {
@@ -605,9 +604,7 @@ impl GridItem for PlaylistSimple {
                 Ok(Output::UpdateFavorites)
             }
 
-            KeyCode::Char('C') => Ok(Output::Popup(Popup::NewPlaylist(
-                NewPlaylistPopupState::new(),
-            ))),
+            KeyCode::Char('C') => Ok(Output::Popup(Popup::NewPlaylist(NewPlaylistPopup::new()))),
 
             KeyCode::Char('B') => {
                 let tracks = context.client.playlist(self.id).await?.tracks;
@@ -626,9 +623,7 @@ impl GridItem for PlaylistSimple {
             KeyCode::Enter | KeyCode::Char('i') => {
                 let playlist = context.client.playlist(self.id).await?;
 
-                Ok(Output::Popup(Popup::Playlist(PlaylistPopupState::new(
-                    playlist,
-                ))))
+                Ok(Output::Popup(Popup::Playlist(PlaylistPopup::new(playlist))))
             }
 
             _ => Ok(Output::NotConsumed),

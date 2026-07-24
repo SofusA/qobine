@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::{
     app::{NotificationList, Output},
-    popup::{Popup, TrackInfoPopupState},
+    detail_pages::{Popup, TrackInfoPopup},
     ui::{
         COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
     },
@@ -196,7 +196,7 @@ impl TrackList {
 
                 if let Some(id) = id {
                     let track = client.track(id).await?;
-                    let state = TrackInfoPopupState::new(track);
+                    let state = TrackInfoPopup::new(track);
                     return Ok(Output::Popup(Popup::TrackInfo(state)));
                 }
                 Ok(Output::Consumed)
