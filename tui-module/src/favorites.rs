@@ -16,7 +16,7 @@ use crate::{
     sub_tab::SubTab,
     ui::{block, render_input, sidebar},
     widgets::{
-        album_grid::Grid,
+        grid::Grid,
         track_list::{TrackList, TrackListEvent},
     },
 };

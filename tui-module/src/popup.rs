@@ -19,7 +19,7 @@ use crate::{
         mark_as_favorite, render_input, sidebar, tab_bar,
     },
     widgets::{
-        album_grid::Grid,
+        grid::Grid,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
     },

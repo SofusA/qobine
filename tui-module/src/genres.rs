@@ -18,7 +18,7 @@ use crate::{
     app::FavoriteIds,
     image_cache::ImageManager,
     ui::{SELECTED_STYLE, sidebar},
-    widgets::album_grid::Grid,
+    widgets::grid::Grid,
 };
 use crate::{
     app::{NotificationList, Output},

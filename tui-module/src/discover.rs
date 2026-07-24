@@ -13,7 +13,7 @@ use ratatui::{
 use crate::app::FavoriteIds;
 use crate::image_cache::ImageManager;
 use crate::ui::sidebar;
-use crate::widgets::album_grid::Grid;
+use crate::widgets::grid::Grid;
 use crate::{
     app::{NotificationList, Output},
     ui::block,
