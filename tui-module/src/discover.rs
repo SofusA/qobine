@@ -1,5 +1,5 @@
 use controls_module::controls::Controls;
-use controls_module::models::AlbumSimple;
+use controls_module::models::{AlbumSimple, PlaylistSimple};
 use futures::future::try_join_all;
 use player_module::AppResult;
 use player_module::client::{Client, GenrePlaylistSlug};
@@ -17,7 +17,6 @@ use crate::widgets::album_grid::Grid;
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::playlist_list::PlaylistList,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -29,7 +28,7 @@ enum DiscoverFocus {
 
 pub struct DiscoverState {
     featured_albums: Vec<(String, Grid<AlbumSimple>)>,
-    featured_playlists: Vec<(String, PlaylistList)>,
+    featured_playlists: Vec<(String, Grid<PlaylistSimple>)>,
     selected_sub_tab: usize,
     focus: DiscoverFocus,
 }
@@ -68,7 +67,7 @@ impl DiscoverState {
                     })
                     .await?;
 
-                Ok::<_, Error>((tag.name, PlaylistList::new(playlists)))
+                Ok::<_, Error>((tag.name, Grid::new(playlists)))
             }))
             .await?;
 
@@ -131,6 +130,7 @@ impl DiscoverState {
                 frame.buffer_mut(),
                 content_focused,
                 favorites.playlists(),
+                image_cache,
             );
         }
     }
@@ -200,7 +200,7 @@ impl DiscoverState {
         self.featured_albums.get_mut(self.selected_sub_tab)
     }
 
-    fn selected_playlist_mut(&mut self) -> Option<&mut (String, PlaylistList)> {
+    fn selected_playlist_mut(&mut self) -> Option<&mut (String, Grid<PlaylistSimple>)> {
         let index = self
             .selected_sub_tab
             .checked_sub(self.featured_albums.len())?;

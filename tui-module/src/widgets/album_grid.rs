@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use controls_module::{controls::Controls, models::AlbumSimple};
+use controls_module::{
+    controls::Controls,
+    models::{AlbumSimple, Artist, PlaylistSimple},
+};
 use player_module::{AppResult, client::Client, notification::Notification};
 use ratatui::{
     buffer::Buffer,
@@ -16,15 +19,26 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::{
     app::{NotificationList, Output},
     image_cache::ImageManager,
-    popup::{AlbumPopupState, Popup},
+    popup::{
+        AlbumPopupState, ArtistPopupState, DeletePlaylistPopupState, NewPlaylistPopupState,
+        PlaylistPopupState, Popup,
+    },
     ui::{
         ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_TEXT_STYLE, SELECTED_STYLE,
-        album_cover_area, mark_explicit_and_hifi,
+        album_cover_area, format_duration, mark_as_favorite, mark_as_owned, mark_explicit_and_hifi,
     },
     widgets::filtered_list::FilteredListState,
 };
 
-pub trait GridItem: Sized {
+pub struct GridEventContext<'a> {
+    pub client: &'a Client,
+    pub controls: &'a Controls,
+    pub notifications: &'a mut NotificationList,
+}
+
+pub trait GridItem {
+    type Id: Eq + std::hash::Hash;
+
     const CARD_WIDTH: u16;
     const CARD_HEIGHT: u16;
 
@@ -33,25 +47,11 @@ pub trait GridItem: Sized {
         area: Rect,
         buf: &mut Buffer,
         style: Style,
-        favorites: &HashSet<String>,
+        favorites: &HashSet<Self::Id>,
         image_cache: &mut ImageManager,
     );
 
-    async fn on_add_to_favorites(
-        &self,
-        client: &Client,
-        notifications: &mut NotificationList,
-    ) -> AppResult<Output>;
-
-    async fn on_remove_from_favorites(
-        &self,
-        client: &Client,
-        notifications: &mut NotificationList,
-    ) -> AppResult<Output>;
-
-    async fn on_add_to_queue(&self, client: &Client, controls: &Controls) -> AppResult<Output>;
-
-    async fn on_select(&self, client: &Client) -> AppResult<Output>;
+    async fn on_key_event(&self, key: KeyCode, context: GridEventContext<'_>) -> AppResult<Output>;
 }
 
 #[derive(Default)]
@@ -84,7 +84,7 @@ where
         area: Rect,
         buf: &mut Buffer,
         focus: bool,
-        favorites: &HashSet<String>,
+        favorites: &HashSet<T::Id>,
         image_cache: &mut ImageManager,
     ) {
         if area.width < T::CARD_WIDTH || area.height < T::CARD_HEIGHT {
@@ -154,39 +154,21 @@ where
                 Ok(Output::Consumed)
             }
 
-            KeyCode::Char('A') => {
+            key => {
                 let Some(item) = self.selected() else {
-                    return Ok(Output::Consumed);
+                    return Ok(Output::NotConsumed);
                 };
 
-                item.on_add_to_favorites(client, notifications).await
+                item.on_key_event(
+                    key,
+                    GridEventContext {
+                        client,
+                        controls,
+                        notifications,
+                    },
+                )
+                .await
             }
-
-            KeyCode::Char('U') => {
-                let Some(item) = self.selected() else {
-                    return Ok(Output::Consumed);
-                };
-
-                item.on_remove_from_favorites(client, notifications).await
-            }
-
-            KeyCode::Char('B') => {
-                let Some(item) = self.selected() else {
-                    return Ok(Output::Consumed);
-                };
-
-                item.on_add_to_queue(client, controls).await
-            }
-
-            KeyCode::Enter | KeyCode::Char('i') => {
-                let Some(item) = self.selected() else {
-                    return Ok(Output::Consumed);
-                };
-
-                item.on_select(client).await
-            }
-
-            _ => Ok(Output::NotConsumed),
         }
     }
 
@@ -264,6 +246,7 @@ where
 }
 
 impl GridItem for AlbumSimple {
+    type Id = String;
     const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
     const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 5;
 
@@ -272,7 +255,7 @@ impl GridItem for AlbumSimple {
         area: Rect,
         buf: &mut Buffer,
         style: Style,
-        favorites: &HashSet<String>,
+        favorites: &HashSet<Self::Id>,
         image_cache: &mut ImageManager,
     ) {
         Block::default()
@@ -337,49 +320,286 @@ impl GridItem for AlbumSimple {
         .render(text_area, buf);
     }
 
-    async fn on_add_to_favorites(
+    async fn on_key_event(&self, key: KeyCode, context: GridEventContext<'_>) -> AppResult<Output> {
+        match key {
+            KeyCode::Char('A') => {
+                context.client.add_favorite_album(&self.id).await?;
+
+                context.notifications.push(Notification::Info(format!(
+                    "{} added to favorites",
+                    self.title
+                )));
+
+                Ok(Output::UpdateFavorites)
+            }
+
+            KeyCode::Char('U') => {
+                context.client.remove_favorite_album(&self.id).await?;
+
+                context.notifications.push(Notification::Info(format!(
+                    "{} removed from favorites",
+                    self.title
+                )));
+
+                Ok(Output::UpdateFavorites)
+            }
+
+            KeyCode::Char('B') => {
+                let tracks = context.client.album(&self.id).await?.tracks;
+                context.controls.add_tracks_to_queue(tracks);
+
+                Ok(Output::Consumed)
+            }
+
+            KeyCode::Char('N') => {
+                let tracks = context.client.album(&self.id).await?.tracks;
+                context.controls.play_tracks_next(tracks);
+
+                Ok(Output::Consumed)
+            }
+
+            KeyCode::Enter | KeyCode::Char('i') => {
+                let album = context.client.album(&self.id).await?;
+
+                Ok(Output::Popup(Popup::Album(
+                    AlbumPopupState::new(album, context.client).await,
+                )))
+            }
+
+            _ => Ok(Output::NotConsumed),
+        }
+    }
+}
+
+impl GridItem for Artist {
+    type Id = u32;
+    const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
+    const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 3;
+
+    fn render_card(
         &self,
-        client: &Client,
-        notifications: &mut NotificationList,
-    ) -> AppResult<Output> {
-        client.add_favorite_album(&self.id).await?;
+        area: Rect,
+        buf: &mut Buffer,
+        style: Style,
+        favorites: &HashSet<Self::Id>,
+        image_cache: &mut ImageManager,
+    ) {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(style)
+            .border_type(BorderType::Rounded)
+            .render(area, buf);
 
-        notifications.push(Notification::Info(format!(
-            "{} added to favorites",
-            self.title
-        )));
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
 
-        Ok(Output::UpdateFavorites)
+        let Some(image_area) = album_cover_area(inner) else {
+            return;
+        };
+
+        if let Some(image_key) = &self.image {
+            if let Some(image) = image_cache.get_mut(image_key) {
+                StatefulImage::default().render(image_area, buf, &mut image.protocol);
+            } else {
+                Paragraph::new("Loading...").render(image_area, buf);
+            }
+        } else {
+            Paragraph::new("No image").render(image_area, buf);
+        }
+
+        let text_area = Rect::new(
+            inner.x,
+            image_area.bottom(),
+            inner.width,
+            inner.bottom().saturating_sub(image_area.bottom()),
+        );
+
+        let is_favorite = favorites.contains(&self.id);
+
+        let marker_width = mark_as_favorite(Line::default(), is_favorite).width();
+
+        let available_name_width = usize::from(text_area.width).saturating_sub(marker_width);
+
+        let name = Line::from(truncate_to_width(&self.name, available_name_width));
+
+        let name =
+            mark_as_favorite(name, is_favorite).patch_style(style.add_modifier(Modifier::BOLD));
+
+        Paragraph::new(name).render(text_area, buf);
     }
 
-    async fn on_remove_from_favorites(
+    async fn on_key_event(&self, key: KeyCode, context: GridEventContext<'_>) -> AppResult<Output> {
+        match key {
+            KeyCode::Char('A') => {
+                context.client.add_favorite_artist(self.id).await?;
+
+                context.notifications.push(Notification::Info(format!(
+                    "{} added to favorites",
+                    self.name
+                )));
+
+                Ok(Output::UpdateFavorites)
+            }
+
+            KeyCode::Char('U') => {
+                context.client.remove_favorite_artist(self.id).await?;
+
+                context.notifications.push(Notification::Info(format!(
+                    "{} removed from favorites",
+                    self.name
+                )));
+
+                Ok(Output::UpdateFavorites)
+            }
+
+            KeyCode::Enter | KeyCode::Char('i') => {
+                let state = ArtistPopupState::new(self, context.client).await?;
+
+                Ok(Output::Popup(Popup::Artist(state)))
+            }
+
+            _ => Ok(Output::NotConsumed),
+        }
+    }
+}
+
+impl GridItem for PlaylistSimple {
+    type Id = u32;
+    const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
+    const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 4;
+
+    fn render_card(
         &self,
-        client: &Client,
-        notifications: &mut NotificationList,
-    ) -> AppResult<Output> {
-        client.remove_favorite_album(&self.id).await?;
+        area: Rect,
+        buf: &mut Buffer,
+        style: Style,
+        favorites: &HashSet<Self::Id>,
+        image_cache: &mut ImageManager,
+    ) {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(style)
+            .border_type(BorderType::Rounded)
+            .render(area, buf);
 
-        notifications.push(Notification::Info(format!(
-            "{} removed from favorites",
-            self.title
-        )));
+        let inner = Rect::new(
+            area.x + 1,
+            area.y + 1,
+            area.width.saturating_sub(2),
+            area.height.saturating_sub(2),
+        );
 
-        Ok(Output::UpdateFavorites)
+        let Some(image_area) = album_cover_area(inner) else {
+            return;
+        };
+
+        if let Some(image_key) = &self.image {
+            if let Some(image) = image_cache.get_mut(image_key) {
+                StatefulImage::default().render(image_area, buf, &mut image.protocol);
+            } else {
+                Paragraph::new("Loading...").render(image_area, buf);
+            }
+        } else {
+            Paragraph::new("No image").render(image_area, buf);
+        }
+
+        let text_area = Rect::new(
+            inner.x,
+            image_area.bottom(),
+            inner.width,
+            inner.bottom().saturating_sub(image_area.bottom()),
+        );
+
+        let is_favorite = favorites.contains(&self.id);
+
+        // Calculate marker width before truncating the title.
+        let markers = mark_as_owned(
+            mark_as_favorite(Line::default(), is_favorite),
+            self.is_owned,
+        );
+
+        let marker_width = markers.width();
+        let title_width = usize::from(text_area.width).saturating_sub(marker_width);
+
+        let title = Line::from(truncate_to_width(&self.title, title_width));
+
+        let title = mark_as_owned(mark_as_favorite(title, is_favorite), self.is_owned)
+            .patch_style(style.add_modifier(Modifier::BOLD));
+
+        let details = format!(
+            "{} · {} tracks",
+            format_duration(self.duration_seconds),
+            self.tracks_count,
+        );
+
+        Paragraph::new(Text::from(vec![
+            title,
+            Line::from(truncate_to_width(&details, usize::from(text_area.width)))
+                .style(Style::default().italic()),
+        ]))
+        .render(text_area, buf);
     }
 
-    async fn on_add_to_queue(&self, client: &Client, controls: &Controls) -> AppResult<Output> {
-        let tracks = client.album(&self.id).await?.tracks;
-        controls.add_tracks_to_queue(tracks);
+    async fn on_key_event(&self, key: KeyCode, context: GridEventContext<'_>) -> AppResult<Output> {
+        match key {
+            KeyCode::Char('A') if !self.is_owned => {
+                context.client.add_favorite_playlist(self.id).await?;
 
-        Ok(Output::Consumed)
-    }
+                context.notifications.push(Notification::Info(format!(
+                    "{} added to favorites",
+                    self.title
+                )));
 
-    async fn on_select(&self, client: &Client) -> AppResult<Output> {
-        let album = client.album(&self.id).await?;
+                Ok(Output::UpdateFavorites)
+            }
 
-        Ok(Output::Popup(Popup::Album(
-            AlbumPopupState::new(album, client).await,
-        )))
+            KeyCode::Char('U') if self.is_owned => Ok(Output::Popup(Popup::DeletePlaylist(
+                DeletePlaylistPopupState::new(self.clone()),
+            ))),
+
+            KeyCode::Char('U') => {
+                context.client.remove_favorite_playlist(self.id).await?;
+
+                context.notifications.push(Notification::Info(format!(
+                    "{} removed from favorites",
+                    self.title
+                )));
+
+                Ok(Output::UpdateFavorites)
+            }
+
+            KeyCode::Char('C') => Ok(Output::Popup(Popup::NewPlaylist(
+                NewPlaylistPopupState::new(),
+            ))),
+
+            KeyCode::Char('B') => {
+                let tracks = context.client.playlist(self.id).await?.tracks;
+                context.controls.add_tracks_to_queue(tracks);
+
+                Ok(Output::Consumed)
+            }
+
+            KeyCode::Char('N') => {
+                let tracks = context.client.playlist(self.id).await?.tracks;
+                context.controls.play_tracks_next(tracks);
+
+                Ok(Output::Consumed)
+            }
+
+            KeyCode::Enter | KeyCode::Char('i') => {
+                let playlist = context.client.playlist(self.id).await?;
+
+                Ok(Output::Popup(Popup::Playlist(PlaylistPopupState::new(
+                    playlist,
+                ))))
+            }
+
+            _ => Ok(Output::NotConsumed),
+        }
     }
 }
 

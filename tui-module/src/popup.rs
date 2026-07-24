@@ -20,7 +20,6 @@ use crate::{
     },
     widgets::{
         album_grid::Grid,
-        artist_list::ArtistList,
         playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
     },
@@ -40,7 +39,7 @@ pub struct ArtistPopupState {
     singles: Grid<AlbumSimple>,
     live: Grid<AlbumSimple>,
     compilations: Grid<AlbumSimple>,
-    similar: ArtistList,
+    similar: Grid<Artist>,
     description: Option<String>,
     image_url: Option<String>,
     selected_sub_tab: usize,
@@ -52,7 +51,7 @@ pub struct ArtistPopupState {
 enum SelectedArtistPopupSubtabMut<'a> {
     Albums(&'a mut Grid<AlbumSimple>),
     TopTracks(&'a mut TrackList),
-    Similar(&'a mut ArtistList),
+    Similar(&'a mut Grid<Artist>),
 }
 
 struct Tab<'a> {
@@ -82,7 +81,7 @@ impl ArtistPopupState {
             singles: Grid::new(artist_page.singles),
             live: Grid::new(artist_page.live),
             compilations: Grid::new(artist_page.compilations),
-            similar: ArtistList::new(artist_page.similar_artists),
+            similar: Grid::new(artist_page.similar_artists),
             description: artist_page.description,
             image_url: artist_page.image,
             selected_sub_tab: 0,
@@ -817,6 +816,7 @@ impl Popup {
                             frame.buffer_mut(),
                             true,
                             favorites.artists(),
+                            image_cache,
                         ),
                     }
                 }
@@ -1283,7 +1283,12 @@ impl Popup {
 
                                     SelectedArtistPopupSubtabMut::Similar(artist_list) => {
                                         artist_list
-                                            .handle_events(key_event.code, client, notifications)
+                                            .handle_events(
+                                                key_event.code,
+                                                client,
+                                                controls,
+                                                notifications,
+                                            )
                                             .await
                                     }
                                 },

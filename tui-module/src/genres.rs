@@ -1,4 +1,7 @@
-use controls_module::{controls::Controls, models::AlbumSimple};
+use controls_module::{
+    controls::Controls,
+    models::{AlbumSimple, PlaylistSimple},
+};
 use futures::future::try_join_all;
 use player_module::{
     AppResult,
@@ -20,7 +23,6 @@ use crate::{
 use crate::{
     app::{NotificationList, Output},
     ui::block,
-    widgets::playlist_list::PlaylistList,
 };
 
 pub struct GenresState {
@@ -35,7 +37,7 @@ struct GenreItem {
     id: u32,
     name: String,
     albums: Vec<(String, Grid<AlbumSimple>)>,
-    playlists: Vec<(String, PlaylistList)>,
+    playlists: Vec<(String, Grid<PlaylistSimple>)>,
 }
 
 #[derive(PartialEq)]
@@ -87,7 +89,7 @@ impl GenresState {
                 })
                 .await?;
 
-            Ok::<_, Error>((tag.name, PlaylistList::new(playlists)))
+            Ok::<_, Error>((tag.name, Grid::new(playlists)))
         }))
         .await?;
 
@@ -260,6 +262,7 @@ impl GenresState {
                     frame.buffer_mut(),
                     content_focused,
                     favorites.playlists(),
+                    image_cache,
                 );
             }
             None => {}
@@ -465,7 +468,7 @@ impl GenresState {
 
 enum Selected<'a> {
     Album(&'a mut Grid<AlbumSimple>),
-    Playlist(&'a mut PlaylistList),
+    Playlist(&'a mut Grid<PlaylistSimple>),
 }
 
 enum SubTab {

@@ -1,4 +1,7 @@
-use controls_module::{controls::Controls, models::AlbumSimple};
+use controls_module::{
+    controls::Controls,
+    models::{AlbumSimple, Artist, PlaylistSimple},
+};
 use player_module::{AppResult, client::Client};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -14,8 +17,6 @@ use crate::{
     ui::{block, render_input, sidebar},
     widgets::{
         album_grid::Grid,
-        artist_list::ArtistList,
-        playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
     },
 };
@@ -32,8 +33,8 @@ pub enum SearchFocus {
 pub struct SearchState {
     filter: Input,
     albums: Grid<AlbumSimple>,
-    artists: ArtistList,
-    playlists: PlaylistList,
+    artists: Grid<Artist>,
+    playlists: Grid<PlaylistSimple>,
     tracks: TrackList,
     sub_tab: SubTab,
     focus: SearchFocus,
@@ -92,12 +93,14 @@ impl SearchState {
                 frame.buffer_mut(),
                 content_focused,
                 favorites.artists(),
+                image_cache,
             ),
             SubTab::Playlists => self.playlists.render(
                 chunks[1],
                 frame.buffer_mut(),
                 content_focused,
                 favorites.playlists(),
+                image_cache,
             ),
             SubTab::Tracks => self.tracks.render(
                 chunks[1],
@@ -186,7 +189,7 @@ impl SearchState {
             }
             SubTab::Artists => {
                 self.artists
-                    .handle_events(key_code, client, notifications)
+                    .handle_events(key_code, client, controls, notifications)
                     .await
             }
             SubTab::Playlists => {

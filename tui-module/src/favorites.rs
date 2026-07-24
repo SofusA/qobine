@@ -1,4 +1,7 @@
-use controls_module::{controls::Controls, models::AlbumSimple};
+use controls_module::{
+    controls::Controls,
+    models::{AlbumSimple, Artist, PlaylistSimple},
+};
 use player_module::{AppResult, client::Client};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -14,8 +17,6 @@ use crate::{
     ui::{block, render_input, sidebar},
     widgets::{
         album_grid::Grid,
-        artist_list::ArtistList,
-        playlist_list::PlaylistList,
         track_list::{TrackList, TrackListEvent},
     },
 };
@@ -30,8 +31,8 @@ enum FavoritesFocus {
 pub struct FavoritesState {
     pub filter: Input,
     pub albums: Grid<AlbumSimple>,
-    pub artists: ArtistList,
-    pub playlists: PlaylistList,
+    pub artists: Grid<Artist>,
+    pub playlists: Grid<PlaylistSimple>,
     pub tracks: TrackList,
     editing: bool,
     sub_tab: SubTab,
@@ -46,10 +47,8 @@ impl FavoritesState {
             editing: Default::default(),
             filter: Default::default(),
             albums: Grid::new(favorites.albums),
-            artists: ArtistList::new(favorites.artists),
-            playlists: PlaylistList::new(
-                favorites.playlists.into_iter().map(|x| x.into()).collect(),
-            ),
+            artists: Grid::new(favorites.artists),
+            playlists: Grid::new(favorites.playlists.into_iter().map(|x| x.into()).collect()),
             tracks: TrackList::new(favorites.tracks),
             sub_tab: Default::default(),
             focus: Default::default(),
@@ -101,12 +100,14 @@ impl FavoritesState {
                 frame.buffer_mut(),
                 content_focused,
                 &Default::default(),
+                image_cache,
             ),
             SubTab::Playlists => self.playlists.render(
                 chunks[1],
                 frame.buffer_mut(),
                 content_focused,
                 &Default::default(),
+                image_cache,
             ),
             SubTab::Tracks => self.tracks.render(
                 chunks[1],
@@ -249,7 +250,7 @@ impl FavoritesState {
             }
             SubTab::Artists => {
                 self.artists
-                    .handle_events(key_code, client, notifications)
+                    .handle_events(key_code, client, controls, notifications)
                     .await
             }
             SubTab::Playlists => {
