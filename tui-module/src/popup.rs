@@ -1245,7 +1245,7 @@ impl Popup {
                             Ok(Output::Consumed)
                         }
 
-                        KeyCode::Enter => {
+                        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                             artist_popup_state.focus_content();
                             Ok(Output::Consumed)
                         }

@@ -153,7 +153,7 @@ impl DiscoverState {
                         self.cycle_subtab();
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Enter => {
+                    KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                         self.focus = DiscoverFocus::Content;
                         Ok(Output::Consumed)
                     }

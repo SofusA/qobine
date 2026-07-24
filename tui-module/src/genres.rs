@@ -362,7 +362,7 @@ impl GenresState {
 
                         Ok(Output::Consumed)
                     }
-                    KeyCode::Enter => {
+                    KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                         self.focus = GenresFocus::Content;
 
                         Ok(Output::Consumed)

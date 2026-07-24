@@ -475,7 +475,7 @@ impl PreferencesState {
                                 let _ = self.exit_sender.send(true);
                             }
                         }
-                        KeyCode::Enter => {
+                        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                             self.select_first_field();
                             self.pane = PreferencesPane::Content;
                         }
