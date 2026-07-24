@@ -548,27 +548,37 @@ pub enum Popup {
 }
 
 impl Popup {
+    pub fn title(&self) -> String {
+        match self {
+            Popup::Artist(state) => state.artist_name.clone(),
+            Popup::Album(state) => state.title.clone(),
+            Popup::Playlist(state) => state.title.clone(),
+            Popup::AddTrackToPlaylist(state) => format!("Add {} to playlist", state.track.title),
+            Popup::NewPlaylist(_) => "New playlist".to_string(),
+            Popup::DeletePlaylist(_) => "Delete playlist".to_string(),
+            Popup::TrackInfo(state) => state.track.title.clone(),
+        }
+    }
     pub fn render(
         &mut self,
         frame: &mut Frame,
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
+        breadcrumb_titles: &[String],
     ) {
         let screen = frame.area();
 
         let areas = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // "<- back"
-                Constraint::Min(1),    // Popup content
-            ])
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
             .split(screen);
 
-        let back_area = areas[0];
+        let breadcrumb_area = areas[0];
         let popup_area = areas[1];
 
         frame.render_widget(Clear, screen);
-        frame.render_widget(Paragraph::new("<- back"), back_area);
+        let breadcrumbs = breadcrumb_line(breadcrumb_titles);
+        frame.render_widget(Paragraph::new(breadcrumbs), breadcrumb_area);
 
         match self {
             Popup::Album(album) => {
@@ -1609,4 +1619,29 @@ fn header_blurb(description: &str, width: usize) -> Line<'static> {
         Span::raw(head),
         Span::styled(hint, Style::new().italic()),
     ])
+}
+
+fn breadcrumb_line(titles: &[String]) -> Line<'_> {
+    let mut spans = Vec::new();
+
+    for (index, title) in titles.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(
+                " › ",
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
+
+        let is_current = index == titles.len() - 1;
+
+        let style = if is_current {
+            Style::default().add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().add_modifier(Modifier::DIM)
+        };
+
+        spans.push(Span::styled(title.as_str(), style));
+    }
+
+    Line::from(spans)
 }

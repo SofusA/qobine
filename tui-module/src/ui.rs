@@ -56,8 +56,21 @@ impl App {
                 );
             }
             AppState::Popup(popups) => {
+                let breadcrumb_titles: Vec<String> = popups
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .map(|popup| popup.title())
+                    .rev()
+                    .collect();
+
                 if let Some(popup) = popups.last_mut() {
-                    popup.render(frame, favorite_ids, &mut self.image_cache);
+                    popup.render(
+                        frame,
+                        favorite_ids,
+                        &mut self.image_cache,
+                        &breadcrumb_titles,
+                    );
                 }
             }
         }
