@@ -26,7 +26,7 @@ pub struct SegmentByteInfo {
 
 struct SharedDownloadState {
     url_template: String,
-    n_segments: u8,
+    n_segments: u32,
     content_key: Option<[u8; 16]>,
     flac_header: Vec<u8>,
     cache_path: PathBuf,
@@ -40,7 +40,7 @@ struct SharedDownloadState {
 
 pub struct FlacSourceParams {
     pub url_template: String,
-    pub n_segments: u8,
+    pub n_segments: u32,
     pub content_key: Option<[u8; 16]>,
     pub flac_header: Vec<u8>,
     pub cache_path: PathBuf,
@@ -120,7 +120,7 @@ impl SourceStream for FlacSourceStream {
             .position(|s| data_offset < s.byte_offset + s.byte_len)
             .unwrap_or(self.shared.segment_map.len().saturating_sub(1));
 
-        let target_seg = seg_idx as u8 + 1;
+        let target_seg = seg_idx as u32 + 1;
         let seg_byte_start = self.flac_header_len + self.shared.segment_map[seg_idx].byte_offset;
         let skip_bytes = start.saturating_sub(seg_byte_start) as usize;
 
@@ -220,7 +220,7 @@ async fn run_download_initial(
 async fn run_download_from(
     shared: Arc<SharedDownloadState>,
     tx: tokio::sync::mpsc::Sender<io::Result<Bytes>>,
-    start_seg: u8,
+    start_seg: u32,
     skip_first_bytes: usize,
 ) {
     let n = shared.n_segments;
@@ -230,7 +230,7 @@ async fn run_download_from(
 
 /// Spawn gap-fill only if the forward pass completed (all segments from start_seg onward
 /// are downloaded) and no other gap-fill is already running.
-fn maybe_spawn_gap_fill(shared: Arc<SharedDownloadState>, start_seg: u8) {
+fn maybe_spawn_gap_fill(shared: Arc<SharedDownloadState>, start_seg: u32) {
     let n = shared.n_segments;
     let forward_complete = {
         let downloaded = shared.downloaded.lock();
@@ -254,8 +254,8 @@ fn maybe_spawn_gap_fill(shared: Arc<SharedDownloadState>, start_seg: u8) {
 async fn download_segments(
     shared: &Arc<SharedDownloadState>,
     tx: &tokio::sync::mpsc::Sender<io::Result<Bytes>>,
-    from_seg: u8,
-    to_seg: u8,
+    from_seg: u32,
+    to_seg: u32,
     skip_first_bytes: usize,
 ) {
     let mut prefetch: Option<JoinHandle<()>> = None;
@@ -332,9 +332,9 @@ async fn download_segments(
 /// Runs in background after the main download pass — doesn't send to channel.
 async fn fill_missing_segments(shared: &Arc<SharedDownloadState>) {
     let total = (shared.n_segments - 1) as usize;
-    let missing: Vec<u8> = (0..total)
+    let missing: Vec<u32> = (0..total)
         .filter(|i| shared.downloaded.lock()[*i].is_none())
-        .map(|i| i as u8 + 1)
+        .map(|i| i as u32 + 1)
         .collect();
 
     if missing.is_empty() {
@@ -349,7 +349,7 @@ async fn fill_missing_segments(shared: &Arc<SharedDownloadState>) {
 }
 
 /// Prefetch a segment into `downloaded` without sending to the channel.
-async fn prefetch_segment(shared: &SharedDownloadState, seg: u8) {
+async fn prefetch_segment(shared: &SharedDownloadState, seg: u32) {
     let idx = (seg - 1) as usize;
     if shared.downloaded.lock()[idx].is_some() {
         return;
@@ -403,8 +403,8 @@ async fn send_with_skip(
     tx: &tokio::sync::mpsc::Sender<io::Result<Bytes>>,
     frames: &[u8],
     skip: usize,
-    n_segments: u8,
-    seg: u8,
+    n_segments: u32,
+    seg: u32,
     source: &str,
 ) -> bool {
     let data = if skip > 0 && skip < frames.len() {
@@ -428,7 +428,7 @@ async fn send_with_skip(
 /// Partial progress is stored in `shared.in_progress` to survive task cancellation.
 async fn fetch_and_stream_segment(
     shared: &SharedDownloadState,
-    seg: u8,
+    seg: u32,
     skip_bytes: usize,
     already_sent: usize,
     tx: &tokio::sync::mpsc::Sender<io::Result<Bytes>>,
