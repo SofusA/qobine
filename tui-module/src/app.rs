@@ -495,6 +495,7 @@ impl App {
                     AppState::Help => {
                         self.app_state = AppState::Normal;
                         self.should_draw = true;
+                        self.should_clear = true;
                         return Ok(());
                     }
                     AppState::Focus => {

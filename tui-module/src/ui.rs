@@ -39,6 +39,7 @@ impl App {
                 self.render_inner(frame);
             }
             AppState::Help => {
+                self.render_inner(frame);
                 render_help(frame);
             }
             AppState::ConnectOverlay(selected) => {
