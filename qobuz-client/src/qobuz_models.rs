@@ -33,7 +33,7 @@ pub struct Image {
 pub struct TrackInfo {
     pub url_template: String,
     pub mime_type: String,
-    pub n_segments: u8,
+    pub n_segments: u32,
     #[serde(default)]
     pub key_id: Option<String>,
     #[serde(default)]

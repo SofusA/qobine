@@ -605,7 +605,7 @@ impl Client {
         );
 
         // Segment table may list more audio segments than the API's n_segments-1.
-        let audio_segments = init_info.segment_table.len() as u8;
+        let audio_segments = init_info.segment_table.len() as u32;
         if audio_segments == 0 {
             return Err(Error::StreamError {
                 message: "Track has no audio segments".to_string(),
