@@ -10,9 +10,8 @@ use mpris_server::{
     zbus::{self, fdo},
 };
 use player_module::{AppResult, error::Error, player::Player};
-use tokio::sync::broadcast::Sender;
 
-pub fn spawn_mpris(player: &Player, exit_sender: &Sender<bool>, mpris_name: String) {
+pub fn spawn_mpris(player: &Player, exit_sender: &ExitSender, mpris_name: String) {
     let position_receiver = player.position();
     let tracklist_receiver = player.tracklist();
     let volume_receiver = player.volume();

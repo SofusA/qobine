@@ -71,7 +71,6 @@ sha2 = "0.11"
 stream-download = "0.24"
 bytes = "1"
 open = "5"
-mpris-server = "0.10"
 eventsource-stream = "0.2"
 async-stream = "0.3"
 tower-http = { version = "0.7", features = ["limit"] }
