@@ -111,6 +111,17 @@ where
 
         self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
 
+        let content_width = (self.columns as u16).saturating_mul(T::CARD_WIDTH);
+
+        let cards_area = Rect::new(
+            grid_area.x + grid_area.width.saturating_sub(content_width) / 2,
+            grid_area.y,
+            content_width,
+            grid_area.height,
+        );
+
+        self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
+
         let total_rows = item_count.div_ceil(self.columns);
 
         self.update_scroll(visible_rows);
@@ -127,8 +138,8 @@ where
             let visible_row = absolute_row - self.scroll_row;
 
             let card_area = Rect::new(
-                grid_area.x + column as u16 * T::CARD_WIDTH,
-                grid_area.y + visible_row as u16 * T::CARD_HEIGHT,
+                cards_area.x + column as u16 * T::CARD_WIDTH,
+                cards_area.y + visible_row as u16 * T::CARD_HEIGHT,
                 T::CARD_WIDTH,
                 T::CARD_HEIGHT,
             );
