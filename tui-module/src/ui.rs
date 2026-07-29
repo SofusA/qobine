@@ -32,21 +32,22 @@ pub fn album_cover_area(area: Rect) -> Option<Rect> {
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
+        let tab_area = self.render_now_playing_bar(frame);
         let favorite_ids = &self.favorite_ids;
 
         match &mut self.app_state {
             AppState::Normal => {
-                self.render_inner(frame);
+                self.render_inner(frame, tab_area);
             }
             AppState::Help => {
-                self.render_inner(frame);
-                render_help(frame);
+                self.render_inner(frame, tab_area);
+                render_help(frame, tab_area);
             }
             AppState::ConnectOverlay(selected) => {
                 let available_devices: Vec<String> =
                     self.connect_available_devices.borrow().to_vec();
                 let active_device: String = self.connect_active_device.borrow().to_string();
-                render_connect(frame, available_devices, active_device, *selected);
+                render_connect(frame, tab_area, available_devices, active_device, *selected);
             }
             AppState::Focus => {
                 focus::render(
@@ -68,6 +69,7 @@ impl App {
                 if let Some(popup) = popups.last_mut() {
                     popup.render(
                         frame,
+                        tab_area,
                         favorite_ids,
                         &mut self.image_cache,
                         &breadcrumb_titles,
@@ -79,17 +81,36 @@ impl App {
         self.render_notifications(frame);
     }
 
-    fn render_inner(&mut self, frame: &mut Frame) {
+    fn render_now_playing_bar(&mut self, frame: &mut Frame) -> Rect {
         let area = frame.area();
         let hide_album_cover = self.disable_tui_album_cover;
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(11),
-            ])
+            .constraints([Constraint::Min(1), Constraint::Length(11)])
+            .split(area);
+
+        if self.now_playing.playing_track.is_some() {
+            now_playing::render(
+                frame,
+                chunks[1],
+                &self.now_playing,
+                hide_album_cover,
+                &mut self.image_cache,
+            );
+        }
+
+        if self.now_playing.playing_track.is_some() {
+            chunks[0]
+        } else {
+            chunks[0].union(chunks[1])
+        }
+    }
+
+    fn render_inner(&mut self, frame: &mut Frame, area: Rect) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(area);
 
         let labels: Vec<String> = Tab::VALUES
@@ -110,22 +131,7 @@ impl App {
         .block(block(None));
 
         frame.render_widget(tabs, chunks[0]);
-
-        if self.now_playing.playing_track.is_some() {
-            now_playing::render(
-                frame,
-                chunks[2],
-                &self.now_playing,
-                hide_album_cover,
-                &mut self.image_cache,
-            );
-        }
-
-        let tab_content_area = if self.now_playing.playing_track.is_some() {
-            chunks[1]
-        } else {
-            chunks[1].union(chunks[2])
-        };
+        let tab_content_area = chunks[1];
 
         let favorite_ids = &self.favorite_ids;
 
@@ -217,6 +223,7 @@ pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect 
 
 fn render_connect(
     frame: &mut Frame,
+    area: Rect,
     available_devices: Vec<String>,
     active_device: String,
     selected_device: usize,
@@ -252,7 +259,7 @@ fn render_connect(
     let width = std::cmp::max(content_width, title.len());
 
     let area = center(
-        frame.area(),
+        area,
         Constraint::Length(width as u16 + 6),
         Constraint::Length(items.len() as u16 + 2),
     );
@@ -269,7 +276,7 @@ fn render_connect(
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn render_help(frame: &mut Frame) {
+fn render_help(frame: &mut Frame, area: Rect) {
     let rows = [
         ["Toggle focus mode", "F"],
         ["Next song", "n"],
@@ -304,18 +311,7 @@ fn render_help(frame: &mut Frame) {
         ["Exit", "q"],
     ];
 
-    let max_left = rows.iter().map(|x| x[0].len()).max().expect("infallible");
-    let max_right = rows.iter().map(|x| x[1].len()).max().expect("infallible");
-    let max = std::cmp::max(max_left, max_right);
-    let max = max + max;
-
     let rows: Vec<_> = rows.into_iter().map(Row::new).collect();
-
-    let area = center(
-        frame.area(),
-        Constraint::Length(max as u16 + 2 + 1),
-        Constraint::Length(rows.len() as u16 + 2),
-    );
 
     let block = block(Some("Help"));
 

@@ -63,16 +63,15 @@ impl Overlay {
     pub fn render(
         &mut self,
         frame: &mut Frame,
+        area: Rect,
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
         breadcrumb_titles: &[String],
     ) {
-        let screen = frame.area();
-
         let [breadcrumb_area, popup_area] =
-            Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(screen);
+            Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(area);
 
-        frame.render_widget(Clear, screen);
+        frame.render_widget(Clear, area);
         frame.render_widget(
             Paragraph::new(breadcrumb_line(breadcrumb_titles)),
             breadcrumb_area,
