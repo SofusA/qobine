@@ -367,7 +367,7 @@ impl PreferencesState {
 
         let mut block = Block::default().borders(Borders::ALL).title(title);
 
-        if self.disconnect_enabled && Self::disconnect_field_error(input) {
+        if self.disconnect_enabled && Self::disconnect_field_error(input) && !focused {
             block = block.border_style(Style::default().fg(Color::Red));
         }
 
