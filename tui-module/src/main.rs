@@ -30,6 +30,7 @@ struct Arguments {
     command: Option<SharedCommands>,
 }
 
+#[cfg(not(target_os = "macos"))]
 #[tokio::main]
 async fn main() {
     match run().await {
@@ -38,6 +39,26 @@ async fn main() {
             eprintln!("{err}");
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn main() {
+    std::thread::spawn(|| {
+        match tokio::runtime::Runtime::new() {
+            Ok(runtime) => {
+                if let Err(err) = runtime.block_on(run()) {
+                    eprintln!("{err}");
+                }
+            }
+            Err(err) => {
+                eprintln!("{err}");
+            }
+        }
+
+        macos_module::stop_main_loop();
+    });
+
+    macos_module::run_main_loop();
 }
 
 pub async fn run() -> AppResult<()> {
@@ -78,6 +99,9 @@ pub async fn run() -> AppResult<()> {
 
     #[cfg(target_os = "linux")]
     spawn_mpris(&player, &exit_sender, "qobine".to_string());
+
+    #[cfg(target_os = "macos")]
+    macos_module::spawn_now_playing(&player, &exit_sender);
 
     #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
