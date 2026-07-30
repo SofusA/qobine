@@ -35,52 +35,31 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         match &mut self.app_state {
             AppState::Normal => {
-                let tab_area = render_now_playing_bar(
-                    frame,
-                    self.disable_album_cover,
-                    &self.now_playing,
-                    &mut self.image_cache,
-                );
+                let tab_area =
+                    render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
                 self.render_inner(frame, tab_area);
             }
             AppState::Help => {
-                let tab_area = render_now_playing_bar(
-                    frame,
-                    self.disable_album_cover,
-                    &self.now_playing,
-                    &mut self.image_cache,
-                );
+                let tab_area =
+                    render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
                 self.render_inner(frame, tab_area);
                 render_help(frame, tab_area);
             }
             AppState::ConnectOverlay(selected) => {
-                let tab_area = render_now_playing_bar(
-                    frame,
-                    self.disable_album_cover,
-                    &self.now_playing,
-                    &mut self.image_cache,
-                );
+                let tab_area =
+                    render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
                 let available_devices: Vec<String> =
                     self.connect_available_devices.borrow().to_vec();
                 let active_device: String = self.connect_active_device.borrow().to_string();
                 render_connect(frame, tab_area, available_devices, active_device, *selected);
             }
             AppState::Focus => {
-                focus::render(
-                    frame,
-                    &self.now_playing,
-                    self.disable_album_cover,
-                    &mut self.image_cache,
-                );
+                focus::render(frame, &self.now_playing, &mut self.image_cache);
             }
             AppState::Overlay(popups) => {
                 let favorite_ids = &self.favorite_ids;
-                let tab_area = render_now_playing_bar(
-                    frame,
-                    self.disable_album_cover,
-                    &self.now_playing,
-                    &mut self.image_cache,
-                );
+                let tab_area =
+                    render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
                 let breadcrumb_titles: Vec<String> = popups
                     .iter()
                     .rev()
@@ -220,12 +199,10 @@ pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect 
 
 fn render_now_playing_bar(
     frame: &mut Frame,
-    disable_album_cover: bool,
     now_playing: &NowPlayingState,
     image_cache: &mut ImageManager,
 ) -> Rect {
     let area = frame.area();
-    let hide_album_cover = disable_album_cover;
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -233,7 +210,7 @@ fn render_now_playing_bar(
         .split(area);
 
     if now_playing.playing_track.is_some() {
-        now_playing::render(frame, chunks[1], now_playing, hide_album_cover, image_cache);
+        now_playing::render(frame, chunks[1], now_playing, image_cache);
     }
 
     if now_playing.playing_track.is_some() {

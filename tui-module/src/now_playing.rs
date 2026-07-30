@@ -23,7 +23,6 @@ pub fn render(
     frame: &mut Frame,
     area: Rect,
     state: &NowPlayingState,
-    disable_tui_album_cover: bool,
     image_cache: &mut ImageManager,
 ) {
     let track = match &state.playing_track {
@@ -41,8 +40,7 @@ pub fn render(
         .as_ref()
         .and_then(|key| image_cache.get_mut(key));
 
-    let can_render_cover = !disable_tui_album_cover
-        && image.is_some()
+    let can_render_cover = image.is_some()
         && inner.height >= ALBUM_COVER_HEIGHT
         && inner.width
             >= ALBUM_COVER_WIDTH

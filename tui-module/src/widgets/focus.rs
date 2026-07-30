@@ -11,12 +11,7 @@ const IMAGE_INFO_GAP: u16 = 6;
 const CHAR_WIDTH: u16 = 4;
 const CHAR_HEIGHT: u16 = 2;
 
-pub fn render(
-    frame: &mut Frame,
-    state: &NowPlayingState,
-    disable_album_cover: bool,
-    image_cache: &mut ImageManager,
-) {
+pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut ImageManager) {
     let area = frame.area();
     let track = match &state.playing_track {
         Some(track) => track,
@@ -25,16 +20,12 @@ pub fn render(
 
     let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
 
-    let image_size = if disable_album_cover {
-        None
-    } else {
-        image.as_deref().map(|image| {
-            image.protocol.size_for(
-                Resize::Scale(Some(FilterType::Triangle)),
-                Size::new(area.width * 2 / 5, area.height * 9 / 10),
-            )
-        })
-    };
+    let image_size = image.as_deref().map(|image| {
+        image.protocol.size_for(
+            Resize::Scale(Some(FilterType::Triangle)),
+            Size::new(area.width * 2 / 5, area.height * 9 / 10),
+        )
+    });
 
     let info_area = match image_size {
         Some(size) => {

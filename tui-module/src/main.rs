@@ -19,10 +19,6 @@ use player_module::{AppResult, database::Database, notification::NotificationBro
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
 struct Arguments {
-    /// Disable the album cover image
-    #[clap(long)]
-    disable_album_cover: bool,
-
     #[clap(flatten)]
     shared: SharedArgs,
 
@@ -169,7 +165,6 @@ pub async fn run() -> AppResult<()> {
             status_receiver,
             exit_sender,
             ttl_tx,
-            args.disable_album_cover,
             database,
             available_devices_rx,
             active_device_rx,
