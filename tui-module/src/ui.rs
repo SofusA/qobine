@@ -4,7 +4,8 @@ use tui_input::Input;
 
 use crate::{
     app::{App, AppState, Tab},
-    now_playing::{self},
+    image_cache::ImageManager,
+    now_playing::{self, NowPlayingState},
     widgets::focus,
 };
 
@@ -32,18 +33,33 @@ pub fn album_cover_area(area: Rect) -> Option<Rect> {
 
 impl App {
     pub fn render(&mut self, frame: &mut Frame) {
-        let tab_area = self.render_now_playing_bar(frame);
-        let favorite_ids = &self.favorite_ids;
-
         match &mut self.app_state {
             AppState::Normal => {
+                let tab_area = render_now_playing_bar(
+                    frame,
+                    self.disable_album_cover,
+                    &self.now_playing,
+                    &mut self.image_cache,
+                );
                 self.render_inner(frame, tab_area);
             }
             AppState::Help => {
+                let tab_area = render_now_playing_bar(
+                    frame,
+                    self.disable_album_cover,
+                    &self.now_playing,
+                    &mut self.image_cache,
+                );
                 self.render_inner(frame, tab_area);
                 render_help(frame, tab_area);
             }
             AppState::ConnectOverlay(selected) => {
+                let tab_area = render_now_playing_bar(
+                    frame,
+                    self.disable_album_cover,
+                    &self.now_playing,
+                    &mut self.image_cache,
+                );
                 let available_devices: Vec<String> =
                     self.connect_available_devices.borrow().to_vec();
                 let active_device: String = self.connect_active_device.borrow().to_string();
@@ -53,11 +69,18 @@ impl App {
                 focus::render(
                     frame,
                     &self.now_playing,
-                    self.disable_tui_album_cover,
+                    self.disable_album_cover,
                     &mut self.image_cache,
                 );
             }
             AppState::Overlay(popups) => {
+                let favorite_ids = &self.favorite_ids;
+                let tab_area = render_now_playing_bar(
+                    frame,
+                    self.disable_album_cover,
+                    &self.now_playing,
+                    &mut self.image_cache,
+                );
                 let breadcrumb_titles: Vec<String> = popups
                     .iter()
                     .rev()
@@ -79,32 +102,6 @@ impl App {
         }
 
         self.render_notifications(frame);
-    }
-
-    fn render_now_playing_bar(&mut self, frame: &mut Frame) -> Rect {
-        let area = frame.area();
-        let hide_album_cover = self.disable_tui_album_cover;
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(11)])
-            .split(area);
-
-        if self.now_playing.playing_track.is_some() {
-            now_playing::render(
-                frame,
-                chunks[1],
-                &self.now_playing,
-                hide_album_cover,
-                &mut self.image_cache,
-            );
-        }
-
-        if self.now_playing.playing_track.is_some() {
-            chunks[0]
-        } else {
-            chunks[0].union(chunks[1])
-        }
     }
 
     fn render_inner(&mut self, frame: &mut Frame, area: Rect) {
@@ -219,6 +216,31 @@ pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect 
         .areas(area);
     let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
     area
+}
+
+fn render_now_playing_bar(
+    frame: &mut Frame,
+    disable_album_cover: bool,
+    now_playing: &NowPlayingState,
+    image_cache: &mut ImageManager,
+) -> Rect {
+    let area = frame.area();
+    let hide_album_cover = disable_album_cover;
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(11)])
+        .split(area);
+
+    if now_playing.playing_track.is_some() {
+        now_playing::render(frame, chunks[1], now_playing, hide_album_cover, image_cache);
+    }
+
+    if now_playing.playing_track.is_some() {
+        chunks[0]
+    } else {
+        chunks[0].union(chunks[1])
+    }
 }
 
 fn render_connect(

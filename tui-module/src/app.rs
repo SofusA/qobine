@@ -152,7 +152,7 @@ pub struct App {
     pub preferences: PreferencesState,
     pub broadcast: Arc<NotificationBroadcast>,
     pub notifications: NotificationList,
-    pub disable_tui_album_cover: bool,
+    pub disable_album_cover: bool,
     pub connect_available_devices: watch::Receiver<Vec<String>>,
     pub connect_active_device: watch::Receiver<String>,
     pub set_connect_active_device: mpsc::UnboundedSender<String>,

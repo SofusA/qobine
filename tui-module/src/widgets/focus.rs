@@ -14,7 +14,7 @@ const CHAR_HEIGHT: u16 = 2;
 pub fn render(
     frame: &mut Frame,
     state: &NowPlayingState,
-    disable_tui_album_cover: bool,
+    disable_album_cover: bool,
     image_cache: &mut ImageManager,
 ) {
     let area = frame.area();
@@ -25,7 +25,7 @@ pub fn render(
 
     let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
 
-    let image_size = if disable_tui_album_cover {
+    let image_size = if disable_album_cover {
         None
     } else {
         image.as_deref().map(|image| {

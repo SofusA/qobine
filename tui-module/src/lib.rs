@@ -87,7 +87,7 @@ pub async fn init(
         should_draw: true,
         should_clear: false,
         app_state: Default::default(),
-        disable_tui_album_cover,
+        disable_album_cover: disable_tui_album_cover,
         favorites,
         favorite_ids,
         search: Default::default(),
