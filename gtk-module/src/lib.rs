@@ -173,7 +173,7 @@ fn build_ui(
 ) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
-        .title("Qobuz Player")
+        .title("Qobine")
         .default_width(800)
         .default_height(1000)
         .hide_on_close(true)
@@ -219,7 +219,7 @@ fn build_ui(
     );
 
     let root_page = adw::NavigationPage::builder()
-        .title("Qobuz Player")
+        .title("Qobine")
         .child(shell.widget())
         .build();
     app_nav.add(&root_page);
