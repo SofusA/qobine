@@ -1,6 +1,12 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use axum::{Router, extract::State, response::Response, routing::get};
+use axum::{
+    Router,
+    extract::State,
+    response::{IntoResponse, Redirect, Response},
+    routing::get,
+};
+use controls_module::tracklist::Tracklist;
 use serde_json::json;
 
 use crate::AppState;
@@ -13,7 +19,15 @@ pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
 }
 
 async fn index(State(state): State<Arc<AppState>>) -> Response {
-    let context = now_playing_context(&state).await;
+    let tracklist = state.tracklist_receiver.borrow().clone();
+
+    if tracklist.current_track().is_none() {
+        return Redirect::to("/favorites").into_response();
+    }
+
+    let position = *state.position_receiver.borrow();
+
+    let context = now_playing_context(&tracklist, &position).await;
     state.render("now-playing.html", &context)
 }
 
@@ -22,13 +36,15 @@ async fn status_partial(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn now_playing_content(State(state): State<Arc<AppState>>) -> Response {
-    let context = now_playing_context(&state).await;
+    let tracklist = state.tracklist_receiver.borrow().clone();
+    let position = *state.position_receiver.borrow();
+
+    let context = now_playing_context(&tracklist, &position).await;
     state.render("now-playing-content.html", &context)
 }
 
-async fn now_playing_context(state: &AppState) -> serde_json::Value {
-    let tracklist = state.tracklist_receiver.borrow().clone();
-    let position_mseconds = state.position_receiver.borrow().as_millis();
+async fn now_playing_context(tracklist: &Tracklist, position: &Duration) -> serde_json::Value {
+    let position_mseconds = position.as_millis();
 
     let current_track = tracklist.current_track().cloned();
     let duration_mseconds = current_track

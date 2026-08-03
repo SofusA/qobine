@@ -1,38 +1,40 @@
 <div id="player-controls">
   <div class="h-28"></div>
-  <div class="px-safe-offset-2 py-safe fixed right-0 bottom-14 left-0 z-20">
-    <div
-      class="relative flex items-center justify-between gap-2 rounded-md bg-gray-900/70 p-2 backdrop-blur-md"
-    >
+  @if (playing_info.now_playing_id) {
+    <div class="px-safe-offset-2 py-safe fixed right-0 bottom-14 left-0 z-20">
       <div
-        class="pointer-events-none relative z-10 flex w-full items-center gap-2 overflow-hidden"
+        class="relative flex items-center justify-between gap-2 rounded-md bg-gray-900/70 p-2 backdrop-blur-md"
       >
         <div
-          class="aspect-square size-10 rounded-md bg-gray-800 bg-cover bg-center bg-no-repeat shadow"
-          style="@if(playing_info.cover_image){background-image: url({{
-            playing_info.cover_image
-          }});}"
-        ></div>
-        <a
-          href="{{ playing_info.entity_link }}"
-          hx-target="unset"
-          class="pointer-events-auto flex flex-wrap gap-2 overflow-hidden leading-none hover:underline"
+          class="pointer-events-none relative z-10 flex w-full items-center gap-2 overflow-hidden"
         >
-          <span class="truncate">{{ playing_info.entity_title }}</span>
-          <span class="truncate text-gray-500">{{ playing_info.title }}</span>
-        </a>
-      </div>
-      <div class="relative z-20 flex items-center gap-4">
-        <span class="hidden w-8 sm:flex">
-          @defer (previous.html) {}
-        </span>
-        <span class="flex w-8">
-          @defer (player-state.html; playing_info=playing_info) {}
-        </span>
-        <span class="flex w-8">
-          @defer (next.html) {}
-        </span>
+          <div
+            class="aspect-square size-10 rounded-md bg-gray-800 bg-cover bg-center bg-no-repeat shadow"
+            style="@if(playing_info.cover_image){background-image: url({{
+              playing_info.cover_image
+            }});}"
+          ></div>
+          <a
+            href="{{ playing_info.entity_link }}"
+            hx-target="unset"
+            class="pointer-events-auto flex flex-wrap gap-2 overflow-hidden leading-none hover:underline"
+          >
+            <span class="truncate">{{ playing_info.entity_title }}</span>
+            <span class="truncate text-gray-500">{{ playing_info.title }}</span>
+          </a>
+        </div>
+        <div class="relative z-20 flex items-center gap-4">
+          <span class="hidden w-8 sm:flex">
+            @defer (previous.html) {}
+          </span>
+          <span class="flex w-8">
+            @defer (player-state.html; playing_info=playing_info) {}
+          </span>
+          <span class="flex w-8">
+            @defer (next.html) {}
+          </span>
+        </div>
       </div>
     </div>
-  </div>
+  }
 </div>

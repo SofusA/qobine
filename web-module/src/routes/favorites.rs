@@ -10,9 +10,10 @@ use serde_json::json;
 
 use crate::{AppState, ResponseResult, ok_or_error_page, ok_or_send_error_toast};
 
-#[derive(Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 enum Tab {
+    #[default]
     Albums,
     Artists,
     Playlists,
@@ -21,13 +22,24 @@ enum Tab {
 
 pub fn routes() -> Router<std::sync::Arc<crate::AppState>> {
     Router::new()
-        .route("/favorites/{tab}", get(index))
+        .route("/favorites", get(index))
+        .route("/favorites/{tab}", get(index_tab))
         .route("/favorites/tracks/partial", get(tracks_partial))
         .route("/favorites/tracks/shuffle", put(shuffle_favorite_tracks))
         .route("/favorites/tracks/play/{index}", put(play_favorite_track))
 }
 
-async fn index(State(state): State<Arc<AppState>>, Path(tab): Path<Tab>) -> ResponseResult {
+async fn index(State(state): State<Arc<AppState>>) -> ResponseResult {
+    let tab = Tab::default();
+    let favorites = ok_or_error_page(&state, state.get_favorites().await)?;
+
+    Ok(state.render(
+        "favorites.html",
+        &json!({"favorites": favorites, "tab": tab}),
+    ))
+}
+
+async fn index_tab(State(state): State<Arc<AppState>>, Path(tab): Path<Tab>) -> ResponseResult {
     let favorites = ok_or_error_page(&state, state.get_favorites().await)?;
 
     Ok(state.render(
