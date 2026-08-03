@@ -21,9 +21,10 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     AppResult,
-    client::Client,
+    client::StreamClient,
     database::Database,
     downloader::{DownloadResult, Downloader},
+    error::PlayerError,
     notification::{Notification, NotificationBroadcast},
     sink::{QueryTrackResult, Sink},
 };
@@ -35,7 +36,7 @@ pub struct Player {
     tracklist_tx: Sender<Tracklist>,
     tracklist_rx: Receiver<Tracklist>,
     target_status: Sender<Status>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     sink: Sink,
     volume: Sender<f32>,
     position: Sender<Duration>,
@@ -55,10 +56,9 @@ pub struct Player {
 }
 
 impl Player {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tracklist: Tracklist,
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
         volume: f32,
         enable_auto_play: bool,
         broadcast: Arc<NotificationBroadcast>,
@@ -71,14 +71,14 @@ impl Player {
         let (volume, volume_receiver) = watch::channel(volume);
         let (auto_play, auto_play_rx) = watch::channel(enable_auto_play);
 
-        let sink = Sink::new(volume_receiver, preferred_device_id)?;
+        let sink = Sink::new(volume_receiver, preferred_device_id);
 
         let downloader = Downloader::new(audio_cache_directory, database.clone(), client.clone());
 
         let track_finished = sink.track_finished();
 
-        let (position, _) = watch::channel(Default::default());
-        let (target_status, _) = watch::channel(Default::default());
+        let (position, _) = watch::channel(Duration::default());
+        let (target_status, _) = watch::channel(Status::default());
         let (tracklist_tx, tracklist_rx) = watch::channel(tracklist);
 
         let controls = Controls::new();
@@ -202,7 +202,7 @@ impl Player {
         }
     }
 
-    fn pause(&mut self) {
+    fn pause(&self) {
         self.set_target_status(Status::Paused);
         self.sink.pause();
     }
@@ -285,7 +285,7 @@ impl Player {
         Ok(())
     }
 
-    fn seek(&mut self, duration: Duration) -> AppResult<()> {
+    fn seek(&self, duration: Duration) -> AppResult<()> {
         match self.sink.seek(duration) {
             Ok(()) => {
                 self.position.send(self.sink.position())?;
@@ -297,12 +297,12 @@ impl Player {
         Ok(())
     }
 
-    fn jump_forward(&mut self) -> AppResult<()> {
+    fn jump_forward(&self) -> AppResult<()> {
         let duration = self
             .tracklist_rx
             .borrow()
             .current_track()
-            .map(|x| Duration::from_secs(x.duration_seconds as u64));
+            .map(|x| Duration::from_secs(u64::from(x.duration_seconds)));
 
         if let Some(duration) = duration {
             let ten_seconds = Duration::from_secs(10);
@@ -318,14 +318,16 @@ impl Player {
         Ok(())
     }
 
-    fn jump_backward(&mut self) -> AppResult<()> {
+    fn jump_backward(&self) -> AppResult<()> {
         let current_position = self.sink.position();
 
         if current_position.as_millis() < 10000 {
             self.seek(Duration::default())?;
         } else {
             let ten_seconds = Duration::from_secs(10);
-            let seek_position = current_position - ten_seconds;
+            let seek_position = current_position
+                .checked_sub(ten_seconds)
+                .ok_or(PlayerError::Seek)?;
 
             self.seek(seek_position)?;
         }
@@ -345,13 +347,13 @@ impl Player {
             return Ok(());
         }
 
-        self.position.send(Default::default())?;
+        self.position.send(Duration::default())?;
 
         if tracklist.skip_to_track(new_position).is_some() {
             self.new_queue(tracklist, false).await?;
         } else {
             tracklist.reset();
-            self.sink.clear()?;
+            self.sink.clear();
             self.next_track_is_queried = false;
             self.set_target_status(Status::Paused);
             self.broadcast_tracklist(tracklist).await?;
@@ -371,7 +373,7 @@ impl Player {
     }
 
     async fn new_queue(&mut self, tracklist: Tracklist, always_play: bool) -> AppResult<()> {
-        self.sink.clear()?;
+        self.sink.clear();
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
 
@@ -398,7 +400,7 @@ impl Player {
         play: bool,
         start_index: Option<usize>,
     ) -> AppResult<()> {
-        self.sink.clear()?;
+        self.sink.clear();
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
 
@@ -443,7 +445,7 @@ impl Player {
 
     async fn update_queue(&mut self, tracklist: Tracklist) -> AppResult<()> {
         self.next_track_is_queried = false;
-        self.sink.clear_queue()?;
+        self.sink.clear_queue();
         self.broadcast_tracklist(tracklist).await?;
         Ok(())
     }
@@ -505,9 +507,10 @@ impl Player {
         shuffle: bool,
         index: usize,
     ) -> AppResult<()> {
-        let unstreamable_tracks_to_index = match shuffle {
-            true => 0,
-            false => tracks.iter().take(index).filter(|t| !t.available).count(),
+        let unstreamable_tracks_to_index = if shuffle {
+            0
+        } else {
+            tracks.iter().take(index).filter(|t| !t.available).count()
         };
 
         let mut tracks: Vec<_> = tracks.into_iter().filter(|t| t.available).collect();
@@ -529,14 +532,15 @@ impl Player {
     ) -> AppResult<()> {
         let playlist = self.client.playlist(playlist_id).await?;
 
-        let unstreamable_tracks_to_index = match shuffle {
-            true => 0,
-            false => playlist
+        let unstreamable_tracks_to_index = if shuffle {
+            0
+        } else {
+            playlist
                 .tracks
                 .iter()
                 .take(index)
                 .filter(|t| !t.available)
-                .count(),
+                .count()
         };
 
         let mut queue: Vec<QueueItem> = tracks_to_queue_items(
@@ -580,7 +584,7 @@ impl Player {
         let track_titles: Vec<_> = tracks.iter().map(|x| x.title.clone()).collect();
         let track_titles = track_titles.join(", ");
 
-        let notification = Notification::Info(format!("{} added to queue", track_titles));
+        let notification = Notification::Info(format!("{track_titles} added to queue"));
 
         for track in tracks {
             tracklist.push_track(track);
@@ -598,7 +602,7 @@ impl Player {
         let track_titles: Vec<_> = tracks.iter().map(|x| x.title.clone()).collect();
         let track_titles = track_titles.join(", ");
 
-        let notification = Notification::Info(format!("{} playing next", track_titles));
+        let notification = Notification::Info(format!("{track_titles} playing next"));
 
         let current_index = tracklist.current_position();
 
@@ -612,7 +616,7 @@ impl Player {
         Ok(())
     }
 
-    async fn reorder_queue(&mut self, new_order: Vec<usize>) -> AppResult<()> {
+    async fn reorder_queue(&mut self, new_order: &[usize]) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
 
         tracklist.reorder_queue(new_order);
@@ -641,8 +645,9 @@ impl Player {
 
         if let Some(duration) = duration {
             let position = position.as_secs();
+            let duration = u64::from(duration);
 
-            let track_about_to_finish = (duration as i16 - position as i16) < 60;
+            let track_about_to_finish = duration.saturating_sub(position) < 60;
 
             if track_about_to_finish && !self.next_track_is_queried {
                 tracing::info!("Track about to finish");
@@ -722,11 +727,11 @@ impl Player {
                 self.set_auto_play(enable).await?;
             }
             ControlCommand::RemoveIndexFromQueue { index } => {
-                self.remove_index_from_queue(index).await?
+                self.remove_index_from_queue(index).await?;
             }
             ControlCommand::AddTracksToQueue { tracks } => self.add_tracks_to_queue(tracks).await?,
             ControlCommand::PlayTracksNext { tracks } => self.play_tracks_next(tracks).await?,
-            ControlCommand::ReorderQueue { new_order } => self.reorder_queue(new_order).await?,
+            ControlCommand::ReorderQueue { new_order } => self.reorder_queue(&new_order).await?,
             ControlCommand::NewQueue {
                 items,
                 play,
@@ -766,27 +771,24 @@ impl Player {
 
         let next_track = tracklist.skip_to_track(new_position);
 
-        match next_track {
-            Some(next_track) => {
-                if !self.next_track_in_sink_queue {
-                    tracing::info!(
-                        "Track finished and next track is not in queue. Resetting queue, and querying track."
-                    );
-                    self.sink.clear()?;
-                    if let Some(delay) = self.sample_rate_change_delay {
-                        tracing::info!("Waiting for sample rate change delay");
-                        sleep(delay).await;
-                    }
-                    self.query_track(next_track, false).await?;
+        if let Some(next_track) = next_track {
+            if !self.next_track_in_sink_queue {
+                tracing::info!(
+                    "Track finished and next track is not in queue. Resetting queue, and querying track."
+                );
+                self.sink.clear();
+                if let Some(delay) = self.sample_rate_change_delay {
+                    tracing::info!("Waiting for sample rate change delay");
+                    sleep(delay).await;
                 }
+                self.query_track(next_track, false).await?;
             }
-            None => {
-                tracklist.reset();
-                self.set_target_status(Status::Paused);
-                self.sink.pause();
-                self.sink.clear()?;
-                self.position.send(Default::default())?;
-            }
+        } else {
+            tracklist.reset();
+            self.set_target_status(Status::Paused);
+            self.sink.pause();
+            self.sink.clear();
+            self.position.send(Duration::default())?;
         }
         self.next_track_is_queried = false;
         self.broadcast_tracklist(tracklist).await?;
@@ -794,17 +796,14 @@ impl Player {
     }
 
     pub async fn handle_active_change(&mut self, active: bool) -> AppResult<()> {
-        match active {
-            true => {
-                let tracklist = {
-                    let tracklist = self.tracklist_rx.borrow();
-                    tracklist.clone()
-                };
-                self.new_queue(tracklist, false).await?;
-            }
-            false => {
-                self.sink.clear()?;
-            }
+        if active {
+            let tracklist = {
+                let tracklist = self.tracklist_rx.borrow();
+                tracklist.clone()
+            };
+            self.new_queue(tracklist, false).await?;
+        } else {
+            self.sink.clear();
         }
 
         Ok(())
@@ -818,22 +817,22 @@ impl Player {
                 _ = interval.tick() => {
                     if let Err(err) = self.tick().await {
                         self.broadcast.send_error(err.to_string());
-                    };
+                    }
                 }
 
                 Ok(notification) = self.controls_rx.recv() => {
                     if let Err(err) = self.handle_message(notification).await {
                         self.broadcast.send_error(err.to_string());
-                    };
+                    }
                 }
 
-                Ok(_) = self.track_finished.changed() => {
+                Ok(()) = self.track_finished.changed() => {
                     if let Err(err) = self.track_finished().await {
                         self.broadcast.send_error(err.to_string());
-                    };
+                    }
                 }
 
-                Ok(_) = self.active_rx.changed() => {
+                Ok(()) = self.active_rx.changed() => {
                     let active = {
                         let active = self.active_rx.borrow_and_update();
                         *active
@@ -857,11 +856,12 @@ impl Player {
 fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
     tracks
         .into_iter()
+        .zip(0_u64..)
         .enumerate()
-        .map(|(i, track)| QueueItem {
+        .map(|(index, (track, queue_id))| QueueItem {
             track,
-            queue_id: i as u64,
-            index: i,
+            queue_id,
+            index,
         })
         .collect()
 }

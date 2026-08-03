@@ -43,7 +43,7 @@ mod stderr_redirect_impl {
     where
         F: FnOnce() -> R,
     {
-        let _redirect = StderrRedirect::new().unwrap();
+        _ = StderrRedirect::new();
         f()
     }
 }

@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 
 use player_module::{
     AppResult,
-    client::{Client, get_app_id},
+    client::{StreamClient, get_app_id},
     database::Database,
     notification::NotificationBroadcast,
 };
@@ -19,7 +19,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            error_exit(&err);
         }
     }
 }
@@ -35,7 +35,7 @@ pub async fn run() -> AppResult<()> {
     let configuration = database.get_configuration().await?;
 
     let app_id = get_app_id().await?;
-    let client = Arc::new(Client::new(
+    let client = Arc::new(StreamClient::new(
         credentials,
         configuration.max_audio_quality,
         configuration.use_file_based_streaming,
@@ -85,8 +85,8 @@ pub async fn run() -> AppResult<()> {
     };
 
     let (config_tx, config_rx) = watch::channel(disconnect_client_config);
-    let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
-    let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
+    let (active_device_tx, active_device_rx) = watch::channel(String::default());
     let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
     spawn_disconnect(
@@ -115,7 +115,7 @@ pub async fn run() -> AppResult<()> {
             volume_receiver,
             controls,
             database_clone,
-            exit_sender,
+            &exit_sender,
             ttl_tx,
             broadcast,
             available_devices_rx,
@@ -123,8 +123,8 @@ pub async fn run() -> AppResult<()> {
             set_active_device_tx,
             config_tx,
         ) {
-            error_exit(e);
-        };
+            error_exit(&e);
+        }
     });
 
     player.player_loop(exit_receiver).await?;
@@ -163,7 +163,7 @@ struct SleepInhibitor {
 
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl SleepInhibitor {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self { awake: None }
     }
 

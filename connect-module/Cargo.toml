@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "connect-module"
 version.workspace = true
@@ -22,6 +25,7 @@ cli-module = { version = "*", path = "../cli-module" }
 qonductor = "0.1.0-alpha.5"
 tokio.workspace = true
 tracing.workspace = true
+num-traits.workspace = true
 
 # binary dependencies
 clap.workspace = true

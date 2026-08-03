@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use player_module::{
-    AppResult, AudioQuality, client::Client, database::Database, error::Error,
+    AppResult, AudioQuality, client::StreamClient, database::Database, error::PlayerError,
     notification::NotificationBroadcast, player::Player,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -81,6 +81,7 @@ pub struct DelayArgs {
 }
 
 #[derive(Args, Debug)]
+#[allow(clippy::struct_field_names)]
 pub struct DisconnectArgs {
     /// Disconnect device name
     #[clap(long)]
@@ -125,6 +126,7 @@ impl TryFrom<DisconnectArgs> for Option<ParsedDisconnect> {
     }
 }
 
+#[must_use]
 pub fn parse_disconnect_args(args: DisconnectArgs) -> Option<ParsedDisconnect> {
     Option::<ParsedDisconnect>::try_from(args).unwrap_or_else(|msg| {
         eprintln!("{msg}");
@@ -151,7 +153,7 @@ pub async fn handle_shared_commands(command: SharedCommands, database: &Database
     match command {
         SharedCommands::Login => {
             let (_client, oauth_result) =
-                Client::new_with_oauth_login(AudioQuality::Mp3, false, true).await?;
+                StreamClient::new_with_oauth_login(AudioQuality::Mp3, false, true).await?;
 
             database.set_credentials(Some(oauth_result.into())).await?;
             println!("Login successful!");
@@ -176,22 +178,18 @@ pub async fn get_client(
     max_audio_quality: AudioQuality,
     file_based_streaming: bool,
     headless: bool,
-) -> AppResult<Client> {
+) -> AppResult<StreamClient> {
     let database_credentials = database.get_credentials().await?;
 
-    let client = match database_credentials {
-        Some(credentials) => {
-            Client::new(Some(credentials), max_audio_quality, file_based_streaming)
-        }
-        None => {
-            let (client, oauth_result) =
-                Client::new_with_oauth_login(max_audio_quality, file_based_streaming, headless)
-                    .await?;
+    let client = if let Some(credentials) = database_credentials {
+        StreamClient::new(Some(credentials), max_audio_quality, file_based_streaming)
+    } else {
+        let (client, oauth_result) =
+            StreamClient::new_with_oauth_login(max_audio_quality, file_based_streaming, headless).await?;
 
-            database.set_credentials(Some(oauth_result.into())).await?;
+        database.set_credentials(Some(oauth_result.into())).await?;
 
-            client
-        }
+        client
     };
 
     Ok(client)
@@ -209,7 +207,7 @@ pub fn spawn_clean_up(database: Arc<Database>, audio_cache_time_to_live: u32) {
                     for path in deleted_paths {
                         _ = tokio::fs::remove_file(path.as_path()).await;
                     }
-                };
+                }
             }
         });
 
@@ -233,7 +231,9 @@ pub fn spawn_clean_up_mut(
                 new_ttl = ttl_rx.recv(), if !ttl_rx_closed => {
                     match new_ttl {
                         Some(new_ttl) => {
-                            database.set_cache_ttl_hours(new_ttl).await.unwrap();
+                            if let Err(err) =  database.set_cache_ttl_hours(new_ttl).await {
+                                tracing::error!("{err}");
+                            }
 
                             ttl = new_ttl;
                         }
@@ -273,19 +273,18 @@ pub async fn default_audio_quality(
     database: &Database,
     args: Option<AudioQuality>,
 ) -> AppResult<AudioQuality> {
-    match args {
-        Some(quality) => Ok(quality),
-        None => {
-            let database_configuration = database.get_configuration().await?;
-            Ok(database_configuration.max_audio_quality)
-        }
+    if let Some(quality) = args {
+        Ok(quality)
+    } else {
+        let database_configuration = database.get_configuration().await?;
+        Ok(database_configuration.max_audio_quality)
     }
 }
 
 pub async fn create_player(
     audio_cache: Option<PathBuf>,
     database: Arc<Database>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     broadcast: Arc<NotificationBroadcast>,
     state_change_delay_ms: Option<u64>,
     sample_rate_change_delay_ms: Option<u64>,
@@ -314,7 +313,7 @@ pub async fn create_player(
     Ok(player)
 }
 
-pub fn error_exit(error: Error) {
+pub fn error_exit(error: &PlayerError) {
     eprintln!("{error}");
     std::process::exit(1);
 }

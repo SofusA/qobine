@@ -3,7 +3,7 @@ use std::{rc::Rc, sync::Arc};
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::ui::albums_page::AlbumsPage;
 use crate::ui::albums_page::new_albums_page;
@@ -18,7 +18,7 @@ use crate::ui::{
 
 pub struct SearchPage {
     root: gtk4::Box,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     spinner: gtk4::Spinner,
     albums_page: AlbumsPage,
     artists_page: ArtistsPage,
@@ -27,10 +27,10 @@ pub struct SearchPage {
 
 impl SearchPage {
     pub fn new(
-        client: Arc<Client>,
-        on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
-        on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
-        on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
+        client: Arc<StreamClient>,
+        on_open_album: &Rc<dyn Fn(AlbumHeaderInfo)>,
+        on_open_artist: &Rc<dyn Fn(ArtistHeaderInfo)>,
+        on_open_playlist: &Rc<dyn Fn(PlaylistHeaderInfo)>,
     ) -> Self {
         let stack = adw::ViewStack::new();
 
@@ -83,7 +83,7 @@ impl SearchPage {
         }
     }
 
-    pub fn widget(&self) -> &gtk4::Box {
+    pub const fn widget(&self) -> &gtk4::Box {
         &self.root
     }
 
@@ -108,13 +108,20 @@ impl SearchPage {
         glib::MainContext::default().spawn_local(async move {
             match client.search(query).await {
                 Ok(search) => {
-                    let albums: Vec<_> = search.albums.into_iter().map(|x| x.into()).collect();
+                    let albums: Vec<_> = search
+                        .albums
+                        .into_iter()
+                        .map(std::convert::Into::into)
+                        .collect();
                     albums_page.load(albums);
 
                     artists_page.load(search.artists);
 
-                    let playlists: Vec<_> =
-                        search.playlists.into_iter().map(|x| x.into()).collect();
+                    let playlists: Vec<_> = search
+                        .playlists
+                        .into_iter()
+                        .map(std::convert::Into::into)
+                        .collect();
                     playlists_page.load(playlists);
                 }
                 Err(err) => tracing::error!("Search failed: {err}"),

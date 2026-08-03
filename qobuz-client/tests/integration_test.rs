@@ -1,15 +1,15 @@
 use player_module::database::{Credentials, Database};
-use qobuz_client::client::{Client, ReleaseType};
+use qobuz_client::client::{QobuzClient, ReleaseType};
 
 async fn get_token() -> Option<Credentials> {
     let database = Database::new().await.ok()?;
     database.get_credentials().await.ok()?
 }
 
-async fn get_client() -> Option<Client> {
+async fn get_client() -> Option<QobuzClient> {
     let credentials = get_token().await?;
 
-    qobuz_client::client::Client::new(
+    qobuz_client::client::QobuzClient::new(
         &credentials.user_auth_token,
         credentials.user_id,
         qobuz_client::client::AudioQuality::Mp3,
@@ -22,7 +22,10 @@ async fn get_client() -> Option<Client> {
 #[tokio::test]
 async fn track_suggestion() {
     let client = get_client().await.unwrap();
-    let queue = vec![20808551, 20808552, 20808553, 20808554, 20808555];
+    let queue = vec![
+        200690746, 150242, 26651994, 26651993, 330039671, 3114035, 4300641, 242975829, 33932278,
+        3114027, 26651991, 387387266,
+    ];
 
     let _suggestion = client.suggest_track(queue, None, None).await.unwrap();
 }

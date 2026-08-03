@@ -27,7 +27,7 @@ async fn index(State(state): State<Arc<AppState>>) -> Response {
 
     let position = *state.position_receiver.borrow();
 
-    let context = now_playing_context(&tracklist, &position).await;
+    let context = now_playing_context(&tracklist, &position);
     state.render("now-playing.html", &context)
 }
 
@@ -39,11 +39,11 @@ async fn now_playing_content(State(state): State<Arc<AppState>>) -> Response {
     let tracklist = state.tracklist_receiver.borrow().clone();
     let position = *state.position_receiver.borrow();
 
-    let context = now_playing_context(&tracklist, &position).await;
+    let context = now_playing_context(&tracklist, &position);
     state.render("now-playing-content.html", &context)
 }
 
-async fn now_playing_context(tracklist: &Tracklist, position: &Duration) -> serde_json::Value {
+fn now_playing_context(tracklist: &Tracklist, position: &Duration) -> serde_json::Value {
     let position_mseconds = position.as_millis();
 
     let current_track = tracklist.current_track().cloned();

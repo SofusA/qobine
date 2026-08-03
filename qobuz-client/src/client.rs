@@ -41,7 +41,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 const RNG_INIT: &str = "abb21364945c0583309667d13ca3d93a";
 
 #[derive(Debug)]
-pub struct Client {
+pub struct QobuzClient {
     session: Option<StartResponse>,
     app_id: String,
     base_url: String,
@@ -66,20 +66,31 @@ pub struct Client {
     Ord,
 )]
 pub enum AudioQuality {
-    Mp3 = 5,
-    CD = 6,
-    HIFI96 = 7,
+    Mp3,
+    CD,
+    HIFI96,
     #[default]
-    HIFI192 = 27,
+    HIFI192,
 }
 
 impl AudioQuality {
-    pub fn to_label_str(&self) -> &str {
+    #[must_use]
+    pub const fn id(self) -> i32 {
         match self {
-            AudioQuality::Mp3 => "mp3",
-            AudioQuality::CD => "cd",
-            AudioQuality::HIFI96 => "hifi 96",
-            AudioQuality::HIFI192 => "hifi 192",
+            Self::Mp3 => 5,
+            Self::CD => 6,
+            Self::HIFI96 => 7,
+            Self::HIFI192 => 27,
+        }
+    }
+
+    #[must_use]
+    pub const fn to_label_str(&self) -> &str {
+        match self {
+            Self::Mp3 => "mp3",
+            Self::CD => "cd",
+            Self::HIFI96 => "hifi 96",
+            Self::HIFI192 => "hifi 192",
         }
     }
 }
@@ -87,28 +98,25 @@ impl AudioQuality {
 impl Display for AudioQuality {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            AudioQuality::Mp3 => "5",
-            AudioQuality::CD => "6",
-            AudioQuality::HIFI96 => "7",
-            AudioQuality::HIFI192 => "27",
+            Self::Mp3 => "5",
+            Self::CD => "6",
+            Self::HIFI96 => "7",
+            Self::HIFI192 => "27",
         })
     }
 }
 
 impl From<Option<i64>> for AudioQuality {
     fn from(value: Option<i64>) -> Self {
-        let default = AudioQuality::HIFI192;
+        let default = Self::HIFI192;
 
-        match value {
-            Some(value) => match value {
-                5 => AudioQuality::Mp3,
-                6 => AudioQuality::CD,
-                7 => AudioQuality::HIFI96,
-                27 => AudioQuality::HIFI192,
-                _ => default,
-            },
-            None => default,
-        }
+        value.map_or(default, |value| match value {
+            5 => Self::Mp3,
+            6 => Self::CD,
+            7 => Self::HIFI96,
+            27 => Self::HIFI192,
+            _ => default,
+        })
     }
 }
 
@@ -121,12 +129,12 @@ pub enum ReleaseType {
 }
 
 impl ReleaseType {
-    fn as_str(&self) -> &'static str {
+    const fn as_str(&self) -> &'static str {
         match self {
-            ReleaseType::Albums => "album",
-            ReleaseType::EPsAndSingles => "epSingle",
-            ReleaseType::Live => "live",
-            ReleaseType::Compilations => "compilation",
+            Self::Albums => "album",
+            Self::EPsAndSingles => "epSingle",
+            Self::Live => "live",
+            Self::Compilations => "compilation",
             // ReleaseType::Other => "other",
         }
     }
@@ -164,32 +172,32 @@ enum Endpoint {
 impl Display for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let endpoint = match self {
-            Endpoint::Album => "album/get",
-            Endpoint::ArtistPage => "artist/page",
-            Endpoint::ArtistReleases => "artist/getReleasesList",
-            Endpoint::SimilarArtists => "artist/getSimilarArtists",
-            Endpoint::Playlist => "playlist/get",
-            Endpoint::PlaylistCreate => "playlist/create",
-            Endpoint::PlaylistDelete => "playlist/delete",
-            Endpoint::PlaylistAddTracks => "playlist/addTracks",
-            Endpoint::PlaylistDeleteTracks => "playlist/deleteTracks",
-            Endpoint::PlaylistUpdatePosition => "playlist/updateTracksPosition",
-            Endpoint::Search => "catalog/search",
-            Endpoint::SessionStart => "session/start",
-            Endpoint::Track => "track/get",
-            Endpoint::File => "file/url",
-            Endpoint::TrackURL => "track/getFileUrl",
-            Endpoint::UserPlaylist => "playlist/getUserPlaylists",
-            Endpoint::Favorites => "favorite/getUserFavorites",
-            Endpoint::FavoriteAdd => "favorite/create",
-            Endpoint::FavoriteRemove => "favorite/delete",
-            Endpoint::FavoritePlaylistAdd => "playlist/subscribe",
-            Endpoint::FavoritePlaylistRemove => "playlist/unsubscribe",
-            Endpoint::AlbumSuggest => "album/suggest",
-            Endpoint::GenreList => "genre/list",
-            Endpoint::GenrePlaylists => "discover/playlists",
-            Endpoint::DiscoverIndex => "discover/index",
-            Endpoint::Suggest => "dynamic/suggest",
+            Self::Album => "album/get",
+            Self::ArtistPage => "artist/page",
+            Self::ArtistReleases => "artist/getReleasesList",
+            Self::SimilarArtists => "artist/getSimilarArtists",
+            Self::Playlist => "playlist/get",
+            Self::PlaylistCreate => "playlist/create",
+            Self::PlaylistDelete => "playlist/delete",
+            Self::PlaylistAddTracks => "playlist/addTracks",
+            Self::PlaylistDeleteTracks => "playlist/deleteTracks",
+            Self::PlaylistUpdatePosition => "playlist/updateTracksPosition",
+            Self::Search => "catalog/search",
+            Self::SessionStart => "session/start",
+            Self::Track => "track/get",
+            Self::File => "file/url",
+            Self::TrackURL => "track/getFileUrl",
+            Self::UserPlaylist => "playlist/getUserPlaylists",
+            Self::Favorites => "favorite/getUserFavorites",
+            Self::FavoriteAdd => "favorite/create",
+            Self::FavoriteRemove => "favorite/delete",
+            Self::FavoritePlaylistAdd => "playlist/subscribe",
+            Self::FavoritePlaylistRemove => "playlist/unsubscribe",
+            Self::AlbumSuggest => "album/suggest",
+            Self::GenreList => "genre/list",
+            Self::GenrePlaylists => "discover/playlists",
+            Self::DiscoverIndex => "discover/index",
+            Self::Suggest => "dynamic/suggest",
         };
 
         f.write_str(endpoint)
@@ -264,7 +272,7 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
                 result.ok_or(Error::Login)?
             }
 
-            result = stdin_task.as_mut().unwrap() => {
+            result = stdin_task.as_mut().ok_or(Error::Login)? => {
                 // stdin path won → task already completed
                 result.map_err(|_| Error::Login)??
             }
@@ -276,8 +284,6 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
             .flatten()
             .ok_or(Error::Login)?
     };
-
-    server.abort();
 
     server.abort();
 
@@ -305,8 +311,7 @@ async fn read_code_from_stdin() -> Result<String, Error> {
 
     let input = input.trim();
     // Accept either raw code or full URL containing code_autorisation=
-    if let Some(pos) = input.find("code_autorisation=") {
-        let code = &input[pos + "code_autorisation=".len()..];
+    if let Some((_, code)) = input.split_once("code_autorisation=") {
         let code = code.split(['&', ' ', '#']).next().unwrap_or(code);
         Ok(code.to_string())
     } else {
@@ -314,17 +319,14 @@ async fn read_code_from_stdin() -> Result<String, Error> {
     }
 }
 
-impl Client {
+impl QobuzClient {
     pub async fn new(
         user_auth_token: &str,
         user_id: i64,
         max_audio_quality: AudioQuality,
         file_based_streaming: bool,
-    ) -> Result<Client> {
-        let http_client = reqwest::Client::builder()
-            .cookie_store(true)
-            .build()
-            .expect("infallible");
+    ) -> Result<Self> {
+        let http_client = reqwest::Client::builder().cookie_store(true).build()?;
 
         let base_url = "https://www.qobuz.com/api.json/0.2/".to_string();
 
@@ -347,7 +349,7 @@ impl Client {
             (app_id, None)
         };
 
-        let client = Client {
+        let client = Self {
             http_client,
             session: None,
             user_token: user_auth_token.to_string(),
@@ -361,11 +363,13 @@ impl Client {
         Ok(client)
     }
 
+    #[must_use]
     pub fn app_id(&self) -> &str {
         &self.app_id
     }
 
-    pub fn user_id(&self) -> i64 {
+    #[must_use]
+    pub const fn user_id(&self) -> i64 {
         self.user_id
     }
 
@@ -381,7 +385,9 @@ impl Client {
     ) -> Result<GenreFeaturedPlaylists> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::GenrePlaylists);
         let genre_id = genre_id.map(|x| x.to_string()).unwrap_or_default();
-        let tag = tag.map(|x| x.to_string()).unwrap_or_default();
+        let tag = tag
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
 
         let params = vec![
             ("genre_ids", genre_id.as_str()),
@@ -436,10 +442,10 @@ impl Client {
 
         let is_collaborative = is_collaborative.unwrap_or(false);
 
-        let is_collaborative = if !is_public {
-            false.to_string()
-        } else {
+        let is_collaborative = if is_public {
             is_collaborative.to_string()
+        } else {
+            false.to_string()
         };
 
         form_data.insert("is_collaborative", is_collaborative.as_str());
@@ -470,7 +476,7 @@ impl Client {
 
         let track_ids = playlist_track_ids
             .iter()
-            .map(|x| x.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(",");
 
@@ -493,7 +499,7 @@ impl Client {
 
         let track_ids = playlist_track_ids
             .iter()
-            .map(|x| x.to_string())
+            .map(std::string::ToString::to_string)
             .collect::<Vec<_>>()
             .join(",");
         let playlist_id = playlist_id.to_string();
@@ -534,7 +540,7 @@ impl Client {
         let mut args = BTreeMap::<&str, String>::new();
         args.insert("profile", "qbz-1".to_string());
 
-        let request_sig = get_request_sig("sessionstart", args, &now);
+        let request_sig = get_request_sig("sessionstart", &args, &now);
 
         let mut form_data = HashMap::new();
         form_data.insert("profile", "qbz-1");
@@ -552,22 +558,26 @@ impl Client {
         Ok(())
     }
 
-    async fn ensure_valid_session(&mut self) -> Result<()> {
+    async fn ensure_valid_session(&mut self) -> Result<&StartResponse> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as u32;
+            .map_err(|e| Error::Time {
+                message: e.to_string(),
+            })?
+            .as_secs();
 
-        let need_new_session = match &self.session {
-            None => true,
-            Some(s) => s.expires_at <= now,
-        };
+        let need_new_session = self
+            .session
+            .as_ref()
+            .is_none_or(|s| u64::from(s.expires_at) <= now);
 
         if need_new_session {
             self.renew_session().await?;
         }
 
-        Ok(())
+        self.session.as_ref().ok_or_else(|| Error::Api {
+            message: "Failed to obtain a valid session".to_string(),
+        })
     }
 
     fn session_infos(&self) -> Option<&str> {
@@ -579,19 +589,16 @@ impl Client {
         track_info: TrackInfo,
         cache_path: PathBuf,
     ) -> Result<SeekableStreamReader> {
-        let session_infos = self.session_infos().map(|s| s.to_string());
+        let session_infos = self.session_infos().map(std::string::ToString::to_string);
 
-        let content_key = match (&track_info.key, session_infos) {
-            (Some(key_str), Some(infos)) => {
-                let session_key = crypto::derive_session_key(&infos)?;
-                let content_key = crypto::unwrap_content_key(&session_key, key_str)?;
-                tracing::debug!("Derived content key for key_id: {:?}", track_info.key_id);
-                Some(content_key)
-            }
-            _ => {
-                tracing::warn!("No encryption key available");
-                None
-            }
+        let content_key = if let (Some(key_str), Some(infos)) = (&track_info.key, session_infos) {
+            let session_key = crypto::derive_session_key(&infos)?;
+            let content_key = crypto::unwrap_content_key(&session_key, key_str)?;
+            tracing::debug!("Derived content key for key_id: {:?}", track_info.key_id);
+            Some(content_key)
+        } else {
+            tracing::warn!("No encryption key available");
+            None
         };
 
         let seg0_url = track_info.url_template.replace("$SEGMENT$", "0");
@@ -605,26 +612,44 @@ impl Client {
         );
 
         // Segment table may list more audio segments than the API's n_segments-1.
-        let audio_segments = init_info.segment_table.len() as u32;
+        let audio_segments = init_info.segment_table.len();
         if audio_segments == 0 {
-            return Err(Error::StreamError {
+            return Err(Error::Stream {
                 message: "Track has no audio segments".to_string(),
             });
         }
 
-        let flac_header_len = init_info.flac_header.len() as u64;
+        let flac_header_len = u64::try_from(init_info.flac_header.len())?;
         let mut segment_map = Vec::new();
         let mut cumulative_offset: u64 = 0;
+
         for entry in &init_info.segment_table {
             segment_map.push(SegmentByteInfo {
                 byte_offset: cumulative_offset,
-                byte_len: entry.byte_len as u64,
+                byte_len: u64::from(entry.byte_len),
             });
-            cumulative_offset += entry.byte_len as u64;
-        }
-        let total_byte_len = flac_header_len + cumulative_offset;
 
-        let n_segments_to_download = audio_segments + 1; // +1 for init segment
+            cumulative_offset = cumulative_offset
+                .checked_add(u64::from(entry.byte_len))
+                .ok_or_else(|| Error::Stream {
+                    message: "cumulative segment size overflow".to_string(),
+                })?;
+        }
+
+        let total_byte_len = flac_header_len
+            .checked_add(cumulative_offset)
+            .ok_or_else(|| Error::Stream {
+                message: "total FLAC size overflow".to_string(),
+            })?;
+
+        // +1 for init segment
+        let n_segments_to_download =
+            audio_segments
+                .checked_add(1)
+                .ok_or_else(|| Error::NumberConversion {
+                    message: "audio segment overflow".to_string(),
+                })?;
+        let n_segments_to_download = u32::try_from(n_segments_to_download)?;
 
         tracing::info!(
             "Segment map: {} audio segments, total FLAC size: {} bytes",
@@ -647,7 +672,7 @@ impl Client {
             Settings::default().prefetch_bytes(4096),
         )
         .await
-        .map_err(|e| Error::StreamError {
+        .map_err(|e| Error::Stream {
             message: format!("Failed to create stream: {e}"),
         })?;
 
@@ -655,7 +680,7 @@ impl Client {
     }
 
     pub async fn get_streaming_info(&mut self, track_id: u32) -> Result<TrackInfo> {
-        self.ensure_valid_session().await?;
+        let session_id = self.ensure_valid_session().await?.session_id.clone();
 
         let endpoint = format!("{}{}", &self.base_url, Endpoint::File);
         let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
@@ -667,7 +692,7 @@ impl Client {
         args.insert("intent", "stream".to_string());
         args.insert("track_id", track_id_str.clone());
 
-        let request_sig = get_request_sig("fileurl", args, &now);
+        let request_sig = get_request_sig("fileurl", &args, &now);
 
         let params = vec![
             ("request_ts", now.as_str()),
@@ -676,8 +701,6 @@ impl Client {
             ("format_id", quality_string.as_str()),
             ("intent", "stream"),
         ];
-
-        let session_id = self.session.as_ref().unwrap().session_id.clone();
 
         match make_get_call(
             &endpoint,
@@ -733,15 +756,13 @@ impl Client {
 
         use crate::stream::passthrough_storage::PassthroughStorageProvider;
 
-        let url_parsed: SdUrl = url
-            .parse()
-            .map_err(|e: url::ParseError| Error::StreamError {
-                message: format!("invalid track URL: {e}"),
-            })?;
+        let url_parsed: SdUrl = url.parse().map_err(|e: url::ParseError| Error::Stream {
+            message: format!("invalid track URL: {e}"),
+        })?;
 
         let stream = HttpStream::new(SdClient::new(), url_parsed)
             .await
-            .map_err(|e| Error::StreamError {
+            .map_err(|e| Error::Stream {
                 message: format!("failed to open HTTP stream: {e}"),
             })?;
 
@@ -758,7 +779,7 @@ impl Client {
             Settings::default().prefetch_bytes(64 * 1024),
         )
         .await
-        .map_err(|e| Error::StreamError {
+        .map_err(|e| Error::Stream {
             message: format!("failed to create stream-download: {e}"),
         })?;
 
@@ -767,7 +788,7 @@ impl Client {
             let final_path = cache_path.to_path_buf();
             tokio::spawn(async move {
                 handle.wait_for_completion().await;
-                finalize_cache(partial_path, final_path, content_length);
+                finalize_cache(&partial_path, &final_path, content_length);
             });
         }
 
@@ -900,7 +921,10 @@ impl Client {
 
         let start_index = queue_track_ids.len().saturating_sub(5);
 
-        let last_track_ids = queue_track_ids[start_index..].to_vec();
+        let last_track_ids = queue_track_ids
+            .get(start_index..)
+            .unwrap_or_default()
+            .to_vec();
 
         let mut track_to_analysed = Vec::with_capacity(last_track_ids.len());
 
@@ -997,7 +1021,7 @@ impl Client {
     async fn post_json<TResponse, TBody>(&self, endpoint: &str, body: &TBody) -> Result<TResponse>
     where
         TResponse: serde::de::DeserializeOwned,
-        TBody: serde::Serialize + ?Sized,
+        TBody: serde::Serialize + Sync + ?Sized,
     {
         let response = self
             .make_post_json_call(endpoint, body)
@@ -1074,7 +1098,7 @@ impl Client {
     }
 
     async fn make_post_call(&self, endpoint: &str, params: HashMap<&str, &str>) -> Result<String> {
-        let headers = client_headers(&self.app_id, Some(&self.user_token));
+        let headers = client_headers(&self.app_id, Some(&self.user_token))?;
 
         tracing::debug!("calling {} endpoint, with params {params:?}", endpoint);
         let response = self
@@ -1090,9 +1114,9 @@ impl Client {
 
     async fn make_post_json_call<TBody>(&self, endpoint: &str, body: &TBody) -> Result<String>
     where
-        TBody: serde::Serialize + ?Sized,
+        TBody: serde::Serialize + Sync + ?Sized,
     {
-        let headers = client_headers(&self.app_id, Some(&self.user_token));
+        let headers = client_headers(&self.app_id, Some(&self.user_token))?;
 
         tracing::debug!("calling {} endpoint, with JSON body", endpoint);
 
@@ -1108,9 +1132,9 @@ impl Client {
     }
 }
 
-fn get_request_sig(method: &str, args: BTreeMap<&str, String>, now_string: &str) -> String {
+fn get_request_sig(method: &str, args: &BTreeMap<&str, String>, now_string: &str) -> String {
     let mut n = String::new();
-    for (k, v) in args.iter() {
+    for (k, v) in args {
         n.push_str(k);
         n.push_str(v);
     }
@@ -1146,13 +1170,10 @@ async fn make_get_call(
     user_token: Option<&str>,
     session: Option<&str>,
 ) -> Result<String> {
-    let mut headers = client_headers(app_id, user_token);
+    let mut headers = client_headers(app_id, user_token)?;
 
     if let Some(session_id) = session {
-        headers.insert(
-            "X-Session-Id",
-            HeaderValue::from_str(session_id).expect("infallible"),
-        );
+        headers.insert("X-Session-Id", HeaderValue::from_str(session_id)?);
     }
 
     tracing::debug!("calling {} endpoint, with params {params:?}", endpoint);
@@ -1167,34 +1188,28 @@ async fn make_get_call(
     }
 }
 
-fn client_headers(app_id: &str, user_token: Option<&str>) -> HeaderMap {
+fn client_headers(app_id: &str, user_token: Option<&str>) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
 
     tracing::debug!("adding app_id to request headers: {}", app_id);
-    headers.insert(
-        "X-App-Id",
-        HeaderValue::from_str(app_id).expect("infallible"),
-    );
+    headers.insert("X-App-Id", HeaderValue::from_str(app_id)?);
 
     if let Some(token) = user_token {
         tracing::debug!("adding token to request headers: {}", token);
-        headers.insert(
-            "X-User-Auth-Token",
-            HeaderValue::from_str(token).expect("infallible"),
-        );
+        headers.insert("X-User-Auth-Token", HeaderValue::from_str(token)?);
     }
 
     headers.insert(
         "Access-Control-Request-Headers",
-        HeaderValue::from_str("x-app-id,x-user-auth-token").expect("infallible"),
+        HeaderValue::from_str("x-app-id,x-user-auth-token")?,
     );
 
     headers.insert(
         "Accept-Language",
-        HeaderValue::from_str("en,en-US;q=0.8,ko;q=0.6,zh;q=0.4,zh-CN;q=0.2").expect("infallible"),
+        HeaderValue::from_str("en,en-US;q=0.8,ko;q=0.6,zh;q=0.4,zh-CN;q=0.2")?,
     );
 
-    headers
+    Ok(headers)
 }
 
 const OAUTH_PRIVATE_KEY: &str = "6lz8C03UDIC7";
@@ -1205,14 +1220,14 @@ pub struct OAuthResult {
     pub user_id: i64,
 }
 
-/// Fetch the app_id from the Qobuz web player bundle.
+/// Fetch the `app_id` from the Qobuz web player bundle.
 pub async fn get_app_id() -> Result<String> {
     let http_client = reqwest::Client::new();
     let Secrets { app_id } = get_secrets(&http_client).await?;
     Ok(app_id)
 }
 
-/// Exchange an OAuth authorization code for a user_auth_token.
+/// Exchange an OAuth authorization code for a `user_auth_token`.
 pub async fn exchange_oauth_code(code: &str, app_id: &str) -> Result<OAuthResult> {
     let http_client = reqwest::Client::new();
     let base_url = "https://www.qobuz.com/api.json/0.2/";
@@ -1229,23 +1244,23 @@ pub async fn exchange_oauth_code(code: &str, app_id: &str) -> Result<OAuthResult
         }
     };
 
-    tracing::debug!(
-        "oauth/callback response: {}",
-        &response[..response.len().min(200)]
-    );
-
     let json: Value = serde_json::from_str(response.as_str())
         .or(Err(Error::DeserializeJSON { message: response }))?;
 
-    let user_auth_token = json["token"]
-        .as_str()
-        .or_else(|| json["user_auth_token"].as_str())
+    let user_auth_token = json
+        .get("token")
+        .and_then(Value::as_str)
+        .or_else(|| json.get("user_auth_token").and_then(Value::as_str))
         .ok_or(Error::Login)?
         .to_string();
 
-    let user_id = json["user_id"]
-        .as_i64()
-        .or_else(|| json["user_id"].as_str().and_then(|s| s.parse().ok()))
+    let user_id = json
+        .get("user_id")
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|s| s.parse().ok()))
+        })
         .ok_or(Error::Login)?;
 
     Ok(OAuthResult {
@@ -1316,7 +1331,7 @@ struct SecretsForFileBasedStreaming {
     active_secret: String,
 }
 
-/// extract the app_id, per-timezone secrets, and probe for an active one
+/// extract the `app_id`, per-timezone secrets, and probe for an active one
 /// tried to mirror 8cd4d7a
 async fn get_secrets_for_file_based_streaming(
     client: &reqwest::Client,
@@ -1387,8 +1402,7 @@ async fn get_secrets_for_file_based_streaming(
         capitalize(timezone.as_mut_str());
 
         let info_re_str = format!(
-            r#"name:"\w+/(?P<timezone>{}([a-z]?))",info:"(?P<info>[\w=]+)",extras:"(?P<extras>[\w=]+)""#,
-            timezone
+            r#"name:"\w+/(?P<timezone>{timezone}([a-z]?))",info:"(?P<info>[\w=]+)",extras:"(?P<extras>[\w=]+)""#
         );
         let info_re = Regex::new(&info_re_str).map_err(|_| Error::Login)?;
 
@@ -1403,7 +1417,9 @@ async fn get_secrets_for_file_based_streaming(
                 continue;
             }
 
-            let encoded_secret = &chars[..chars.len() - 44];
+            let encoded_secret = chars
+                .get(..chars.len().saturating_sub(44))
+                .ok_or(Error::Login)?;
 
             let decoded = general_purpose::URL_SAFE
                 .decode(encoded_secret)
@@ -1444,9 +1460,9 @@ async fn find_active_secret(
 ) -> Result<String> {
     tracing::debug!("probing {} timezone secrets", secrets.len());
 
-    for (timezone, secret) in secrets.into_iter() {
+    for (timezone, secret) in secrets {
         let response = track_url(
-            64868955,
+            64_868_955,
             &secret,
             base_url,
             client,
@@ -1515,12 +1531,12 @@ pub struct SuccessfulResponse {
     status: String,
 }
 
-fn finalize_cache(partial: PathBuf, final_path: PathBuf, expected: u64) {
-    match std::fs::metadata(&partial) {
+fn finalize_cache(partial: &PathBuf, final_path: &PathBuf, expected: u64) {
+    match std::fs::metadata(partial) {
         Ok(meta) if meta.len() == expected => {
-            if let Err(e) = std::fs::rename(&partial, &final_path) {
+            if let Err(e) = std::fs::rename(partial, final_path) {
                 tracing::warn!("Failed to finalize cache: {e}");
-                let _ = std::fs::remove_file(&partial);
+                let _ = std::fs::remove_file(partial);
             } else {
                 tracing::info!("Cached: {} ({} bytes)", final_path.display(), expected);
             }
@@ -1531,7 +1547,7 @@ fn finalize_cache(partial: PathBuf, final_path: PathBuf, expected: u64) {
                 meta.len(),
                 expected
             );
-            let _ = std::fs::remove_file(&partial);
+            let _ = std::fs::remove_file(partial);
         }
         Err(_) => {}
     }

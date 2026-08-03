@@ -39,7 +39,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            error_exit(&err);
         }
     }
 }
@@ -79,8 +79,8 @@ pub async fn run() -> AppResult<()> {
     )
     .await?;
 
-    let (available_devices_tx, _) = watch::channel(Default::default());
-    let (active_device_sender, _) = watch::channel(Default::default());
+    let (available_devices_tx, _) = watch::channel(Vec::default());
+    let (active_device_sender, _) = watch::channel(String::default());
     let (_, active_device_receiver) = mpsc::unbounded_channel();
 
     let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {

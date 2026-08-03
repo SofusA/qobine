@@ -1,7 +1,7 @@
 use controls_module::{TracklistReceiver, controls::Controls};
 use gtk4::glib;
 use libadwaita as adw;
-use player_module::client::Client;
+use player_module::client::StreamClient;
 use std::{
     rc::{Rc, Weak},
     sync::Arc,
@@ -23,25 +23,25 @@ type OpenArtistCb = Rc<dyn Fn(ArtistHeaderInfo) + 'static>;
 type OpenPlaylistCb = Rc<dyn Fn(PlaylistHeaderInfo) + 'static>;
 
 struct Callbacks {
-    open_album: OpenAlbumCb,
-    open_artist: OpenArtistCb,
-    open_playlist: OpenPlaylistCb,
+    album: OpenAlbumCb,
+    artist: OpenArtistCb,
+    playlist: OpenPlaylistCb,
 }
 
 pub struct CallbackHandles {
-    pub open_album: OpenAlbumCb,
-    pub open_artist: OpenArtistCb,
-    pub open_playlist: OpenPlaylistCb,
+    pub album: OpenAlbumCb,
+    pub artist: OpenArtistCb,
+    pub playlist: OpenPlaylistCb,
     _keepalive: Rc<Callbacks>,
 }
 
 pub fn build_callbacks(
-    app_nav: adw::NavigationView,
-    controls: Controls,
-    client: Arc<Client>,
+    app_nav: &adw::NavigationView,
+    controls: &Controls,
+    client: Arc<StreamClient>,
     detail_pages: Rc<std::cell::RefCell<Vec<Rc<dyn DetailPage>>>>,
-    tracklist_receiver: TracklistReceiver,
-    sender: mpsc::UnboundedSender<UiEvent>,
+    tracklist_receiver: &TracklistReceiver,
+    sender: &mpsc::UnboundedSender<UiEvent>,
 ) -> CallbackHandles {
     let main_ctx = glib::MainContext::default();
 
@@ -81,8 +81,8 @@ pub fn build_callbacks(
                         return;
                     }
 
-                    let open_artist = callbacks.open_artist.clone();
-                    let open_album = callbacks.open_album.clone();
+                    let open_artist = callbacks.artist.clone();
+                    let open_album = callbacks.album.clone();
 
                     let detail = AlbumDetailPage::new(
                         info.id,
@@ -135,8 +135,8 @@ pub fn build_callbacks(
                         return;
                     }
 
-                    let open_album = callbacks.open_album.clone();
-                    let open_artist = callbacks.open_artist.clone();
+                    let open_album = callbacks.album.clone();
+                    let open_artist = callbacks.artist.clone();
 
                     let detail = ArtistDetailPage::new(
                         info.id,
@@ -158,8 +158,6 @@ pub fn build_callbacks(
             let main_ctx = main_ctx.clone();
             let app_nav = app_nav.clone();
             let controls = controls.clone();
-            let client = client.clone();
-            let detail_pages = detail_pages.clone();
             let tracklist_receiver = tracklist_receiver.clone();
             let sender = sender.clone();
 
@@ -198,16 +196,16 @@ pub fn build_callbacks(
         });
 
         Callbacks {
-            open_album,
-            open_artist,
-            open_playlist,
+            album: open_album,
+            artist: open_artist,
+            playlist: open_playlist,
         }
     });
 
     CallbackHandles {
-        open_album: callbacks.open_album.clone(),
-        open_artist: callbacks.open_artist.clone(),
-        open_playlist: callbacks.open_playlist.clone(),
+        album: callbacks.album.clone(),
+        artist: callbacks.artist.clone(),
+        playlist: callbacks.playlist.clone(),
         _keepalive: callbacks,
     }
 }

@@ -40,7 +40,7 @@ impl PlaylistList {
         table.render(area, buf, &mut self.items.state);
     }
 
-    pub fn selected(&self) -> Option<usize> {
+    pub const fn selected(&self) -> Option<usize> {
         self.items.state.selected()
     }
 

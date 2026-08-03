@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "gtk-module"
 version.workspace = true
@@ -26,6 +29,7 @@ url.workspace = true
 tokio.workspace = true
 futures.workspace = true
 futures-util.workspace = true
+num-traits.workspace = true
 
 # binary dependencies
 tracing.workspace = true

@@ -19,9 +19,10 @@ use core::fmt;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
 use disconnect_module::DisconnectClientConfig;
 use futures::StreamExt;
+use num_traits::ToPrimitive;
 use player_module::{
     AppResult,
-    client::Client,
+    client::StreamClient,
     database::Database,
     notification::{Notification, NotificationBroadcast},
 };
@@ -64,19 +65,19 @@ pub struct FavoriteIds {
 }
 
 impl FavoriteIds {
-    pub fn albums(&self) -> &HashSet<String> {
+    pub const fn albums(&self) -> &HashSet<String> {
         &self.albums
     }
 
-    pub fn artists(&self) -> &HashSet<u32> {
+    pub const fn artists(&self) -> &HashSet<u32> {
         &self.artists
     }
 
-    pub fn playlists(&self) -> &HashSet<u32> {
+    pub const fn playlists(&self) -> &HashSet<u32> {
         &self.playlists
     }
 
-    pub fn tracks(&self) -> &HashSet<u32> {
+    pub const fn tracks(&self) -> &HashSet<u32> {
         &self.tracks
     }
 }
@@ -93,7 +94,7 @@ pub enum Output {
     AddTrackToPlaylistAndPopOverlay((u32, u32)),
 }
 
-#[derive(Default, PartialEq)]
+#[derive(Default, PartialEq, Eq)]
 pub enum Tab {
     #[default]
     Favorites,
@@ -107,29 +108,29 @@ pub enum Tab {
 impl fmt::Display for Tab {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Tab::Favorites => write!(f, "Favorites"),
-            Tab::Search => write!(f, "Search"),
-            Tab::Queue => write!(f, "Queue"),
-            Tab::Discover => write!(f, "Discover"),
-            Tab::Genres => write!(f, "Genres"),
-            Tab::Preferences => write!(f, "Preferences"),
+            Self::Favorites => write!(f, "Favorites"),
+            Self::Search => write!(f, "Search"),
+            Self::Queue => write!(f, "Queue"),
+            Self::Discover => write!(f, "Discover"),
+            Self::Genres => write!(f, "Genres"),
+            Self::Preferences => write!(f, "Preferences"),
         }
     }
 }
 
 impl Tab {
     pub const VALUES: [Self; 6] = [
-        Tab::Favorites,
-        Tab::Search,
-        Tab::Queue,
-        Tab::Discover,
-        Tab::Genres,
-        Tab::Preferences,
+        Self::Favorites,
+        Self::Search,
+        Self::Queue,
+        Self::Discover,
+        Self::Genres,
+        Self::Preferences,
     ];
 }
 
 pub struct App {
-    pub client: Arc<Client>,
+    pub client: Arc<StreamClient>,
     pub image_cache: ImageManager,
     pub image_rx: mpsc::UnboundedReceiver<ImageLoaded>,
     pub controls: Controls,
@@ -141,7 +142,7 @@ pub struct App {
     pub exit: bool,
     pub should_draw: bool,
     pub should_clear: bool,
-    pub app_state: AppState,
+    pub state: AppState,
     pub now_playing: NowPlayingState,
     pub favorites: FavoritesState,
     pub favorite_ids: FavoriteIds,
@@ -184,16 +185,16 @@ impl App {
 
                 Some(event_result) = event_stream.next() => {
                     if let Ok(event) = event_result {
-                        self.handle_event(event).await.expect("infallible");
+                        _ = self.handle_event(event).await;
                     }
                 }
 
-                Ok(_) = self.position.changed() => {
-                    self.now_playing.duration_ms = self.position.borrow_and_update().as_millis() as u32;
+                Ok(()) = self.position.changed() => {
+                    self.now_playing.duration_ms = self.position.borrow_and_update().as_millis().to_u32().unwrap_or_default();
                     self.should_draw = true;
                 },
 
-                Ok(_) = self.tracklist.changed() => {
+                Ok(()) = self.tracklist.changed() => {
                     let tracklist = self.tracklist.borrow_and_update().clone();
 
                     self.queue.set_items(
@@ -216,7 +217,7 @@ impl App {
                     self.should_draw = true;
                 }
 
-                Ok(_) = self.status.changed() => {
+                Ok(()) = self.status.changed() => {
                     let status = self.status.borrow_and_update();
                     self.now_playing.status = *status;
                     self.should_draw = true;
@@ -226,7 +227,7 @@ impl App {
                     if self.notifications.tick() {
                         self.should_draw = true;
                         self.should_clear = true;
-                    };
+                    }
                 }
 
                 notification = receiver.recv() => {
@@ -259,28 +260,28 @@ impl App {
         }
     }
 
-    fn handle_focus_event(&mut self, key_code: KeyCode) -> AppResult<Output> {
+    fn handle_focus_event(&mut self, key_code: KeyCode) -> Output {
         match key_code {
             KeyCode::Esc | KeyCode::Char('F') => {
-                self.app_state = AppState::Normal;
-                Ok(Output::Consumed)
+                self.state = AppState::Normal;
+                Output::Consumed
             }
             KeyCode::Char(' ') => {
                 self.controls.play_pause();
-                Ok(Output::Consumed)
+                Output::Consumed
             }
-            _ => Ok(Output::NotConsumed),
+            _ => Output::NotConsumed,
         }
     }
 
-    async fn push_popup(&mut self, popup: Overlay) {
-        let mut popups = match std::mem::take(&mut self.app_state) {
+    fn push_popup(&mut self, popup: Overlay) {
+        let mut popups = match std::mem::take(&mut self.state) {
             AppState::Overlay(popups) => popups,
             _ => Vec::new(),
         };
 
         popups.push(popup);
-        self.app_state = AppState::Overlay(popups);
+        self.state = AppState::Overlay(popups);
         self.should_draw = true;
     }
 
@@ -304,7 +305,7 @@ impl App {
             }
             Output::NotConsumed => match key_code {
                 KeyCode::Char('?') => {
-                    self.app_state = AppState::Help;
+                    self.state = AppState::Help;
                     self.should_draw = true;
                 }
                 KeyCode::Char('X') => {
@@ -320,7 +321,7 @@ impl App {
                         .unwrap_or(false);
 
                     if enable_connect {
-                        self.app_state = AppState::ConnectOverlay(0);
+                        self.state = AppState::ConnectOverlay(0);
                         self.should_draw = true;
                     }
                 }
@@ -333,7 +334,7 @@ impl App {
                         && let Ok(album) = self.client.album(&album_id).await
                     {
                         let popup = Overlay::Album(AlbumOverlay::new(album, &self.client).await);
-                        self.push_popup(popup).await;
+                        self.push_popup(popup);
                     }
                 }
                 KeyCode::Char('G') => {
@@ -347,7 +348,7 @@ impl App {
                         };
 
                         if let Ok(state) = ArtistOverlay::new(&artist, &self.client).await {
-                            self.push_popup(Overlay::Artist(state)).await;
+                            self.push_popup(Overlay::Artist(state));
                         }
                     }
                 }
@@ -356,12 +357,12 @@ impl App {
                         && let Ok(track) = self.client.track(id).await
                     {
                         let state = TrackInfoOverlay::new(track);
-                        self.push_popup(Overlay::TrackInfo(state)).await;
+                        self.push_popup(Overlay::TrackInfo(state));
                     }
                 }
                 KeyCode::Char('q') => {
                     self.should_draw = true;
-                    self.exit()
+                    self.exit();
                 }
                 KeyCode::Char('1') => {
                     self.navigate_to_favorites();
@@ -408,28 +409,28 @@ impl App {
                     self.should_draw = true;
                 }
                 KeyCode::Char('F') => {
-                    self.app_state = AppState::Focus;
+                    self.state = AppState::Focus;
                     self.should_draw = true;
                 }
                 _ => {}
             },
             Output::Overlay(popup) => {
-                self.push_popup(popup).await;
+                self.push_popup(popup);
             }
             Output::PopOverlay => {
-                if let AppState::Overlay(popups) = &mut self.app_state {
+                if let AppState::Overlay(popups) = &mut self.state {
                     popups.pop();
                     if popups.is_empty() {
-                        self.app_state = AppState::Normal;
+                        self.state = AppState::Normal;
                     }
                     self.should_draw = true;
                 }
             }
             Output::PopOverlayUpdateFavorites => {
-                if let AppState::Overlay(popups) = &mut self.app_state {
+                if let AppState::Overlay(popups) = &mut self.state {
                     popups.pop();
                     if popups.is_empty() {
-                        self.app_state = AppState::Normal;
+                        self.state = AppState::Normal;
                     }
                     self.update_favorites().await;
                     self.should_draw = true;
@@ -445,10 +446,10 @@ impl App {
                     .cloned()
                     .collect();
 
-                let mut popups = match std::mem::take(&mut self.app_state) {
+                let mut popups = match std::mem::take(&mut self.state) {
                     AppState::Overlay(v) => v,
                     other => {
-                        self.app_state = other;
+                        self.state = other;
                         Vec::new()
                     }
                 };
@@ -457,7 +458,7 @@ impl App {
                     track, playlists,
                 )));
 
-                self.app_state = AppState::Overlay(popups);
+                self.state = AppState::Overlay(popups);
                 self.should_draw = true;
             }
             Output::AddTrackToPlaylistAndPopOverlay((track_id, playlist_id)) => {
@@ -467,10 +468,10 @@ impl App {
                     .await
                 {
                     Ok(_) => {
-                        if let AppState::Overlay(popups) = &mut self.app_state {
+                        if let AppState::Overlay(popups) = &mut self.state {
                             popups.pop();
                             if popups.is_empty() {
-                                self.app_state = AppState::Normal;
+                                self.state = AppState::Normal;
                             }
                             self.update_favorites().await;
                         }
@@ -481,7 +482,7 @@ impl App {
                         self.notifications
                             .push(Notification::Error(err.to_string()));
                     }
-                };
+                }
                 self.should_draw = true;
             }
         }
@@ -490,16 +491,16 @@ impl App {
     async fn handle_event(&mut self, event: Event) -> io::Result<()> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                match &mut self.app_state {
+                match &mut self.state {
                     AppState::Help => {
-                        self.app_state = AppState::Normal;
+                        self.state = AppState::Normal;
                         self.should_draw = true;
                         self.should_clear = true;
                         return Ok(());
                     }
                     AppState::Focus => {
                         let output = self.handle_focus_event(key_event.code);
-                        self.handle_output(key_event.code, output).await;
+                        self.handle_output(key_event.code, Ok(output)).await;
                         self.should_draw = true;
                         return Ok(());
                     }
@@ -517,9 +518,9 @@ impl App {
                                 {
                                     self.broadcast
                                         .send_error(format!("Unable to select device: {err}"));
-                                };
+                                }
 
-                                self.app_state = AppState::Normal;
+                                self.state = AppState::Normal;
                             }
                             KeyCode::Left | KeyCode::Up => {
                                 if 0 < *selected_device {
@@ -535,7 +536,7 @@ impl App {
                                 }
                             }
                             _ => {
-                                self.app_state = AppState::Normal;
+                                self.state = AppState::Normal;
                             }
                         }
                         self.should_draw = true;
@@ -543,7 +544,7 @@ impl App {
                     }
                     AppState::Overlay(_) => {
                         let outcome = {
-                            if let AppState::Overlay(popups) = &mut self.app_state {
+                            if let AppState::Overlay(popups) = &mut self.state {
                                 if let Some(popup) = popups.last_mut() {
                                     popup
                                         .handle_event(
@@ -566,7 +567,7 @@ impl App {
                     }
 
                     AppState::Normal => {}
-                };
+                }
 
                 let screen_output = match self.current_screen {
                     Tab::Favorites => {
@@ -635,36 +636,36 @@ impl App {
 
             Event::Resize(_, _) => self.should_draw = true,
             _ => {}
-        };
+        }
         Ok(())
     }
 
-    fn navigate_to_favorites(&mut self) {
+    const fn navigate_to_favorites(&mut self) {
         self.current_screen = Tab::Favorites;
     }
 
-    fn navigate_to_search(&mut self) {
+    const fn navigate_to_search(&mut self) {
         self.search.focus_editing();
         self.current_screen = Tab::Search;
     }
 
-    fn navigate_to_queue(&mut self) {
+    const fn navigate_to_queue(&mut self) {
         self.current_screen = Tab::Queue;
     }
 
-    fn navigate_to_discover(&mut self) {
+    const fn navigate_to_discover(&mut self) {
         self.current_screen = Tab::Discover;
     }
 
-    fn navigate_to_genres(&mut self) {
+    const fn navigate_to_genres(&mut self) {
         self.current_screen = Tab::Genres;
     }
 
-    fn navigate_to_preferences(&mut self) {
+    const fn navigate_to_preferences(&mut self) {
         self.current_screen = Tab::Preferences;
     }
 
-    fn exit(&mut self) {
+    const fn exit(&mut self) {
         self.exit = true;
     }
 }

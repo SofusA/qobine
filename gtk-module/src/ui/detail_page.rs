@@ -6,7 +6,7 @@ use libadwaita as adw;
 use adw::prelude::*;
 use controls_module::{controls::Controls, models::Track};
 use gtk::gio;
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 
 use crate::{UiEvent, UiEventSender};
 
@@ -18,7 +18,7 @@ pub struct DetailHeaderParts {
 }
 
 pub fn build_detail_header(
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     controls: Controls,
     ui_event_sender: UiEventSender,
     text_rows: Vec<gtk::Widget>,
@@ -101,7 +101,7 @@ pub fn build_detail_header(
     let play_next_action = gio::SimpleAction::new("play-next", None);
 
     play_next_action.connect_activate({
-        let controls = controls.clone();
+        let controls = controls;
         let detail_type = favorite_button_type.clone();
         let client = client.clone();
 
@@ -131,11 +131,11 @@ pub fn build_detail_header(
         gio::SimpleAction::new("add-to-playlist", Some(&u32::static_variant_type()));
 
     add_to_playlist_action.connect_activate({
-        let client = client.clone();
-        let detail_type = favorite_button_type.clone();
+        let client = client;
+        let detail_type = favorite_button_type;
 
         move |_, parameter| {
-            let Some(playlist_id) = parameter.and_then(|p| p.get::<u32>()) else {
+            let Some(playlist_id) = parameter.and_then(glib::Variant::get::<u32>) else {
                 tracing::error!("Missing playlist id");
                 return;
             };
@@ -200,7 +200,7 @@ pub fn build_detail_header(
     }
 }
 
-pub fn populate_playlist_menu(playlist_menu: gio::Menu, client: Arc<Client>) {
+pub fn populate_playlist_menu(playlist_menu: gio::Menu, client: Arc<StreamClient>) {
     glib::MainContext::default().spawn_local(async move {
         match client.favorites().await {
             Ok(favorites) => {
@@ -267,8 +267,10 @@ pub fn build_detail_scaffold(
     tracks_list.connect_row_activated(move |_, row| {
         let index = row.index();
 
-        if index >= 0 {
-            on_track_activated(index as usize);
+        if index >= 0
+            && let Ok(index) = usize::try_from(index)
+        {
+            on_track_activated(index);
         }
     });
 
@@ -313,7 +315,7 @@ pub fn build_detail_scaffold(
     }
 }
 
-async fn fetch_tracks(client: &Client, favorite_button_type: DetailType) -> AppResult<Vec<Track>> {
+async fn fetch_tracks(client: &StreamClient, favorite_button_type: DetailType) -> AppResult<Vec<Track>> {
     let tracks = match favorite_button_type {
         DetailType::Album(id) => client.album(&id).await?.tracks,
         DetailType::Artist(id) => client.artist_page(id).await?.top_tracks,
@@ -331,114 +333,113 @@ pub enum DetailType {
 }
 
 fn new_favorite_button(
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     button_type: DetailType,
     ui_event_sender: UiEventSender,
 ) -> gtk4::Button {
     let is_favorite = Rc::new(Cell::new(false));
-    let button_type = Rc::new(button_type);
 
     let favorites_button = gtk4::Button::builder()
         .label("Favorite")
         .icon_name("non-starred-symbolic")
-        .css_classes(vec!["pill"])
+        .css_classes(["pill"])
         .build();
 
-    glib::MainContext::default().spawn_local(glib::clone!(
-        #[weak]
-        favorites_button,
-        #[strong]
-        client,
-        #[strong]
-        button_type,
-        #[strong]
-        is_favorite,
-        async move {
-            if let Ok(favorites) = client.favorites().await {
-                let fav = match &*button_type {
-                    DetailType::Album(album_id) => {
-                        favorites.albums.iter().any(|x| x.id == *album_id)
-                    }
-                    DetailType::Artist(artist_id) => {
-                        favorites.artists.iter().any(|x| x.id == *artist_id)
-                    }
-                    DetailType::Playlist(playlist_id) => {
-                        favorites.playlists.iter().any(|x| x.id == *playlist_id)
-                    }
-                };
+    // Load the initial favorite state.
+    {
+        let client = Arc::clone(&client);
+        let button_type = button_type.clone();
+        let is_favorite = Rc::clone(&is_favorite);
+        let weak_button = favorites_button.downgrade();
 
-                is_favorite.set(fav);
-                favorites_button.set_icon_name(if fav {
+        glib::MainContext::default().spawn_local(async move {
+            let Ok(favorites) = client.favorites().await else {
+                return;
+            };
+
+            let favorite = match &button_type {
+                DetailType::Album(album_id) => {
+                    favorites.albums.iter().any(|album| album.id == *album_id)
+                }
+                DetailType::Artist(artist_id) => favorites
+                    .artists
+                    .iter()
+                    .any(|artist| artist.id == *artist_id),
+                DetailType::Playlist(playlist_id) => favorites
+                    .playlists
+                    .iter()
+                    .any(|playlist| playlist.id == *playlist_id),
+            };
+
+            is_favorite.set(favorite);
+
+            if let Some(button) = weak_button.upgrade() {
+                button.set_icon_name(if favorite {
                     "starred-symbolic"
                 } else {
                     "non-starred-symbolic"
                 });
             }
-        }
-    ));
+        });
+    }
 
-    favorites_button.connect_clicked(glib::clone!(
-        #[weak]
-        favorites_button,
-        #[strong]
-        client,
-        #[strong]
-        button_type,
-        #[strong]
-        ui_event_sender,
-        #[strong]
-        is_favorite,
-        move |_| {
-            let client = client.clone();
+    // Handle subsequent button clicks.
+    {
+        let weak_button = favorites_button.downgrade();
+
+        favorites_button.connect_clicked(move |_| {
+            // The signal handler is reusable, so every future needs owned handles.
+            let client = Arc::clone(&client);
             let button_type = button_type.clone();
+            let is_favorite = Rc::clone(&is_favorite);
+            let ui_event_sender = ui_event_sender.clone();
+            let weak_button = weak_button.clone();
 
-            glib::MainContext::default().spawn_local(glib::clone!(
-                #[weak]
-                favorites_button,
-                #[strong]
-                ui_event_sender,
-                #[strong]
-                is_favorite,
-                async move {
-                    let next = !is_favorite.get();
+            glib::MainContext::default().spawn_local(async move {
+                let next = !is_favorite.get();
 
-                    let res = match &*button_type {
-                        DetailType::Album(album_id) => {
-                            if next {
-                                client.add_favorite_album(album_id).await
-                            } else {
-                                client.remove_favorite_album(album_id).await
-                            }
-                        }
-                        DetailType::Artist(artist_id) => {
-                            if next {
-                                client.add_favorite_artist(*artist_id).await
-                            } else {
-                                client.remove_favorite_artist(*artist_id).await
-                            }
-                        }
-                        DetailType::Playlist(playlist_id) => {
-                            if next {
-                                client.add_favorite_playlist(*playlist_id).await
-                            } else {
-                                client.remove_favorite_playlist(*playlist_id).await
-                            }
-                        }
-                    };
-
-                    if res.is_ok() {
-                        is_favorite.set(next);
-                        favorites_button.set_icon_name(if next {
-                            "starred-symbolic"
+                let result = match &button_type {
+                    DetailType::Album(album_id) => {
+                        if next {
+                            client.add_favorite_album(album_id).await
                         } else {
-                            "non-starred-symbolic"
-                        });
-                        let _ = ui_event_sender.send(UiEvent::FavoritesChanged);
+                            client.remove_favorite_album(album_id).await
+                        }
                     }
+                    DetailType::Artist(artist_id) => {
+                        if next {
+                            client.add_favorite_artist(*artist_id).await
+                        } else {
+                            client.remove_favorite_artist(*artist_id).await
+                        }
+                    }
+                    DetailType::Playlist(playlist_id) => {
+                        if next {
+                            client.add_favorite_playlist(*playlist_id).await
+                        } else {
+                            client.remove_favorite_playlist(*playlist_id).await
+                        }
+                    }
+                };
+
+                if result.is_err() {
+                    return;
                 }
-            ));
-        }
-    ));
+
+                is_favorite.set(next);
+
+                if let Some(button) = weak_button.upgrade() {
+                    button.set_icon_name(if next {
+                        "starred-symbolic"
+                    } else {
+                        "non-starred-symbolic"
+                    });
+                }
+
+                let _ = ui_event_sender.send(UiEvent::FavoritesChanged);
+            });
+        });
+    }
 
     favorites_button
 }

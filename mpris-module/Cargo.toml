@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "mpris-module"
 version.workspace = true
@@ -9,5 +12,6 @@ repository.workspace = true
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
 
+num-traits.workspace = true
 mpris-server = "0.10"
 tokio.workspace = true

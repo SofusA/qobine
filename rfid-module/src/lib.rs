@@ -2,7 +2,7 @@ use controls_module::{TracklistReceiver, controls::Controls, tracklist::Tracklis
 use player_module::{
     AppResult,
     database::{Database, ReferenceType},
-    error::Error,
+    error::PlayerError,
     notification::{Notification, NotificationBroadcast},
     player::Player,
 };
@@ -21,7 +21,6 @@ pub struct RfidState {
     link_request: Arc<Mutex<Option<ReferenceType>>>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_rfid(
     player: &Player,
     database: Arc<Database>,
@@ -55,7 +54,6 @@ pub fn spawn_rfid(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn init(
     state: RfidState,
     tracklist_receiver: TracklistReceiver,
@@ -74,15 +72,15 @@ async fn init(
     loop {
         out.write_all(b"Scan RFID: ")
             .await
-            .or(Err(Error::RfidInputPanic))?;
-        out.flush().await.or(Err(Error::RfidInputPanic))?;
+            .or(Err(PlayerError::RfidInputPanic))?;
+        out.flush().await.or(Err(PlayerError::RfidInputPanic))?;
 
         line.clear();
 
         let n = reader
             .read_line(&mut line)
             .await
-            .or(Err(Error::RfidInputPanic))?;
+            .or(Err(PlayerError::RfidInputPanic))?;
         if n == 0 {
             continue;
         }
@@ -105,7 +103,7 @@ async fn init(
                     rfid_server_base_address.as_deref(),
                     rfid_server_secret.as_deref(),
                 )
-                .await
+                .await;
             }
             Some(ReferenceType::Playlist(playlist_id)) => {
                 submit_link_playlist(
@@ -117,7 +115,7 @@ async fn init(
                     rfid_server_base_address.as_deref(),
                     rfid_server_secret.as_deref(),
                 )
-                .await
+                .await;
             }
             None => {
                 handle_play_scan(
@@ -133,11 +131,10 @@ async fn init(
                 )
                 .await;
             }
-        };
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_play_scan(
     database: &Database,
     controls: &Controls,
@@ -152,12 +149,16 @@ pub async fn handle_play_scan(
     let reference = match rfid_server_base_address {
         Some(server) => {
             let client = reqwest::Client::new();
-            let url = format!("{}/api/rfid/reference/{}", server, reference_id);
+            let url = format!("{server}/api/rfid/reference/{reference_id}");
 
             let mut request = client.get(&url);
             request = set_secret_header(request, rfid_server_secret);
 
-            let response = match request.send().await.and_then(|x| x.error_for_status()) {
+            let response = match request
+                .send()
+                .await
+                .and_then(reqwest::Response::error_for_status)
+            {
                 Ok(res) => res,
                 Err(err) => {
                     broadcast.send_error(err.to_string());
@@ -352,7 +353,11 @@ async fn submit_link(
         request =
             set_secret_header(request, rfid_server_secret).header(CONTENT_TYPE, "application/json");
 
-        match request.send().await.and_then(|x| x.error_for_status()) {
+        match request
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+        {
             Ok(_) => {
                 broadcast.send(Notification::Success("Link completed".to_string()));
                 set_state(&state, None).await;
@@ -361,7 +366,7 @@ async fn submit_link(
                 broadcast.send_error(err.to_string());
                 return;
             }
-        };
+        }
 
         return;
     }
@@ -369,14 +374,14 @@ async fn submit_link(
     let rfid_id = rfid_id.to_owned();
 
     match database.add_rfid_reference(rfid_id, reference).await {
-        Ok(_) => {
+        Ok(()) => {
             broadcast.send(Notification::Success("Link completed".to_string()));
             set_state(&state, None).await;
         }
         Err(err) => {
             broadcast.send(Notification::Error(err.to_string()));
         }
-    };
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

@@ -30,7 +30,7 @@ pub struct GenreFeaturedAlbums {
     pub items: Vec<super::album_suggestion::AlbumSuggestion>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenreFeaturedPlaylists {
     pub items: Vec<PlaylistSimple>,
 }

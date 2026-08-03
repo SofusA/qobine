@@ -7,7 +7,7 @@ use gtk4::{self as gtk, pango};
 use libadwaita as adw;
 
 use controls_module::{TracklistReceiver, controls::Controls, tracklist::PlayingEntity};
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::{
     UiEventSender,
@@ -30,7 +30,7 @@ pub struct AlbumHeaderInfo {
 pub struct AlbumDetailPage {
     page: adw::NavigationPage,
 
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     controls: Controls,
     tracklist_receiver: TracklistReceiver,
 
@@ -62,7 +62,7 @@ impl AlbumDetailPage {
     pub fn new(
         album_id: String,
         controls: Controls,
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
         tracklist_receiver: TracklistReceiver,
         ui_event_sender: UiEventSender,
         on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
@@ -260,7 +260,7 @@ impl AlbumDetailPage {
                         .playlists
                         .into_iter()
                         .filter(|x| x.is_owned)
-                        .map(|x| x.into())
+                        .map(std::convert::Into::into)
                         .collect();
 
                     for track in &album.tracks {
@@ -438,7 +438,7 @@ impl AlbumDetailPage {
                     if !suggestions.is_empty() {
                         content.append(&section(
                             "Similar albums",
-                            album_scroller(&suggestions, on_open_album.clone()),
+                            &album_scroller(&suggestions, &on_open_album),
                         ));
                     }
 

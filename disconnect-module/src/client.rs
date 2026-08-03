@@ -29,7 +29,6 @@ pub struct DisconnectClient {
     active_device_sender: watch::Sender<String>,
 }
 
-#[allow(clippy::too_many_arguments)]
 impl DisconnectClient {
     pub fn new(
         base_url: &str,
@@ -155,7 +154,7 @@ impl DisconnectClient {
     }
 
     pub async fn connect_and_listen(
-        &mut self,
+        &self,
         set_active_device_receiver: &mut mpsc::UnboundedReceiver<String>,
     ) -> AppResult<()> {
         let url = format!(
@@ -180,18 +179,15 @@ impl DisconnectClient {
         loop {
             tokio::select! {
                 changed = set_active_device_receiver.recv() => {
-                    match changed {
-                        Some(device) => {
-                            tracing::info!("Setting current device to {:?}", device);
+                    if let Some(device) = changed {
+                        tracing::info!("Setting current device to {:?}", device);
 
-                            if let Err(err) = self.set_active_device(&device).await {
-                                tracing::error!("Failed setting current device: {:?}", err);
-                            }
+                        if let Err(err) = self.set_active_device(&device).await {
+                            tracing::error!("Failed setting current device: {:?}", err);
                         }
-                        None => {
-                            tracing::warn!("Active device sender dropped");
-                            break;
-                        }
+                    } else {
+                        tracing::warn!("Active device sender dropped");
+                        break;
                     }
                 }
 

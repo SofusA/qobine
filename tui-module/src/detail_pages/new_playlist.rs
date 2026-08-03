@@ -1,4 +1,4 @@
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::{Event, KeyCode},
     prelude::*,
@@ -26,7 +26,7 @@ impl NewPlaylistOverlay {
         &mut self,
         code: KeyCode,
         event: &Event,
-        client: &Client,
+        client: &StreamClient,
     ) -> AppResult<Output> {
         match code {
             KeyCode::Enter => {
@@ -37,7 +37,7 @@ impl NewPlaylistOverlay {
                 }
 
                 client
-                    .create_playlist(name.to_owned(), false, Default::default(), None)
+                    .create_playlist(name.to_owned(), false, String::default(), None)
                     .await?;
 
                 Ok(Output::PopOverlayUpdateFavorites)

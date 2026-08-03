@@ -5,10 +5,12 @@ use gtk4 as gtk;
 use gtk4::{gdk, gio, prelude::*};
 use libadwaita as adw;
 
+use num_traits::ToPrimitive;
+
 use controls_module::{
     TracklistReceiver, controls::Controls, models::Track, tracklist::PlayingEntity,
 };
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::ui::set_picture_from_url;
 use crate::{
@@ -30,7 +32,7 @@ pub struct PlaylistHeaderInfo {
 pub struct PlaylistDetailPage {
     page: adw::NavigationPage,
 
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     controls: Controls,
     tracklist_receiver: TracklistReceiver,
     playlist_id: u32,
@@ -58,7 +60,7 @@ impl PlaylistDetailPage {
     pub fn new(
         playlist_id: u32,
         controls: Controls,
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
         tracklist_receiver: TracklistReceiver,
         ui_event_sender: UiEventSender,
     ) -> Self {
@@ -140,7 +142,7 @@ impl PlaylistDetailPage {
                     button.set_sensitive(false);
 
                     match client.delete_playlist(playlist_id).await {
-                        Ok(_) => {
+                        Ok(()) => {
                             if let Some(nav_view) = button
                                 .ancestor(adw::NavigationView::static_type())
                                 .and_then(|w| w.downcast::<adw::NavigationView>().ok())
@@ -148,8 +150,8 @@ impl PlaylistDetailPage {
                                 nav_view.pop();
                             }
                             if let Err(error) = ui_event_sender.send(UiEvent::FavoritesChanged) {
-                                tracing::error!("{error}")
-                            };
+                                tracing::error!("{error}");
+                            }
                         }
                         Err(err) => {
                             tracing::error!("Failed to delete playlist {playlist_id}: {err}");
@@ -170,8 +172,8 @@ impl PlaylistDetailPage {
                 meta.clone().upcast(),
             ],
             vec![
-                play_button.clone().upcast(),
-                shuffle_button.clone().upcast(),
+                play_button.upcast(),
+                shuffle_button.upcast(),
                 delete_button.clone().upcast(),
             ],
             DetailType::Playlist(playlist_id),
@@ -215,7 +217,7 @@ impl PlaylistDetailPage {
             current_selected_index: Rc::new(RefCell::new(None)),
             ui_event_sender,
             delete_button,
-            tracks: Default::default(),
+            tracks: Rc::default(),
             favorite_button,
             owner,
         };
@@ -259,7 +261,7 @@ impl PlaylistDetailPage {
                     title.set_label(&playlist.title);
 
                     let dur_str = format_time(playlist.duration_seconds);
-                    meta.set_label(&dur_str.to_string());
+                    meta.set_label(&dur_str.clone());
                     owner.set_label(&format!("By {}", playlist.owner.name));
 
                     set_picture_from_url(playlist.image.as_deref(), &cover);
@@ -275,10 +277,10 @@ impl PlaylistDetailPage {
                         .playlists
                         .into_iter()
                         .filter(|x| x.is_owned)
-                        .map(|x| x.into())
+                        .map(std::convert::Into::into)
                         .collect();
 
-                    for track in playlist.tracks.iter() {
+                    for track in &playlist.tracks {
                         let row = build_track_row(
                             track,
                             true,
@@ -368,9 +370,8 @@ fn update_current_playing(
     current_selected_index: &Rc<RefCell<Option<usize>>>,
     tracks_list: &gtk::ListBox,
 ) {
-    let playing = match playing_entity {
-        PlayingEntity::Playlist(p) => p,
-        _ => return,
+    let PlayingEntity::Playlist(playing) = playing_entity else {
+        return;
     };
 
     if playing.playlist_id != playlist_id {
@@ -382,7 +383,7 @@ fn update_current_playing(
     let idx = playing.index;
     *current_selected_index.borrow_mut() = Some(idx);
 
-    if let Some(row) = tracks_list.row_at_index(idx as i32) {
+    if let Some(row) = idx.to_i32().and_then(|idx| tracks_list.row_at_index(idx)) {
         tracks_list.select_row(Some(&row));
     } else {
         tracks_list.unselect_all();
@@ -399,7 +400,7 @@ fn add_owned_playlist_track_controls(
     playlist_id: u32,
     row: &impl IsA<gtk::ListBoxRow>,
     tracks_list: &gtk::ListBox,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     stored_tracks: Rc<RefCell<Vec<Track>>>,
     current_selected_index: Rc<RefCell<Option<usize>>>,
 ) {
@@ -419,9 +420,13 @@ fn add_owned_playlist_track_controls(
         let stored_tracks = stored_tracks.clone();
 
         move |_| {
+            let Ok(row_index) = usize::try_from(row.index()) else {
+                return;
+            };
+
             let Some(track_playlist_id) = stored_tracks
                 .borrow()
-                .get(row.index() as usize)
+                .get(row_index)
                 .and_then(|track| track.playlist_track_id)
             else {
                 return;
@@ -442,13 +447,9 @@ fn add_owned_playlist_track_controls(
                     return;
                 }
 
-                let removed_index = row.index();
-
-                if removed_index < 0 {
+                let Ok(removed_index) = usize::try_from(row.index()) else {
                     return;
-                }
-
-                let removed_index = removed_index as usize;
+                };
 
                 let mut tracks = stored_tracks.borrow_mut();
 
@@ -462,41 +463,44 @@ fn add_owned_playlist_track_controls(
 
                 match *current_selected {
                     Some(current_index) if current_index == removed_index => {
-                        // Deleted the playing track, so nothing in this playlist should look playing.
+                        // Deleted the playing track, so nothing in this
+                        // playlist should look like it is playing.
                         *current_selected = None;
+
                         glib::idle_add_local_once(move || {
                             tracks_list.unselect_all();
                         });
                     }
+
                     Some(current_index) if current_index > removed_index => {
-                        // A row before the playing track was removed, so its index shifts down.
+                        // A row before the playing track was removed,
+                        // so its index shifts down.
                         let new_index = current_index - 1;
                         *current_selected = Some(new_index);
 
-                        if let Some(row) = tracks_list.row_at_index(new_index as i32) {
-                            glib::idle_add_local_once(move || {
-                                tracks_list.select_row(Some(&row));
-                            });
-                        } else {
-                            glib::idle_add_local_once(move || {
-                                tracks_list.unselect_all();
-                            });
-                        }
+                        let row = i32::try_from(new_index)
+                            .ok()
+                            .and_then(|index| tracks_list.row_at_index(index));
+
+                        glib::idle_add_local_once(move || {
+                            tracks_list.select_row(row.as_ref());
+                        });
                     }
+
                     Some(current_index) => {
-                        // Playing track still exists at same index.
-                        if let Some(row) = tracks_list.row_at_index(current_index as i32) {
-                            glib::idle_add_local_once(move || {
-                                tracks_list.select_row(Some(&row));
-                            });
-                        } else {
-                            glib::idle_add_local_once(move || {
-                                tracks_list.unselect_all();
-                            });
-                        }
+                        // Playing track still exists at the same index.
+                        let row = i32::try_from(current_index)
+                            .ok()
+                            .and_then(|index| tracks_list.row_at_index(index));
+
+                        glib::idle_add_local_once(move || {
+                            tracks_list.select_row(row.as_ref());
+                        });
                     }
+
                     None => {
-                        // Nothing is playing, so make sure nothing appears selected.
+                        // Nothing is playing, so make sure nothing
+                        // appears selected.
                         glib::idle_add_local_once(move || {
                             tracks_list.unselect_all();
                         });
@@ -520,10 +524,9 @@ fn add_owned_playlist_track_controls(
         let row = listbox_row.clone();
 
         move |_, _, _| {
-            let from_index = row.index();
-            Some(gdk::ContentProvider::for_value(
-                &(from_index as u32).to_value(),
-            ))
+            let from_index = u32::try_from(row.index()).ok()?;
+
+            Some(gdk::ContentProvider::for_value(&from_index.to_value()))
         }
     });
 
@@ -534,22 +537,20 @@ fn add_owned_playlist_track_controls(
     drop_target.connect_drop({
         let target_row = listbox_row.clone();
         let tracks_list = tracks_list.clone();
-        let client = client.clone();
-        let stored_tracks = stored_tracks.clone();
+        let client = client;
 
         move |_, value, _, _| {
             let Ok(from_index) = value.get::<u32>() else {
                 return false;
             };
 
-            let from_index = from_index as usize;
-            let to_index = target_row.index();
-
-            if to_index < 0 {
+            let Ok(from_index) = usize::try_from(from_index) else {
                 return false;
-            }
+            };
 
-            let to_index = to_index as usize;
+            let Ok(to_index) = usize::try_from(target_row.index()) else {
+                return false;
+            };
 
             if from_index == to_index {
                 return true;
@@ -563,7 +564,15 @@ fn add_owned_playlist_track_controls(
                 return false;
             };
 
-            let Some(dragged_row) = tracks_list.row_at_index(from_index as i32) else {
+            let Ok(from_list_index) = i32::try_from(from_index) else {
+                return false;
+            };
+
+            let Some(dragged_row) = tracks_list.row_at_index(from_list_index) else {
+                return false;
+            };
+
+            let Ok(to_list_index) = i32::try_from(to_index) else {
                 return false;
             };
 
@@ -590,7 +599,7 @@ fn add_owned_playlist_track_controls(
                 tracks.insert(to_index, track);
 
                 tracks_list.remove(&dragged_row);
-                tracks_list.insert(&dragged_row, to_index as i32);
+                tracks_list.insert(&dragged_row, to_list_index);
             });
 
             true

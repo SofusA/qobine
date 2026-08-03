@@ -9,7 +9,7 @@ use controls_module::models::SearchResults;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Deserialize, Serialize, PartialEq)]
+#[derive(Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Tab {
     Albums,

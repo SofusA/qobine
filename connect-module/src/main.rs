@@ -35,7 +35,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            error_exit(&err);
         }
     }
 }
@@ -110,7 +110,7 @@ pub async fn run() -> AppResult<()> {
             )
             .await
             {
-                error_exit(e);
+                error_exit(&e);
             }
         });
     }

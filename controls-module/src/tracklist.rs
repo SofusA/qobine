@@ -45,7 +45,7 @@ pub enum PlayingEntity {
     Playlist(PlayingPlaylist),
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct PlayingPlaylist {
     pub track_id: u32,
     pub queue_id: u64,
@@ -61,21 +61,24 @@ pub struct QueueItem {
 }
 
 impl Tracklist {
-    pub fn new(list_type: TracklistType, queue: Vec<QueueItem>) -> Self {
+    #[must_use]
+    pub const fn new(list_type: TracklistType, queue: Vec<QueueItem>) -> Self {
         Self { queue, list_type }
     }
 
     pub fn set_list_type(&mut self, list_type: TracklistType) {
-        self.list_type = list_type
+        self.list_type = list_type;
     }
 
-    pub fn new_with_id(list_type: TracklistType, items: Vec<QueueItem>) -> Self {
+    #[must_use]
+    pub const fn new_with_id(list_type: TracklistType, items: Vec<QueueItem>) -> Self {
         Self {
             queue: items,
             list_type,
         }
     }
 
+    #[must_use]
     pub fn queue(&self) -> Vec<&QueueItem> {
         self.queue.iter().collect()
     }
@@ -85,10 +88,12 @@ impl Tracklist {
             .retain(|x| x.track.status != TrackStatus::Unplayed);
     }
 
-    pub fn total(&self) -> usize {
+    #[must_use]
+    pub const fn total(&self) -> usize {
         self.queue.len()
     }
 
+    #[must_use]
     pub fn currently_playing(&self) -> Option<u32> {
         self.queue
             .iter()
@@ -96,6 +101,7 @@ impl Tracklist {
             .map(|x| x.track.id)
     }
 
+    #[must_use]
     pub fn current_playing_entity(&self) -> Option<PlayingEntity> {
         let current_queue_item = self
             .queue
@@ -115,6 +121,7 @@ impl Tracklist {
         })
     }
 
+    #[must_use]
     pub fn next_track_id(&self) -> Option<u32> {
         self.next_track().map(|x| x.id)
     }
@@ -124,44 +131,52 @@ impl Tracklist {
     }
 
     pub fn push_track(&mut self, track: Track) {
-        let id = self.total() + 1;
+        let index = self.total().checked_add(1).unwrap_or_default();
+        let queue_id = u64::try_from(index).unwrap_or_default();
+
         let item = QueueItem {
             track,
-            queue_id: id as u64,
-            index: id,
+            queue_id,
+            index,
         };
         self.queue.push(item);
     }
 
-    pub fn insert_track(&mut self, index: usize, track: Track) {
-        let id = self.total() + 1;
+    pub fn insert_track(&mut self, insert_index: usize, track: Track) {
+        let index = self.total().checked_add(1).unwrap_or_default();
+        let queue_id = u64::try_from(index).unwrap_or_default();
+
         let item = QueueItem {
             track,
-            queue_id: id as u64,
-            index: id,
+            queue_id,
+            index,
         };
-        self.queue.insert(index, item);
+        self.queue.insert(insert_index, item);
     }
 
-    pub fn reorder_queue(&mut self, new_order: Vec<usize>) {
+    pub fn reorder_queue(&mut self, new_order: &[usize]) {
         if new_order.iter().enumerate().all(|(i, &v)| i == v) {
             return;
         }
 
-        let reordered: Vec<_> = new_order.iter().map(|&i| self.queue[i].clone()).collect();
+        let reordered: Vec<_> = new_order
+            .iter()
+            .filter_map(|&i| self.queue.get(i).cloned())
+            .collect();
 
         self.queue = reordered;
     }
 
+    #[must_use]
     pub fn current_position(&self) -> usize {
         self.queue
             .iter()
             .enumerate()
             .find(|t| t.1.track.status == TrackStatus::Playing)
-            .map(|x| x.0)
-            .unwrap_or(0)
+            .map_or(0, |x| x.0)
     }
 
+    #[must_use]
     pub fn current_queue_id(&self) -> Option<u64> {
         self.queue
             .iter()
@@ -169,18 +184,22 @@ impl Tracklist {
             .map(|x| x.queue_id)
     }
 
+    #[must_use]
     pub fn next_track_queue_id(&self) -> Option<u64> {
-        let current = self.current_position();
+        let current_position = self.current_position();
 
-        if current >= self.total() {
+        if current_position >= self.total() {
             return None;
         }
 
-        let next = self.queue.get(current + 1);
+        let next_position = current_position.checked_add(1)?;
+
+        let next = self.queue.get(next_position);
         next.map(|x| x.queue_id)
     }
 
-    pub fn list_type(&self) -> &TracklistType {
+    #[must_use]
+    pub const fn list_type(&self) -> &TracklistType {
         &self.list_type
     }
 
@@ -200,9 +219,11 @@ impl Tracklist {
         }
     }
 
+    #[must_use]
     pub fn next_track(&self) -> Option<&Track> {
         let current_position = self.current_position();
-        let next_position = current_position + 1;
+        let next_position = current_position.checked_add(1)?;
+
         if self.total() <= next_position {
             return None;
         }
@@ -210,6 +231,7 @@ impl Tracklist {
         Some(&self.queue.index(next_position).track)
     }
 
+    #[must_use]
     pub fn current_track(&self) -> Option<&Track> {
         self.queue
             .iter()
@@ -231,7 +253,7 @@ impl Tracklist {
                 std::cmp::Ordering::Equal => {
                     queue_item.1.status = TrackStatus::Playing;
 
-                    new_track = Some(queue_item.1)
+                    new_track = Some(queue_item.1);
                 }
 
                 std::cmp::Ordering::Greater => {

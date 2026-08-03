@@ -1,5 +1,6 @@
 use controls_module::{controls::Controls, models::Playlist};
-use player_module::{AppResult, client::Client};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{crossterm::event::KeyCode, prelude::*, widgets::Paragraph};
 use ratatui_image::StatefulImage;
 
@@ -80,12 +81,12 @@ impl PlaylistOverlay {
     pub async fn handle_event(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match code {
-            KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') => {
                 self.shuffle = !self.shuffle;
                 Ok(Output::Consumed)
             }
@@ -134,8 +135,8 @@ impl PlaylistOverlay {
         let image_width = image
             .as_ref()
             .filter(|_| can_render_cover)
-            .map(|image| (image.ratio * (ALBUM_COVER_HEIGHT * 2) as f32) as u16)
-            .unwrap_or(0);
+            .and_then(|image| (image.ratio * f32::from(ALBUM_COVER_HEIGHT * 2)).to_u16())
+            .unwrap_or_default();
 
         let gap = if can_render_cover { ALBUM_COVER_GAP } else { 0 };
 
@@ -147,7 +148,9 @@ impl PlaylistOverlay {
         .areas(area);
 
         if can_render_cover && let Some(AppImage { protocol, ratio }) = image {
-            let width = (*ratio * (ALBUM_COVER_HEIGHT * 2) as f32) as u16;
+            let width = (*ratio * f32::from(ALBUM_COVER_HEIGHT * 2))
+                .to_u16()
+                .unwrap_or_default();
 
             let centered_image_area = Rect::new(
                 image_area.x,
@@ -176,7 +179,7 @@ impl PlaylistOverlay {
         frame.render_widget(Paragraph::new(information), info_area);
     }
 
-    async fn delete_selected_track(&mut self, client: &Client) -> AppResult<()> {
+    async fn delete_selected_track(&mut self, client: &StreamClient) -> AppResult<()> {
         if !self.is_owned {
             return Ok(());
         }
@@ -202,7 +205,7 @@ impl PlaylistOverlay {
         Ok(())
     }
 
-    async fn move_selected_track_up(&mut self, client: &Client) -> AppResult<()> {
+    async fn move_selected_track_up(&mut self, client: &StreamClient) -> AppResult<()> {
         if !self.is_owned {
             return Ok(());
         }
@@ -219,7 +222,7 @@ impl PlaylistOverlay {
         self.move_selected_track(index, new_index, client).await
     }
 
-    async fn move_selected_track_down(&mut self, client: &Client) -> AppResult<()> {
+    async fn move_selected_track_down(&mut self, client: &StreamClient) -> AppResult<()> {
         if !self.is_owned {
             return Ok(());
         }
@@ -244,7 +247,7 @@ impl PlaylistOverlay {
         &mut self,
         current_index: usize,
         new_index: usize,
-        client: &Client,
+        client: &StreamClient,
     ) -> AppResult<()> {
         let Some(playlist_track_id) = self
             .tracks

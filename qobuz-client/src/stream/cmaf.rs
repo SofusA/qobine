@@ -20,18 +20,18 @@ pub struct SegmentTableEntry {
 /// FLAC header and segment table extracted from the init segment.
 pub struct InitInfo {
     pub flac_header: Vec<u8>,
-    /// Per-segment sizes (indices 0..n_segments-1 correspond to segments 1..n_segments).
+    /// Per-segment sizes (indices 0..n_segments-1 correspond to segments `1..n_segments`).
     pub segment_table: Vec<SegmentTableEntry>,
 }
 
-/// One frame entry from the segment's QBZ_SEGMENT_UUID box.
+/// One frame entry from the segment's `QBZ_SEGMENT_UUID` box.
 pub struct FrameEntry {
     pub size: u32,
     pub flags: u16,
     pub iv: [u8; 8],
 }
 
-/// Parsed crypto info from a segment's QBZ_SEGMENT_UUID box.
+/// Parsed crypto info from a segment's `QBZ_SEGMENT_UUID` box.
 pub struct SegmentCrypto {
     /// Offset to the start of audio frame data (usually mdat payload).
     pub data_offset: usize,
@@ -61,7 +61,7 @@ pub fn parse_init_segment(data: &[u8]) -> Result<InitInfo, Error> {
         pos += size;
     }
 
-    Err(Error::StreamError {
+    Err(Error::Stream {
         message: "init segment: QBZ_INIT_UUID box not found".into(),
     })
 }
@@ -93,7 +93,7 @@ pub fn parse_segment_crypto(data: &[u8]) -> Result<SegmentCrypto, Error> {
 
     match uuid_pos {
         Some(p) => parse_segment_uuid_payload(data, p, mdat_end),
-        None => Err(Error::StreamError {
+        None => Err(Error::Stream {
             message: "audio segment: QBZ_SEGMENT_UUID box not found".into(),
         }),
     }
@@ -118,7 +118,7 @@ fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
     //   Per segment: [4B byte_len][4B sample_count]
 
     if payload.len() < 28 {
-        return Err(Error::StreamError {
+        return Err(Error::Stream {
             message: "init UUID payload too short".into(),
         });
     }
@@ -132,7 +132,7 @@ fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
     a += 6; // total_samples_count
 
     if a + 2 > payload.len() {
-        return Err(Error::StreamError {
+        return Err(Error::Stream {
             message: "init UUID payload truncated at raw_len".into(),
         });
     }
@@ -146,13 +146,13 @@ fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
     let flac_pos = raw_data
         .windows(4)
         .position(|w| w == flac_magic)
-        .ok_or_else(|| Error::StreamError {
+        .ok_or_else(|| Error::Stream {
             message: "init UUID payload: fLaC magic not found".into(),
         })?;
 
     let header_len = 4 + 4 + 34; // fLaC + STREAMINFO block header + STREAMINFO data
     if flac_pos + header_len > raw_data.len() {
-        return Err(Error::StreamError {
+        return Err(Error::Stream {
             message: "init UUID payload: STREAMINFO truncated".into(),
         });
     }
@@ -217,7 +217,7 @@ fn parse_segment_uuid_payload(
 
     let base = uuid_box_start + 24; // start of payload after UUID
     if base + 12 > data.len() {
-        return Err(Error::StreamError {
+        return Err(Error::Stream {
             message: "segment UUID payload too short for header".into(),
         });
     }
@@ -237,7 +237,7 @@ fn parse_segment_uuid_payload(
 
     let entry_size = 4 + 2 + 2 + iv_size; // size + skip + flags + iv
     if a + frame_count * entry_size > data.len() {
-        return Err(Error::StreamError {
+        return Err(Error::Stream {
             message: format!(
                 "segment UUID: not enough data for {frame_count} entries of {entry_size} bytes"
             ),

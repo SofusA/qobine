@@ -12,8 +12,9 @@ use axum::{
 };
 use axum_extra::extract::Form;
 use controls_module::models::{AlbumSimple, Artist, Playlist, Track};
+use num_traits::ToPrimitive;
 use player_module::{
-    AppResult, client::Client, database::ReferenceType, notification::Notification,
+    AppResult, client::StreamClient, database::ReferenceType, notification::Notification,
 };
 use rfid_module::{LinkAlbumRfid, LinkPlaylistRfid, handle_play_scan};
 use serde::Deserialize;
@@ -87,7 +88,7 @@ async fn track_action(
         TrackAction::AddFavorite => {
             ok_or_send_error_toast(&state, state.client.add_favorite_track(req.track_id).await)?;
             state.send_sse("tracklist".into(), "New favorite track".into());
-            Ok(state.send_toast(Notification::Info("Track added to favorites".into())))
+            Ok(state.send_toast(&Notification::Info("Track added to favorites".into())))
         }
         TrackAction::RemoveFavorite => {
             ok_or_send_error_toast(
@@ -95,19 +96,19 @@ async fn track_action(
                 state.client.remove_favorite_track(req.track_id).await,
             )?;
             state.send_sse("tracklist".into(), "Removed favorite track".into());
-            Ok(state.send_toast(Notification::Info("Track removed from favorites".into())))
+            Ok(state.send_toast(&Notification::Info("Track removed from favorites".into())))
         }
         TrackAction::AddToQueue => {
             let track = ok_or_send_error_toast(&state, state.client.track(req.track_id).await)?;
             state.controls.add_tracks_to_queue(vec![track]);
             state.send_sse("tracklist".into(), "Track added to queue".into());
-            Ok(state.send_toast(Notification::Info("Track added to queue".into())))
+            Ok(state.send_toast(&Notification::Info("Track added to queue".into())))
         }
         TrackAction::PlayNext => {
             let track = ok_or_send_error_toast(&state, state.client.track(req.track_id).await)?;
             state.controls.play_tracks_next(vec![track]);
             state.send_sse("tracklist".into(), "Track queued next".into());
-            Ok(state.send_toast(Notification::Info("Track queued next".into())))
+            Ok(state.send_toast(&Notification::Info("Track queued next".into())))
         }
         TrackAction::AddToPlaylist => Ok(hx_redirect(&format!(
             "/playlist/add-track/{}",
@@ -183,15 +184,9 @@ async fn set_volume(
 ) -> impl IntoResponse {
     let mut volume = parameters.value;
 
-    if volume < 0 {
-        volume = 0;
-    };
+    volume = volume.clamp(0, 100);
 
-    if volume > 100 {
-        volume = 100;
-    };
-
-    let formatted_volume = volume as f32 / 100.0;
+    let formatted_volume = volume.to_f32().map(|x| x / 100.0).unwrap_or_default();
 
     state.controls.set_volume(formatted_volume);
 }
@@ -209,7 +204,7 @@ async fn set_volume_up(State(state): State<Arc<AppState>>) -> impl IntoResponse 
     let mut new_volume = current_volume.add(0.05);
 
     if new_volume > 1.0 {
-        new_volume = 1.0
+        new_volume = 1.0;
     }
 
     state.controls.set_volume(new_volume);
@@ -220,7 +215,7 @@ async fn set_volume_down(State(state): State<Arc<AppState>>) -> impl IntoRespons
     let mut new_volume = current_volume.sub(0.05);
 
     if new_volume < 0.0 {
-        new_volume = 0.0
+        new_volume = 0.0;
     }
 
     state.controls.set_volume(new_volume);
@@ -230,8 +225,10 @@ async fn set_position(
     State(state): State<Arc<AppState>>,
     axum::Form(parameters): axum::Form<SliderParameters>,
 ) -> impl IntoResponse {
-    let time = Duration::from_millis(parameters.value as u64);
-    state.controls.seek(time);
+    if let Some(value) = parameters.value.to_u64() {
+        let time = Duration::from_millis(value);
+        state.controls.seek(time);
+    }
 }
 
 async fn favorite_albums(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -241,7 +238,7 @@ async fn favorite_albums(State(state): State<Arc<AppState>>) -> impl IntoRespons
     }
 }
 
-async fn get_favorite_albums(client: &Client) -> AppResult<Vec<AlbumSimple>> {
+async fn get_favorite_albums(client: &StreamClient) -> AppResult<Vec<AlbumSimple>> {
     let favorites = client.favorites().await?;
     Ok(favorites.albums)
 }
@@ -253,7 +250,7 @@ async fn favorite_artists(State(state): State<Arc<AppState>>) -> impl IntoRespon
     }
 }
 
-async fn get_favorite_artists(client: &Client) -> AppResult<Vec<Artist>> {
+async fn get_favorite_artists(client: &StreamClient) -> AppResult<Vec<Artist>> {
     let favorites = client.favorites().await?;
     Ok(favorites.artists)
 }
@@ -265,7 +262,7 @@ async fn favorite_playlists(State(state): State<Arc<AppState>>) -> impl IntoResp
     }
 }
 
-async fn get_favorite_playlists(client: &Client) -> AppResult<Vec<Playlist>> {
+async fn get_favorite_playlists(client: &StreamClient) -> AppResult<Vec<Playlist>> {
     let favorites = client.favorites().await?;
     Ok(favorites.playlists)
 }
@@ -277,7 +274,7 @@ async fn favorite_tracks(State(state): State<Arc<AppState>>) -> impl IntoRespons
     }
 }
 
-async fn get_favorite_tracks(client: &Client) -> AppResult<Vec<Track>> {
+async fn get_favorite_tracks(client: &StreamClient) -> AppResult<Vec<Track>> {
     let favorites = client.favorites().await?;
     Ok(favorites.tracks)
 }
@@ -318,7 +315,7 @@ async fn link_album_rfid_reference(
             .await,
     )?;
 
-    Ok(state.send_toast(Notification::Success("Link complete".into())))
+    Ok(state.send_toast(&Notification::Success("Link complete".into())))
 }
 
 async fn link_playlist_rfid_reference(
@@ -335,7 +332,7 @@ async fn link_playlist_rfid_reference(
             .await,
     )?;
 
-    Ok(state.send_toast(Notification::Success("Link complete".into())))
+    Ok(state.send_toast(&Notification::Success("Link complete".into())))
 }
 
 async fn set_active_device(
@@ -343,7 +340,7 @@ async fn set_active_device(
     Path(device_id): Path<String>,
 ) -> impl IntoResponse {
     if let Some(sender) = &state.set_connect_active_device {
-        sender.send(device_id).unwrap();
+        _ = sender.send(device_id);
     }
 }
 

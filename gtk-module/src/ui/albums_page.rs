@@ -11,17 +11,18 @@ use crate::ui::grid_page::GridPage;
 pub type AlbumsPage = GridPage<AlbumSimple>;
 
 pub fn new_albums_page(on_open: Rc<dyn Fn(AlbumHeaderInfo)>) -> AlbumsPage {
-    let matches_query = Rc::new(|album: &AlbumSimple, q: &str| {
-        album.title.to_lowercase().contains(q) || album.artist.name.to_lowercase().contains(q)
-    });
+    let matches_query = |album: &AlbumSimple, query: &str| {
+        album.title.to_lowercase().contains(query)
+            || album.artist.name.to_lowercase().contains(query)
+    };
 
-    let build_tile = Rc::new(|album: &AlbumSimple| build_album_tile(album).upcast::<gtk::Widget>());
+    let build_tile = |album: &AlbumSimple| build_album_tile(album).upcast();
 
-    let on_activate = Rc::new(move |album: &AlbumSimple| {
+    let on_activate = move |album: &AlbumSimple| {
         on_open(AlbumHeaderInfo {
             id: album.id.clone(),
         });
-    });
+    };
 
     GridPage::new(
         2,

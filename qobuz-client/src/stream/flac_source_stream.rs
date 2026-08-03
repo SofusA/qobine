@@ -176,7 +176,8 @@ impl SeekableStreamReader {
         }
     }
 
-    pub fn content_length(&self) -> u64 {
+    #[must_use] 
+    pub const fn content_length(&self) -> u64 {
         self.content_length
     }
 }
@@ -228,7 +229,7 @@ async fn run_download_from(
     maybe_spawn_gap_fill(shared, start_seg);
 }
 
-/// Spawn gap-fill only if the forward pass completed (all segments from start_seg onward
+/// Spawn gap-fill only if the forward pass completed (all segments from `start_seg` onward
 /// are downloaded) and no other gap-fill is already running.
 fn maybe_spawn_gap_fill(shared: Arc<SharedDownloadState>, start_seg: u32) {
     let n = shared.n_segments;
@@ -249,7 +250,7 @@ fn maybe_spawn_gap_fill(shared: Arc<SharedDownloadState>, start_seg: u32) {
     });
 }
 
-/// Resolution order per segment: downloaded (complete) → in_progress (partial) → network.
+/// Resolution order per segment: downloaded (complete) → `in_progress` (partial) → network.
 /// Prefetches the next segment in parallel for faster buffering.
 async fn download_segments(
     shared: &Arc<SharedDownloadState>,
@@ -503,7 +504,7 @@ async fn fetch_and_stream_segment(
         // Persist to in_progress periodically (not every batch) to reduce cloning
         if all_decrypted.len() - last_persisted_len > 512 * 1024 {
             let mut progress = shared.in_progress.lock();
-            let existing_len = progress[idx].as_ref().map_or(0, |d| d.len());
+            let existing_len = progress[idx].as_ref().map_or(0, std::vec::Vec::len);
             if all_decrypted.len() > existing_len {
                 progress[idx] = Some(all_decrypted.clone());
                 last_persisted_len = all_decrypted.len();
@@ -513,7 +514,7 @@ async fn fetch_and_stream_segment(
         if !batch.is_empty() && tx.send(Ok(Bytes::copy_from_slice(&batch))).await.is_err() {
             // Persist before exit so data survives for future seeks
             let mut progress = shared.in_progress.lock();
-            let existing_len = progress[idx].as_ref().map_or(0, |d| d.len());
+            let existing_len = progress[idx].as_ref().map_or(0, std::vec::Vec::len);
             if all_decrypted.len() > existing_len {
                 progress[idx] = Some(all_decrypted);
             }
@@ -534,7 +535,7 @@ async fn fetch_and_stream_segment(
         }
         if tx.is_closed() {
             let mut progress = shared.in_progress.lock();
-            let existing_len = progress[idx].as_ref().map_or(0, |d| d.len());
+            let existing_len = progress[idx].as_ref().map_or(0, std::vec::Vec::len);
             if all_decrypted.len() > existing_len {
                 progress[idx] = Some(all_decrypted);
             }
@@ -578,7 +579,7 @@ impl SharedDownloadState {
         }
 
         let downloaded = self.downloaded.lock();
-        if !downloaded.iter().all(|f| f.is_some()) {
+        if !downloaded.iter().all(std::option::Option::is_some) {
             self.cache_written.store(false, Ordering::Release);
             return;
         }

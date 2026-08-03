@@ -4,7 +4,8 @@ use controls_module::{
     controls::Controls,
     models::{AlbumSimple, Artist, PlaylistSimple},
 };
-use player_module::{AppResult, client::Client, notification::Notification};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, client::StreamClient, notification::Notification};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,
@@ -34,7 +35,7 @@ use crate::{
 };
 
 pub struct GridEventContext<'a> {
-    pub client: &'a Client,
+    pub client: &'a StreamClient,
     pub controls: &'a Controls,
     pub notifications: &'a mut NotificationList,
 }
@@ -111,7 +112,8 @@ where
 
         self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
 
-        let content_width = (self.columns as u16).saturating_mul(T::CARD_WIDTH);
+        let content_width =
+            (self.columns.to_u16().unwrap_or_default()).saturating_mul(T::CARD_WIDTH);
 
         let cards_area = Rect::new(
             grid_area.x + grid_area.width.saturating_sub(content_width) / 2,
@@ -137,9 +139,9 @@ where
             let column = index % self.columns;
             let visible_row = absolute_row - self.scroll_row;
 
-            let card_area = Rect::new(
-                cards_area.x + column as u16 * T::CARD_WIDTH,
-                cards_area.y + visible_row as u16 * T::CARD_HEIGHT,
+            let this_card_area = Rect::new(
+                cards_area.x + column.to_u16().unwrap_or_default() * T::CARD_WIDTH,
+                cards_area.y + visible_row.to_u16().unwrap_or_default() * T::CARD_HEIGHT,
                 T::CARD_WIDTH,
                 T::CARD_HEIGHT,
             );
@@ -152,7 +154,7 @@ where
                 _ => Style::default(),
             };
 
-            item.render_card(card_area, buf, style, favorites, image_cache);
+            item.render_card(this_card_area, buf, style, favorites, image_cache);
         }
 
         if show_scrollbar {
@@ -173,7 +175,7 @@ where
     pub async fn handle_events(
         &mut self,
         event: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -189,12 +191,17 @@ where
             }
 
             KeyCode::Down | KeyCode::Char('j') => {
-                self.move_selection(self.columns as isize);
+                if let Some(columns) = self.columns.to_isize() {
+                    self.move_selection(columns);
+                }
+
                 Ok(Output::Consumed)
             }
 
             KeyCode::Up | KeyCode::Char('k') => {
-                self.move_selection(-(self.columns as isize));
+                if let Some(columns) = self.columns.to_isize() {
+                    self.move_selection(-columns);
+                }
                 Ok(Output::Consumed)
             }
 

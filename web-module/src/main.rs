@@ -64,7 +64,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            error_exit(&err);
         }
     }
 }
@@ -119,8 +119,8 @@ pub async fn run() -> AppResult<()> {
         set_active_device_rx,
         config_rx,
     ) = if let Some(disconnect_args) = disconnect_args.as_ref() {
-        let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
-        let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+        let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
+        let (active_device_tx, active_device_rx) = watch::channel(String::default());
         let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
         let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {
             server_url: disconnect_args.server_url.clone(),
@@ -177,7 +177,7 @@ pub async fn run() -> AppResult<()> {
             )
             .await
             {
-                error_exit(e);
+                error_exit(&e);
             }
         });
     }

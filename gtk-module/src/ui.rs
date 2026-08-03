@@ -10,7 +10,7 @@ use controls_module::{
     tracklist::PlayingEntity,
 };
 use gtk::{gdk, gio, prelude::*};
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::{
     UiEventSender,
@@ -200,19 +200,19 @@ pub enum DetailPageType {
 impl DetailPageType {
     pub fn is_album(&self, id: &str) -> bool {
         match self {
-            DetailPageType::Album(test_id) => test_id == id,
+            Self::Album(test_id) => test_id == id,
             _ => false,
         }
     }
     pub fn is_artist(&self, id: u32) -> bool {
         match self {
-            DetailPageType::Artist(test_id) => test_id == &id,
+            Self::Artist(test_id) => test_id == &id,
             _ => false,
         }
     }
     pub fn is_playlist(&self, id: u32) -> bool {
         match self {
-            DetailPageType::Playlist(test_id) => test_id == &id,
+            Self::Playlist(test_id) => test_id == &id,
             _ => false,
         }
     }
@@ -224,14 +224,13 @@ pub trait DetailPage {
     fn detail_type(&self) -> DetailPageType;
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn build_track_row(
     track: &Track,
     show_cover: bool,
     show_artist: bool,
     show_album: bool,
     controls: Controls,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     ui_event_sender: UiEventSender,
     favorite_tracks: &HashSet<u32>,
     owned_playlists: &Vec<PlaylistSimple>,
@@ -245,25 +244,22 @@ pub fn build_track_row(
         .margin_end(12)
         .build();
 
-    match show_cover {
-        true => {
-            let cover = gtk::Picture::builder().build();
-            let clamp = adw::Clamp::builder().child(&cover).maximum_size(75).build();
-            set_picture_from_url(track.image.as_deref(), &cover);
+    if show_cover {
+        let cover = gtk::Picture::builder().build();
+        let clamp = adw::Clamp::builder().child(&cover).maximum_size(75).build();
+        set_picture_from_url(track.image.as_deref(), &cover);
 
-            let cover_frame = gtk::Frame::builder().child(&clamp).build();
-            track_row_box.append(&cover_frame);
-        }
-        false => {
-            let number_label = gtk::Label::builder()
-                .label(format!("{:>2}", track.number))
-                .xalign(0.0)
-                .css_classes(vec!["dim-label"])
-                .width_chars(3)
-                .build();
+        let cover_frame = gtk::Frame::builder().child(&clamp).build();
+        track_row_box.append(&cover_frame);
+    } else {
+        let number_label = gtk::Label::builder()
+            .label(format!("{:>2}", track.number))
+            .xalign(0.0)
+            .css_classes(vec!["dim-label"])
+            .width_chars(3)
+            .build();
 
-            track_row_box.append(&number_label);
-        }
+        track_row_box.append(&number_label);
     }
 
     let title_label = gtk::Label::builder()
@@ -273,45 +269,42 @@ pub fn build_track_row(
         .ellipsize(gtk::pango::EllipsizeMode::End)
         .build();
 
-    match show_artist || show_album {
-        true => {
-            let title_box = gtk::Box::builder()
-                .orientation(gtk::Orientation::Vertical)
-                .spacing(6)
+    if show_artist || show_album {
+        let title_box = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .hexpand(true)
+            .build();
+
+        title_box.append(&title_label);
+
+        if show_artist && let Some(artist_name) = &track.artist_name {
+            let artist_label = gtk::Label::builder()
+                .label(artist_name.clone())
+                .css_classes(vec!["dim-label"])
+                .xalign(0.0)
                 .hexpand(true)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
                 .build();
 
-            title_box.append(&title_label);
-
-            if show_artist && let Some(artist_name) = &track.artist_name {
-                let artist_label = gtk::Label::builder()
-                    .label(artist_name.clone())
-                    .css_classes(vec!["dim-label"])
-                    .xalign(0.0)
-                    .hexpand(true)
-                    .ellipsize(gtk::pango::EllipsizeMode::End)
-                    .build();
-
-                title_box.append(&artist_label);
-            }
-
-            if show_album && let Some(album_title) = &track.album_title {
-                let album_label = gtk::Label::builder()
-                    .label(album_title.clone())
-                    .css_classes(vec!["dim-label"])
-                    .xalign(0.0)
-                    .hexpand(true)
-                    .ellipsize(gtk::pango::EllipsizeMode::End)
-                    .build();
-
-                title_box.append(&album_label);
-            }
-
-            track_row_box.append(&title_box);
+            title_box.append(&artist_label);
         }
-        false => {
-            track_row_box.append(&title_label);
+
+        if show_album && let Some(album_title) = &track.album_title {
+            let album_label = gtk::Label::builder()
+                .label(album_title.clone())
+                .css_classes(vec!["dim-label"])
+                .xalign(0.0)
+                .hexpand(true)
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .build();
+
+            title_box.append(&album_label);
         }
+
+        track_row_box.append(&title_box);
+    } else {
+        track_row_box.append(&title_label);
     }
 
     let duration_label = gtk::Label::builder()
@@ -363,7 +356,7 @@ pub fn build_track_row(
         let track_id = track.id;
 
         move |_, parameter| {
-            let Some(playlist_id) = parameter.and_then(|p| p.get::<u32>()) else {
+            let Some(playlist_id) = parameter.and_then(glib::Variant::get::<u32>) else {
                 tracing::warn!("Missing playlist id");
                 return;
             };
@@ -400,8 +393,8 @@ pub fn build_track_row(
 
     toggle_favorite_action.connect_activate({
         let track_id = track.id;
-        let client = client.clone();
-        let ui_event_sender = ui_event_sender.clone();
+        let client = client;
+        let ui_event_sender = ui_event_sender;
 
         move |_, _| {
             glib::MainContext::default().spawn_local({
@@ -432,7 +425,7 @@ pub fn build_track_row(
     let play_next_action = gio::SimpleAction::new("play-next", None);
 
     play_next_action.connect_activate({
-        let controls = controls.clone();
+        let controls = controls;
         let track = track.clone();
 
         move |_, _| {
@@ -464,7 +457,7 @@ pub fn build_track_row(
         .build()
 }
 
-fn section(title: &str, content: gtk::Widget) -> gtk::Box {
+fn section(title: &str, content: &gtk::Widget) -> gtk::Box {
     let title = gtk::Label::builder()
         .label(title)
         .css_classes(["title-3"])
@@ -478,14 +471,14 @@ fn section(title: &str, content: gtk::Widget) -> gtk::Box {
         .build();
 
     box_.append(&title);
-    box_.append(&content);
+    box_.append(content);
 
     box_
 }
 
 fn album_scroller(
     albums: &[AlbumSimple],
-    on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
+    on_open_album: &Rc<dyn Fn(AlbumHeaderInfo)>,
 ) -> gtk::Widget {
     let box_ = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -520,7 +513,7 @@ fn album_scroller(
 
 fn artist_scroller(
     artists: &[Artist],
-    on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
+    on_open_artist: &Rc<dyn Fn(ArtistHeaderInfo)>,
 ) -> gtk::Widget {
     let box_ = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -553,7 +546,7 @@ fn artist_scroller(
 
 fn playlist_scroller(
     playlists: &[PlaylistSimple],
-    on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
+    on_open_playlist: &Rc<dyn Fn(PlaylistHeaderInfo)>,
 ) -> gtk::Widget {
     let row = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)

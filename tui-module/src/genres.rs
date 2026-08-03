@@ -5,8 +5,8 @@ use controls_module::{
 use futures::future::try_join_all;
 use player_module::{
     AppResult,
-    client::{Client, GenrePlaylistSlug},
-    error::Error,
+    client::{GenrePlaylistSlug, StreamClient},
+    error::PlayerError,
 };
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -54,7 +54,7 @@ enum GenresFocus {
 }
 
 impl GenresState {
-    pub async fn new(client: &Client) -> AppResult<Self> {
+    pub async fn new(client: &StreamClient) -> AppResult<Self> {
         let genres_list = client.genres().await?;
 
         let genres = genres_list
@@ -72,50 +72,52 @@ impl GenresState {
             selected_genre: 0,
             selected_sub_tab: 0,
             mode: GenresMode::GenreList,
-            focus: Default::default(),
+            focus: GenresFocus::default(),
         })
     }
 
-    async fn load_genre(&mut self, client: &Client) -> AppResult<()> {
-        let genre_id = self.genres[self.selected_genre].id;
+    async fn load_genre(&mut self, client: &StreamClient) -> AppResult<()> {
+        let Some(genre_id) = self.genres.get(self.selected_genre).map(|genre| genre.id) else {
+            return Ok(());
+        };
 
         let discover = client.discover_page(Some(genre_id)).await?;
 
-        let playlists = try_join_all(discover.playlists_tags.into_iter().map(|tag| async {
-            let playlists = client
-                .genre_playlists(GenrePlaylistSlug {
-                    genre_id: Some(genre_id),
-                    playlist_slug: Some(tag.clone().slug),
-                })
-                .await?;
+        let playlists = try_join_all(discover.playlists_tags.into_iter().map(|tag| {
+            let slug = tag.slug.clone();
 
-            Ok::<_, Error>((tag.name, Grid::new(playlists)))
+            async {
+                let playlists = client
+                    .genre_playlists(GenrePlaylistSlug {
+                        genre_id: Some(genre_id),
+                        playlist_slug: Some(slug),
+                    })
+                    .await?;
+
+                Ok::<_, PlayerError>((tag.name, Grid::new(playlists)))
+            }
         }))
         .await?;
 
         let albums = vec![
-            ("New releases".to_string(), Grid::new(discover.new_releases)),
-            ("Qobuzissime".to_string(), Grid::new(discover.qobuzissims)),
+            ("New releases".into(), Grid::new(discover.new_releases)),
+            ("Qobuzissime".into(), Grid::new(discover.qobuzissims)),
             (
-                "Essential Discography".to_string(),
+                "Essential Discography".into(),
                 Grid::new(discover.ideal_discography),
             ),
             (
-                "Album of the week".to_string(),
+                "Album of the week".into(),
                 Grid::new(discover.album_of_the_week),
             ),
-            (
-                "Press Accolades".to_string(),
-                Grid::new(discover.press_awards),
-            ),
-            (
-                "Most streamed".to_string(),
-                Grid::new(discover.most_streamed),
-            ),
+            ("Press Accolades".into(), Grid::new(discover.press_awards)),
+            ("Most streamed".into(), Grid::new(discover.most_streamed)),
         ];
 
-        self.genres[self.selected_genre].albums = albums;
-        self.genres[self.selected_genre].playlists = playlists;
+        if let Some(genre) = self.genres.get_mut(self.selected_genre) {
+            genre.albums = albums;
+            genre.playlists = playlists;
+        }
 
         Ok(())
     }
@@ -135,68 +137,71 @@ impl GenresState {
         match self.mode {
             GenresMode::GenreList => self.render_genre_list(frame, content_area),
             GenresMode::GenreDetail => {
-                self.render_genre_detail(frame, content_area, favorites, image_cache)
+                self.render_genre_detail(frame, content_area, favorites, image_cache);
             }
         }
     }
 
     fn render_genre_list(&self, frame: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
+        let [title_area, content_area] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .split(area);
+            .areas(area);
 
         let title = Paragraph::new("Select a Genre")
             .style(SELECTED_STYLE)
             .alignment(Alignment::Center);
 
-        frame.render_widget(title, chunks[0]);
+        frame.render_widget(title, title_area);
 
         let items_per_row = 2;
         let rows_needed = self.genres.len().div_ceil(items_per_row);
 
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(3); rows_needed])
-            .split(chunks[1]);
+        let rows = Layout::vertical(vec![Constraint::Length(3); rows_needed]).split(content_area);
 
-        for (row_idx, row_area) in rows.iter().enumerate() {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(*row_area);
+        for (row_idx, (row_area, genres)) in rows
+            .iter()
+            .zip(self.genres.chunks(items_per_row))
+            .enumerate()
+        {
+            let [left_area, right_area] =
+                Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .areas(*row_area);
 
-            for col_idx in 0..items_per_row {
+            for (col_idx, (genre, column_area)) in
+                genres.iter().zip([left_area, right_area]).enumerate()
+            {
                 let genre_idx = row_idx * items_per_row + col_idx;
+                let is_selected = genre_idx == self.selected_genre;
 
-                if let Some(genre) = self.genres.get(genre_idx) {
-                    let is_selected = genre_idx == self.selected_genre;
-
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+                let style = Style::default()
+                    .fg(if is_selected {
+                        Color::Cyan
                     } else {
-                        Style::default().fg(Color::White)
-                    };
-
-                    let border_style = if is_selected {
-                        Style::default().fg(Color::Cyan)
+                        Color::White
+                    })
+                    .add_modifier(if is_selected {
+                        Modifier::BOLD
                     } else {
-                        Style::default().fg(Color::DarkGray)
-                    };
+                        Modifier::empty()
+                    });
 
-                    let widget = Paragraph::new(genre.name.as_str())
-                        .style(style)
-                        .alignment(Alignment::Center)
-                        .block(
-                            Block::default()
-                                .borders(Borders::ALL)
-                                .border_style(border_style),
-                        );
+                let border_style = Style::default().fg(if is_selected {
+                    Color::Cyan
+                } else {
+                    Color::DarkGray
+                });
 
-                    frame.render_widget(widget, cols[col_idx]);
-                }
+                let widget = Paragraph::new(genre.name.as_str())
+                    .style(style)
+                    .alignment(Alignment::Center)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .border_style(border_style),
+                    );
+
+                frame.render_widget(widget, column_area);
             }
         }
     }
@@ -208,63 +213,55 @@ impl GenresState {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Min(1)])
-            .split(area);
+        let [title_area, detail_area] =
+            Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).areas(area);
 
-        let title = format!("← Back | {}", self.genres[self.selected_genre].name);
+        let Some(genre) = self.genres.get(self.selected_genre) else {
+            return;
+        };
 
-        let title_widget = Paragraph::new(title)
+        let title_widget = Paragraph::new(format!("← Back | {}", genre.name))
             .style(Style::default().fg(Color::Cyan))
             .alignment(Alignment::Left);
 
-        frame.render_widget(title_widget, chunks[0]);
+        frame.render_widget(title_widget, title_area);
 
         let labels = self
             .visible_album_indices()
             .into_iter()
-            .map(|i| self.genres[self.selected_genre].albums[i].0.as_str())
-            .chain(
-                self.genres[self.selected_genre]
-                    .playlists
-                    .iter()
-                    .map(|(label, _)| label.as_str()),
-            )
+            .filter_map(|index| genre.albums.get(index))
+            .map(|(label, _)| label.as_str())
+            .chain(genre.playlists.iter().map(|(label, _)| label.as_str()))
             .collect::<Vec<_>>();
 
         let (sidebar, sidebar_width) = sidebar(labels, self.focus == GenresFocus::Sidebar);
 
-        let content_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .split(chunks[1]);
+        let [sidebar_area, content_area] =
+            Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)])
+                .areas(detail_area);
 
         let mut sidebar_state = ListState::default();
         sidebar_state.select(Some(self.selected_sub_tab));
 
-        frame.render_stateful_widget(sidebar, content_chunks[0], &mut sidebar_state);
+        frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
         let content_focused = self.focus == GenresFocus::Content;
+
         match self.selected_mut() {
-            Some(Selected::Album(list)) => {
-                list.render(
-                    content_chunks[1],
-                    frame.buffer_mut(),
-                    content_focused,
-                    favorites.albums(),
-                    image_cache,
-                );
-            }
-            Some(Selected::Playlist(list)) => {
-                list.render(
-                    content_chunks[1],
-                    frame.buffer_mut(),
-                    content_focused,
-                    favorites.playlists(),
-                    image_cache,
-                );
-            }
+            Some(Selected::Album(list)) => list.render(
+                content_area,
+                frame.buffer_mut(),
+                content_focused,
+                favorites.albums(),
+                image_cache,
+            ),
+            Some(Selected::Playlist(list)) => list.render(
+                content_area,
+                frame.buffer_mut(),
+                content_focused,
+                favorites.playlists(),
+                image_cache,
+            ),
             None => {}
         }
     }
@@ -272,7 +269,7 @@ impl GenresState {
     pub async fn handle_events(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -293,7 +290,7 @@ impl GenresState {
     async fn handle_genre_list_events(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
     ) -> AppResult<Output> {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -339,7 +336,7 @@ impl GenresState {
     async fn handle_genre_detail_events(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -387,7 +384,7 @@ impl GenresState {
     async fn handle_selected_content_events(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -405,44 +402,58 @@ impl GenresState {
     }
 
     fn visible_album_indices(&self) -> Vec<usize> {
-        self.genres[self.selected_genre]
-            .albums
-            .iter()
+        self.genres
+            .get(self.selected_genre)
+            .into_iter()
+            .flat_map(|genre| genre.albums.iter())
             .enumerate()
             .filter(|(_, (_, albums))| !albums.all_items().is_empty())
-            .map(|(i, _)| i)
+            .map(|(index, _)| index)
             .collect()
     }
 
     fn current_subtab(&self) -> Option<SubTab> {
+        let genre = self.genres.get(self.selected_genre)?;
         let album_indices = self.visible_album_indices();
 
-        if self.selected_sub_tab < album_indices.len() {
-            return Some(SubTab::Album(album_indices[self.selected_sub_tab]));
+        if let Some(&album_index) = album_indices.get(self.selected_sub_tab) {
+            return Some(SubTab::Album(album_index));
         }
 
         let playlist_index = self.selected_sub_tab.checked_sub(album_indices.len())?;
 
-        if playlist_index < self.genres[self.selected_genre].playlists.len() {
-            Some(SubTab::Playlist(playlist_index))
-        } else {
-            None
-        }
+        genre
+            .playlists
+            .get(playlist_index)
+            .map(|_| SubTab::Playlist(playlist_index))
     }
 
     fn selected_mut(&mut self) -> Option<Selected<'_>> {
-        match self.current_subtab()? {
-            SubTab::Album(index) => Some(Selected::Album(
-                &mut self.genres[self.selected_genre].albums[index].1,
-            )),
-            SubTab::Playlist(index) => Some(Selected::Playlist(
-                &mut self.genres[self.selected_genre].playlists[index].1,
-            )),
+        let subtab = self.current_subtab()?;
+        let genre = self.genres.get_mut(self.selected_genre)?;
+
+        match subtab {
+            SubTab::Album(index) => genre
+                .albums
+                .get_mut(index)
+                .map(|(_, grid)| Selected::Album(grid)),
+
+            SubTab::Playlist(index) => genre
+                .playlists
+                .get_mut(index)
+                .map(|(_, grid)| Selected::Playlist(grid)),
         }
     }
 
     fn total_tabs(&self) -> usize {
-        self.visible_album_indices().len() + self.genres[self.selected_genre].playlists.len()
+        let playlist_count = self
+            .genres
+            .get(self.selected_genre)
+            .map_or(0, |genre| genre.playlists.len());
+
+        self.visible_album_indices()
+            .len()
+            .saturating_add(playlist_count)
     }
 
     fn cycle_subtab(&mut self) {

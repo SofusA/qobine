@@ -25,8 +25,8 @@ impl From<UserPlaylistsResult> for Vec<String> {
             .playlists
             .items
             .iter()
-            .map(|i| i.name.to_string())
-            .collect::<Vec<String>>()
+            .map(|i| i.name.clone())
+            .collect::<Self>()
     }
 }
 
@@ -45,10 +45,10 @@ pub struct Playlist {
     pub is_collaborative: bool,
     pub description: String,
     pub images300: Option<Vec<String>>,
-    pub duration: i64,
+    pub duration: u32,
     pub tracks_count: i64,
     pub name: String,
-    pub id: i64,
+    pub id: u32,
     pub is_featured: Option<bool>,
     #[serde(default)]
     pub image_rectangle: Vec<String>,
@@ -76,18 +76,18 @@ pub struct Playlists {
     pub items: Vec<Playlist>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaylistSimple {
     pub owner: Owner,
     pub image: PlaylistSimpleImage,
     pub description: String,
-    pub duration: i64,
-    pub tracks_count: i64,
+    pub duration: u32,
+    pub tracks_count: usize,
     pub name: String,
-    pub id: i64,
+    pub id: u32,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaylistSimpleImage {
     #[serde(default)]
     pub rectangle: Option<String>,

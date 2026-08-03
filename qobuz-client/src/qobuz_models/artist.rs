@@ -31,6 +31,6 @@ pub struct Artist {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OtherArtists {
-    pub id: i64,
+    pub id: u32,
     pub name: Option<String>,
 }

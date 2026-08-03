@@ -8,7 +8,7 @@ use libadwaita as adw;
 
 use controls_module::controls::Controls;
 use controls_module::models::{PlaylistSimple, Track};
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::UiEventSender;
 use crate::ui::build_track_row;
@@ -19,7 +19,7 @@ pub struct FavoriteTracksPage {
     listbox: gtk::ListBox,
     empty_label: gtk::Label,
     controls: Controls,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
 
     play_button: gtk::Button,
     shuffle_button: gtk::Button,
@@ -29,7 +29,7 @@ pub struct FavoriteTracksPage {
 }
 
 impl FavoriteTracksPage {
-    pub fn new(controls: Controls, client: Arc<Client>, ui_event_sender: UiEventSender) -> Self {
+    pub fn new(controls: Controls, client: Arc<StreamClient>, ui_event_sender: UiEventSender) -> Self {
         let tracks = Rc::new(RefCell::new(Vec::<Track>::new()));
 
         let title = gtk::Label::builder()
@@ -112,8 +112,10 @@ impl FavoriteTracksPage {
             move |_lb, row| {
                 let idx = row.index();
 
-                if idx >= 0 {
-                    controls.play_tracks(&tracks.borrow(), false, idx as usize);
+                if idx >= 0
+                    && let Ok(idx) = usize::try_from(idx)
+                {
+                    controls.play_tracks(&tracks.borrow(), false, idx);
                 }
             }
         });
@@ -145,14 +147,14 @@ impl FavoriteTracksPage {
             empty_label,
             controls,
             client,
-            tracks,
             play_button,
             shuffle_button,
+            tracks,
             ui_event_sender,
         }
     }
 
-    pub fn widget(&self) -> &gtk::Box {
+    pub const fn widget(&self) -> &gtk::Box {
         &self.root
     }
 

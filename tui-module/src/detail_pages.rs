@@ -1,9 +1,9 @@
 use controls_module::controls::Controls;
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::*,
+    widgets::{Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
 use crate::{
@@ -28,7 +28,7 @@ pub use playlist::PlaylistOverlay;
 pub use track_info::TrackInfoOverlay;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(super) enum OverlayFocus {
+pub enum OverlayFocus {
     #[default]
     Sidebar,
     Content,
@@ -48,15 +48,15 @@ pub enum Overlay {
 impl Overlay {
     pub fn title(&self) -> String {
         match self {
-            Overlay::Artist(state) => state.title().to_string(),
-            Overlay::Album(state) => state.title().to_string(),
-            Overlay::Playlist(state) => state.title().to_string(),
-            Overlay::AddTrackToPlaylist(state) => {
+            Self::Artist(state) => state.title().to_string(),
+            Self::Album(state) => state.title().to_string(),
+            Self::Playlist(state) => state.title().to_string(),
+            Self::AddTrackToPlaylist(state) => {
                 format!("Add {} to playlist", state.track_title())
             }
-            Overlay::NewPlaylist(_) => "New playlist".to_string(),
-            Overlay::DeletePlaylist(_) => "Delete playlist".to_string(),
-            Overlay::TrackInfo(state) => state.title().to_string(),
+            Self::NewPlaylist(_) => "New playlist".to_string(),
+            Self::DeletePlaylist(_) => "Delete playlist".to_string(),
+            Self::TrackInfo(state) => state.title().to_string(),
         }
     }
 
@@ -111,7 +111,7 @@ impl Overlay {
     pub async fn handle_event(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -142,7 +142,7 @@ impl Overlay {
                     .await
             }
 
-            Self::AddTrackToPlaylist(popup) => popup.handle_event(key_event.code),
+            Self::AddTrackToPlaylist(popup) => Ok(popup.handle_event(key_event.code)),
 
             Self::NewPlaylist(popup) => popup.handle_event(key_event.code, &event, client).await,
 
@@ -153,11 +153,7 @@ impl Overlay {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Shared popup helpers
-// -----------------------------------------------------------------------------
-
-pub(super) fn about_scroll_delta(code: KeyCode) -> Option<i16> {
+pub const fn about_scroll_delta(code: KeyCode) -> Option<isize> {
     match code {
         KeyCode::Up | KeyCode::Char('k') => Some(-1),
         KeyCode::Down | KeyCode::Char('j') => Some(1),
@@ -167,13 +163,13 @@ pub(super) fn about_scroll_delta(code: KeyCode) -> Option<i16> {
     }
 }
 
-pub(super) fn scroll_about(scroll: &mut ScrollbarState, delta: i16) {
-    let position = scroll.get_position().saturating_add_signed(delta as isize);
+pub const fn scroll_about(scroll: &mut ScrollbarState, delta: isize) {
+    let position = scroll.get_position().saturating_add_signed(delta);
 
     *scroll = scroll.position(position);
 }
 
-pub(super) fn render_about(
+pub fn render_about(
     frame: &mut Frame,
     area: Rect,
     description: &str,
@@ -196,7 +192,7 @@ pub(super) fn render_about(
     lines.extend(wrap_text(description, text_area.width));
 
     let total_lines = lines.len();
-    let viewport_height = text_area.height as usize;
+    let viewport_height = text_area.height.into();
     let max_scroll = total_lines.saturating_sub(viewport_height);
 
     let position = scroll.get_position().min(max_scroll);
@@ -207,7 +203,7 @@ pub(super) fn render_about(
         .viewport_content_length(viewport_height);
 
     frame.render_widget(
-        Paragraph::new(Text::from(lines)).scroll((position as u16, 0)),
+        Paragraph::new(Text::from(lines)).scroll((u16::try_from(position).unwrap_or_default(), 0)),
         text_area,
     );
 
@@ -222,7 +218,7 @@ pub(super) fn render_about(
     }
 }
 
-pub(super) fn header_blurb(description: &str, width: usize) -> Line<'static> {
+pub fn header_blurb(description: &str, width: usize) -> Line<'static> {
     let normalized = description.split_whitespace().collect::<Vec<_>>().join(" ");
 
     if normalized.chars().count() <= width {

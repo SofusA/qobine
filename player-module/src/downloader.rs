@@ -4,9 +4,10 @@ use std::{
 };
 
 use controls_module::models::Track;
+use num_traits::ToPrimitive;
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 
-use crate::{AppResult, client::Client, database::Database};
+use crate::{AppResult, client::StreamClient, database::Database};
 
 pub enum DownloadResult {
     Cached(PathBuf),
@@ -16,14 +17,14 @@ pub enum DownloadResult {
 pub struct Downloader {
     audio_cache_directory: PathBuf,
     database: Arc<Database>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
 }
 
 impl Downloader {
-    pub fn new(
+    pub const fn new(
         audio_cache_directory: PathBuf,
         database: Arc<Database>,
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
     ) -> Self {
         Self {
             audio_cache_directory,
@@ -45,7 +46,7 @@ impl Downloader {
             track_info.sampling_rate,
             &self.audio_cache_directory,
         );
-        self.database.set_cache_entry(cache_path.as_path()).await;
+        self.database.set_cache_entry(cache_path.as_path()).await?;
 
         if cache_path.exists() {
             tracing::info!("Playing from cache: {}", cache_path.display());
@@ -67,10 +68,10 @@ impl Downloader {
         let cache_path = cache_path(
             track,
             &track_url.mime_type,
-            Some(track_url.sampling_rate as u32),
+            (track_url.sampling_rate * 1000.0).to_u32(),
             &self.audio_cache_directory,
         );
-        self.database.set_cache_entry(cache_path.as_path()).await;
+        self.database.set_cache_entry(cache_path.as_path()).await?;
 
         if cache_path.exists() {
             tracing::info!("Playing from cache: {}", cache_path.display());
@@ -99,8 +100,7 @@ fn cache_path(
     let artist_name = track.artist_name.as_deref().unwrap_or("unknown");
     let artist_id = track
         .artist_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(|| "unknown".to_string(), |id| id.to_string());
     let album_title = track.album_title.as_deref().unwrap_or("unknown");
     let album_id = track.album_id.as_deref().unwrap_or("unknown");
     let track_title = &track.title;
@@ -164,8 +164,7 @@ fn sanitize_name(input: &str) -> String {
         return "unknown".to_string();
     }
 
-    const MAX: usize = 100;
-    out.chars().take(MAX).collect()
+    out.chars().take(100).collect()
 }
 
 fn guess_extension(mime: &str) -> String {

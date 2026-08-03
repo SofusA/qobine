@@ -2,7 +2,8 @@ use controls_module::{
     controls::Controls,
     models::{Album, AlbumSimple, Artist},
 };
-use player_module::{AppResult, client::Client};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::KeyCode,
     prelude::*,
@@ -62,7 +63,7 @@ enum SelectedTabMut<'a> {
 }
 
 impl AlbumOverlay {
-    pub async fn new(album: Album, client: &Client) -> Self {
+    pub async fn new(album: Album, client: &StreamClient) -> Self {
         let similar = client.suggested_albums(&album.id).await.unwrap_or_default();
 
         Self {
@@ -114,7 +115,7 @@ impl AlbumOverlay {
     pub async fn handle_event(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -185,7 +186,10 @@ impl AlbumOverlay {
             frame.render_widget(Paragraph::new(metadata), metadata_area);
 
             if let Some(description) = &self.description {
-                let blurb = header_blurb(description, description_area.width as usize);
+                let blurb = header_blurb(
+                    description,
+                    description_area.width.to_usize().unwrap_or_default(),
+                );
 
                 frame.render_widget(
                     Paragraph::new(blurb).style(Style::new().dim()),
@@ -272,7 +276,11 @@ impl AlbumOverlay {
         }
     }
 
-    async fn handle_sidebar_event(&mut self, code: KeyCode, client: &Client) -> AppResult<Output> {
+    async fn handle_sidebar_event(
+        &mut self,
+        code: KeyCode,
+        client: &StreamClient,
+    ) -> AppResult<Output> {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.cycle_subtab_backwards();
@@ -302,7 +310,7 @@ impl AlbumOverlay {
     async fn handle_content_event(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -366,7 +374,7 @@ impl AlbumOverlay {
         }
     }
 
-    async fn open_artist(&self, client: &Client) -> AppResult<Output> {
+    async fn open_artist(&self, client: &StreamClient) -> AppResult<Output> {
         let popup = ArtistOverlay::new(&self.artist, client).await?;
         Ok(Output::Overlay(Overlay::Artist(popup)))
     }

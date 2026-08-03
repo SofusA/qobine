@@ -2,7 +2,7 @@ use assets::static_handler;
 use axum::{
     Router,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response, Sse, sse::Event},
     routing::get,
 };
@@ -12,11 +12,12 @@ use controls_module::{
     models::{Album, AlbumSimple},
 };
 use futures::stream::Stream;
+use num_traits::ToPrimitive;
 use player_module::{
     AppResult,
-    client::Client,
+    client::StreamClient,
     database::Database,
-    error::Error,
+    error::PlayerError,
     notification::{Notification, NotificationBroadcast},
 };
 use rfid_module::RfidState;
@@ -44,7 +45,6 @@ mod assets;
 mod routes;
 mod views;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn init(
     controls: Controls,
     position_receiver: PositionReceiver,
@@ -56,7 +56,7 @@ pub async fn init(
     web_secret: Option<String>,
     rfid_state: Option<RfidState>,
     broadcast: Arc<NotificationBroadcast>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     database: Arc<Database>,
     connect_device_name: Option<String>,
     connect_available_devices: Option<watch::Receiver<Vec<String>>>,
@@ -66,7 +66,7 @@ pub async fn init(
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
         .await
-        .or(Err(Error::PortInUse { port }))?;
+        .or(Err(PlayerError::PortInUse { port }))?;
 
     let router = create_router(
         controls,
@@ -84,15 +84,18 @@ pub async fn init(
         connect_available_devices,
         connect_active_device,
         set_connect_active_device,
-    )
-    .await;
+    );
 
-    axum::serve(listener, router).await.expect("infallible");
+    axum::serve(listener, router)
+        .await
+        .map_err(|err| PlayerError::IoError {
+            message: format!("Unable to server web player: {err}"),
+        })?;
+
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn create_router(
+fn create_router(
     controls: Controls,
     position_receiver: PositionReceiver,
     tracklist_receiver: TracklistReceiver,
@@ -102,7 +105,7 @@ async fn create_router(
     web_secret: Option<String>,
     rfid_state: Option<RfidState>,
     broadcast: Arc<NotificationBroadcast>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     database: Arc<Database>,
     connect_device_name: Option<String>,
     connect_available_devices: Option<watch::Receiver<Vec<String>>>,
@@ -123,30 +126,33 @@ async fn create_router(
     {
         let templates_clone = templates_rx.clone();
         let watcher_sender = tx.clone();
-        let watcher = filesentry::Watcher::new().unwrap();
-        watcher.add_root(&template_path, true, |_| ()).unwrap();
-
-        watcher.add_handler(move |events| {
-            for event in &*events {
-                match event.ty {
-                    filesentry::EventType::Modified | filesentry::EventType::Create => {
-                        let mut templates = templates_clone.borrow().clone();
-                        templates.reload();
-                        templates_tx.send(templates).unwrap();
-
-                        let event = ServerSentEvent {
-                            event_name: "reload".into(),
-                            event_data: "template changed".into(),
-                        };
-
-                        _ = watcher_sender.send(event);
-                    }
-                    _ => (),
-                }
+        if let Ok(watcher) = filesentry::Watcher::new() {
+            if let Err(err) = watcher.add_root(&template_path, true, |_| ()) {
+                tracing::error!("Error adding root to watcher: {err}");
             }
-            true
-        });
-        watcher.start();
+
+            watcher.add_handler(move |events| {
+                for event in &*events {
+                    match event.ty {
+                        filesentry::EventType::Modified | filesentry::EventType::Create => {
+                            let mut templates = templates_clone.borrow().clone();
+                            templates.reload();
+                            _ = templates_tx.send(templates);
+
+                            let event = ServerSentEvent {
+                                event_name: "reload".into(),
+                                event_data: "template changed".into(),
+                            };
+
+                            _ = watcher_sender.send(event);
+                        }
+                        _ => (),
+                    }
+                }
+                true
+            });
+            watcher.start();
+        }
     }
 
     let shared_state = Arc::new(AppState {
@@ -200,10 +206,9 @@ async fn create_router(
         ))
         .route("/assets/{*file}", get(static_handler))
         .merge(auth::routes())
-        .with_state(shared_state.clone())
+        .with_state(shared_state)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn background_task(
     tx: Sender<ServerSentEvent>,
     mut receiver: Receiver<Notification>,
@@ -218,7 +223,7 @@ async fn background_task(
 ) {
     loop {
         tokio::select! {
-            Ok(_) = position.changed() => {
+            Ok(()) = position.changed() => {
                 let position_duration = position.borrow_and_update();
                 let event = ServerSentEvent {
                     event_name: "position".into(),
@@ -227,7 +232,7 @@ async fn background_task(
 
                 _ = tx.send(event);
             },
-            Ok(_) = tracklist.changed() => {
+            Ok(()) = tracklist.changed() => {
                 _ = tracklist.borrow_and_update();
                 let event = ServerSentEvent {
                     event_name: "tracklist".into(),
@@ -235,16 +240,16 @@ async fn background_task(
                 };
                 _ = tx.send(event);
             },
-            Ok(_) = volume.changed() => {
+            Ok(()) = volume.changed() => {
                 let volume = *volume.borrow_and_update();
-                let volume = (volume * 100.0) as u32;
+                let volume = (volume * 100.0).to_u32().unwrap_or_default();
                 let event = ServerSentEvent {
                     event_name: "volume".into(),
                     event_data: volume.to_string(),
                 };
                 _ = tx.send(event);
             }
-            Ok(_) = status.changed() => {
+            Ok(()) = status.changed() => {
                 let status = status.borrow_and_update();
                 let message_data = match *status {
                     Status::Paused => "pause",
@@ -258,7 +263,7 @@ async fn background_task(
                 };
                 _ = tx.send(event);
             }
-            Ok(_) = auto_play.changed() => {
+            Ok(()) = auto_play.changed() => {
                 let auto_play = auto_play.borrow_and_update();
 
                 let event = ServerSentEvent {
@@ -268,7 +273,7 @@ async fn background_task(
                 _ = tx.send(event);
             }
 
-            Ok(_) = async {
+            Ok(()) = async {
                 match &mut available_devices {
                     Some(devices) => devices.changed().await,
                     None => pending().await,
@@ -280,14 +285,14 @@ async fn background_task(
 
                     let event = ServerSentEvent {
                         event_name: "available-devices".into(),
-                        event_data: serde_json::to_string(&*devices).unwrap(),
+                        event_data: serde_json::to_string(&*devices).unwrap_or_default(),
                     };
 
                     _ = tx.send(event);
                 }
             },
 
-            Ok(_) = async {
+            Ok(()) = async {
                 match &mut active_device {
                     Some(device) => device.changed().await,
                     None => pending().await,
@@ -299,7 +304,7 @@ async fn background_task(
 
                     let event = ServerSentEvent {
                         event_name: "active-device".into(),
-                        event_data: serde_json::to_string(&*device).unwrap(),
+                        event_data: serde_json::to_string(&*device).unwrap_or_default(),
                     };
 
                     _ = tx.send(event);
@@ -361,7 +366,7 @@ async fn sse_handler(
     });
 
     let mut headers = axum::http::HeaderMap::new();
-    headers.insert("X-Accel-Buffering", "no".parse().expect("infallible"));
+    headers.insert("X-Accel-Buffering", HeaderValue::from_static("no"));
 
     (headers, Sse::new(stream))
 }
@@ -380,21 +385,19 @@ pub struct ServerSentEvent {
 
 type ResponseResult = Result<axum::response::Response, axum::response::Response>;
 
-#[allow(clippy::result_large_err)]
 fn ok_or_send_error_toast<T>(
     state: &AppState,
-    value: AppResult<T, Error>,
+    value: AppResult<T, PlayerError>,
 ) -> AppResult<T, axum::response::Response> {
     match value {
         Ok(value) => Ok(value),
-        Err(err) => Err(state.send_toast(Notification::Error(err.to_string()))),
+        Err(err) => Err(state.send_toast(&Notification::Error(err.to_string()))),
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn ok_or_error_page<T>(
     state: &AppState,
-    value: AppResult<T, Error>,
+    value: AppResult<T, PlayerError>,
 ) -> AppResult<T, axum::response::Response> {
     match value {
         Ok(value) => Ok(value),
@@ -408,27 +411,13 @@ fn ok_or_error_page<T>(
     }
 }
 
-#[allow(clippy::result_large_err, unused)]
-fn ok_or_broadcast<T>(
-    broadcast: &NotificationBroadcast,
-    value: AppResult<T, Error>,
-) -> AppResult<T, axum::response::Response> {
-    match value {
-        Ok(value) => Ok(value),
-        Err(err) => {
-            broadcast.send(Notification::Error(err.to_string()));
-
-            let mut response = Html("<div></div>".to_string()).into_response();
-            let headers = response.headers_mut();
-            headers.insert("HX-Reswap", "none".try_into().expect("infallible"));
-
-            Err(response)
-        }
-    }
-}
-
+#[must_use]
 pub fn hx_redirect(url: &str) -> Response {
     let mut headers = HeaderMap::new();
-    headers.insert("HX-Redirect", url.parse().unwrap());
+
+    if let Ok(value) = HeaderValue::from_str(url) {
+        headers.insert("HX-Redirect", value);
+    }
+
     (StatusCode::OK, headers).into_response()
 }

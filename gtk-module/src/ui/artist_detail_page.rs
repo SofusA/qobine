@@ -6,7 +6,7 @@ use gtk4::{gio, prelude::*};
 use libadwaita as adw;
 
 use controls_module::{TracklistReceiver, controls::Controls, tracklist::PlayingEntity};
-use player_module::client::Client;
+use player_module::client::StreamClient;
 
 use crate::ui::set_picture_from_url;
 use crate::{
@@ -30,7 +30,7 @@ pub struct ArtistHeaderInfo {
 pub struct ArtistDetailPage {
     page: adw::NavigationPage,
 
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     controls: Controls,
     tracklist_receiver: TracklistReceiver,
     artist_id: u32,
@@ -58,7 +58,7 @@ impl ArtistDetailPage {
     pub fn new(
         artist_id: u32,
         controls: Controls,
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
         tracklist_receiver: TracklistReceiver,
         on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
         on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
@@ -185,7 +185,7 @@ impl ArtistDetailPage {
                         .playlists
                         .into_iter()
                         .filter(|x| x.is_owned)
-                        .map(|x| x.into())
+                        .map(std::convert::Into::into)
                         .collect();
 
                     for track in artist.top_tracks.iter().take(10) {
@@ -213,35 +213,35 @@ impl ArtistDetailPage {
                     if !artist.albums.is_empty() {
                         content.append(&section(
                             "Albums",
-                            album_scroller(&artist.albums, on_open_album.clone()),
+                            &album_scroller(&artist.albums, &on_open_album),
                         ));
                     }
 
                     if !artist.singles.is_empty() {
                         content.append(&section(
                             "Singles",
-                            album_scroller(&artist.singles, on_open_album.clone()),
+                            &album_scroller(&artist.singles, &on_open_album),
                         ));
                     }
 
                     if !artist.live.is_empty() {
                         content.append(&section(
                             "Live",
-                            album_scroller(&artist.live, on_open_album.clone()),
+                            &album_scroller(&artist.live, &on_open_album),
                         ));
                     }
 
                     if !artist.compilations.is_empty() {
                         content.append(&section(
                             "Compilations",
-                            album_scroller(&artist.compilations, on_open_album.clone()),
+                            &album_scroller(&artist.compilations, &on_open_album),
                         ));
                     }
 
                     if !artist.similar_artists.is_empty() {
                         content.append(&section(
                             "Similar Artists",
-                            artist_scroller(&artist.similar_artists, on_open_artist.clone()),
+                            &artist_scroller(&artist.similar_artists, &on_open_artist),
                         ));
                     }
 

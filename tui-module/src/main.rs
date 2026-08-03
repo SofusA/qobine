@@ -35,7 +35,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            error_exit(&err);
         }
     }
 }
@@ -143,8 +143,8 @@ pub async fn run() -> AppResult<()> {
 
     let (config_tx, config_rx) = watch::channel(disconnect_client_config);
 
-    let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
-    let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
+    let (active_device_tx, active_device_rx) = watch::channel(String::default());
     let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
     spawn_disconnect(
@@ -173,8 +173,8 @@ pub async fn run() -> AppResult<()> {
         )
         .await
         {
-            error_exit(e);
-        };
+            error_exit(&e);
+        }
     });
 
     player.player_loop(exit_receiver).await?;
@@ -212,7 +212,7 @@ struct SleepInhibitor {
 
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl SleepInhibitor {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self { awake: None }
     }
 

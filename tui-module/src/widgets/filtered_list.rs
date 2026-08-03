@@ -15,7 +15,7 @@ where
         Self {
             filter: list.clone(),
             all_items: list,
-            state: Default::default(),
+            state: TableState::default(),
         }
     }
 
@@ -28,7 +28,7 @@ where
     }
 
     pub fn set_all_items(&mut self, items: Vec<T>) {
-        self.all_items = items.clone();
+        self.all_items.clone_from(&items);
         self.filter = items;
     }
 

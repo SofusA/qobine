@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use controls_module::{controls::Controls, models::Track};
-use player_module::{AppResult, client::Client, notification::Notification};
+use player_module::{AppResult, client::StreamClient, notification::Notification};
 use ratatui::{
     buffer::Buffer,
     crossterm::event::KeyCode,
@@ -65,7 +65,7 @@ impl TrackList {
         self.items.set_filter(items);
     }
 
-    pub fn select_index(&mut self, index: usize) {
+    pub const fn select_index(&mut self, index: usize) {
         self.items.state.select(Some(index));
     }
 
@@ -77,7 +77,7 @@ impl TrackList {
         }
     }
 
-    pub fn selected(&self) -> Option<usize> {
+    pub const fn selected(&self) -> Option<usize> {
         self.items.state.selected()
     }
 
@@ -100,7 +100,7 @@ impl TrackList {
     pub async fn handle_events(
         &mut self,
         event: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
         event_type: TrackListEvent,
@@ -145,7 +145,7 @@ impl TrackList {
 
                 if let Some(selected) = selected {
                     controls.add_tracks_to_queue(vec![selected.clone()]);
-                };
+                }
                 Ok(Output::Consumed)
             }
 
@@ -213,7 +213,7 @@ impl TrackList {
                     }
                     TrackListEvent::Album(id) => controls.play_album(&id, index),
                     TrackListEvent::Playlist(id, shuffle) => {
-                        controls.play_playlist(id, index, shuffle)
+                        controls.play_playlist(id, index, shuffle);
                     }
                     TrackListEvent::Artist(id) => controls.play_top_tracks(id, index),
                 }

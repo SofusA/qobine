@@ -12,13 +12,13 @@ pub type PlaylistsPage = GridPage<PlaylistSimple>;
 
 pub fn new_playlists_page(on_open: Rc<dyn Fn(PlaylistHeaderInfo)>) -> PlaylistsPage {
     let matches_query =
-        Rc::new(|playlist: &PlaylistSimple, q: &str| playlist.title.to_lowercase().contains(q));
+        |playlist: &PlaylistSimple, query: &str| playlist.title.to_lowercase().contains(query);
 
-    let build_tile = Rc::new(|playlist: &PlaylistSimple| build_playlist_tile(playlist).upcast());
+    let build_tile = |playlist: &PlaylistSimple| build_playlist_tile(playlist).upcast();
 
-    let on_activate = Rc::new(move |playlist: &PlaylistSimple| {
+    let on_activate = move |playlist: &PlaylistSimple| {
         on_open(PlaylistHeaderInfo { id: playlist.id });
-    });
+    };
 
     GridPage::new(
         2,

@@ -8,7 +8,7 @@ use gtk::{gio, glib, prelude::*};
 use gtk4 as gtk;
 
 use controls_module::models::{AlbumSimple, Genre, PlaylistSimple, PlaylistTag};
-use player_module::client::{Client, GenrePlaylistSlug};
+use player_module::client::{StreamClient, GenrePlaylistSlug};
 
 use crate::ui::{
     album_detail_page::AlbumHeaderInfo, album_scroller, playlist_detail_page::PlaylistHeaderInfo,
@@ -26,8 +26,8 @@ enum LoadError {
 impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LoadError::Timeout => write!(f, "Request timed out"),
-            LoadError::Request(err) => write!(f, "{err}"),
+            Self::Timeout => write!(f, "Request timed out"),
+            Self::Request(err) => write!(f, "{err}"),
         }
     }
 }
@@ -44,7 +44,7 @@ where
 
     match select(future, timeout).await {
         Either::Left((result, _)) => result.map_err(|err| LoadError::Request(err.to_string())),
-        Either::Right((_, _)) => Err(LoadError::Timeout),
+        Either::Right(((), _)) => Err(LoadError::Timeout),
     }
 }
 
@@ -52,7 +52,7 @@ where
 pub struct DiscoverPage {
     root: gtk::Box,
     scroller: gtk::ScrolledWindow,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
 
     selected: Rc<RefCell<GenrePlaylistTag>>,
     playlist_section: Rc<RefCell<Option<gtk::Box>>>,
@@ -63,7 +63,7 @@ pub struct DiscoverPage {
 
 impl DiscoverPage {
     pub fn new(
-        client: Arc<Client>,
+        client: Arc<StreamClient>,
         on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
         on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
     ) -> Self {
@@ -99,7 +99,7 @@ impl DiscoverPage {
         }
     }
 
-    pub fn widget(&self) -> &gtk::ScrolledWindow {
+    pub const fn widget(&self) -> &gtk::ScrolledWindow {
         &self.scroller
     }
 
@@ -170,7 +170,7 @@ impl DiscoverPage {
                 &page.root,
                 "New releases",
                 &discover_data.new_releases,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
 
             page.add_playlist_section(&discover_data.playlists_tags, &playlists);
@@ -179,35 +179,35 @@ impl DiscoverPage {
                 &page.root,
                 "Essential Discography",
                 &discover_data.ideal_discography,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
 
             add_album_section(
                 &page.root,
                 "Qobuzissime",
                 &discover_data.qobuzissims,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
 
             add_album_section(
                 &page.root,
                 "Album of the week",
                 &discover_data.album_of_the_week,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
 
             add_album_section(
                 &page.root,
                 "Press Accolades",
                 &discover_data.press_awards,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
 
             add_album_section(
                 &page.root,
                 "Most streamed",
                 &discover_data.most_streamed,
-                page.on_open_album.clone(),
+                &page.on_open_album,
             );
         });
     }
@@ -285,7 +285,7 @@ impl DiscoverPage {
         let page = self.clone();
 
         action.connect_activate(move |_action, target| {
-            let Some(target) = target.and_then(|v| v.get::<String>()) else {
+            let Some(target) = target.and_then(glib::Variant::get::<String>) else {
                 return;
             };
 
@@ -355,7 +355,7 @@ impl DiscoverPage {
         let tags = playlist_tags.to_vec();
 
         action.connect_activate(move |_action, target| {
-            let Some(target) = target.and_then(|v| v.get::<String>()) else {
+            let Some(target) = target.and_then(glib::Variant::get::<String>) else {
                 return;
             };
 
@@ -390,8 +390,7 @@ impl DiscoverPage {
         let label = selected
             .playlist_tag
             .as_ref()
-            .map(|tag| tag.name.clone())
-            .unwrap_or_else(|| "All playlists".to_string());
+            .map_or_else(|| "All playlists".to_string(), |tag| tag.name.clone());
 
         let popover = gtk::PopoverMenu::from_model(Some(&menu));
         popover.insert_action_group("discover", Some(&action_group));
@@ -444,7 +443,7 @@ impl DiscoverPage {
 
         section.append(&header);
 
-        let playlist_row = playlist_scroller(playlists, self.on_open_playlist.clone());
+        let playlist_row = playlist_scroller(playlists, &self.on_open_playlist);
         section.append(&playlist_row);
     }
 
@@ -516,7 +515,7 @@ fn add_album_section(
     root: &gtk::Box,
     title: &str,
     albums: &[AlbumSimple],
-    on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
+    on_open_album: &Rc<dyn Fn(AlbumHeaderInfo)>,
 ) {
     if albums.is_empty() {
         return;

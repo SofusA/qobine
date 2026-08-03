@@ -1,5 +1,5 @@
 use controls_module::models::PlaylistSimple;
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{crossterm::event::KeyCode, prelude::*};
 
 use crate::{
@@ -25,14 +25,14 @@ impl DeletePlaylistOverlay {
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let title = format!("Delete {}?", self.title);
 
-        let selected = if self.confirm { 0 } else { 1 };
+        let selected = usize::from(!self.confirm);
 
         let buttons = tab_bar(["Delete", "Cancel"].into(), selected).block(block(Some(&title)));
 
         frame.render_widget(buttons, area);
     }
 
-    pub async fn handle_event(&mut self, code: KeyCode, client: &Client) -> AppResult<Output> {
+    pub async fn handle_event(&mut self, code: KeyCode, client: &StreamClient) -> AppResult<Output> {
         match code {
             KeyCode::Enter if self.confirm => {
                 client.delete_playlist(self.id).await?;
@@ -41,7 +41,7 @@ impl DeletePlaylistOverlay {
 
             KeyCode::Enter => Ok(Output::PopOverlayUpdateFavorites),
 
-            KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') => {
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l') => {
                 self.confirm = !self.confirm;
                 Ok(Output::Consumed)
             }

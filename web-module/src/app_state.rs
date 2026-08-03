@@ -6,9 +6,10 @@ use controls_module::{
     tracklist::{Tracklist, TracklistType},
 };
 use futures::try_join;
+use num_traits::ToPrimitive;
 use player_module::{
     AppResult,
-    client::Client,
+    client::StreamClient,
     database::Database,
     notification::{Notification, NotificationBroadcast},
 };
@@ -25,7 +26,7 @@ pub struct AppState {
     pub web_secret: Option<String>,
     pub rfid_state: Option<RfidState>,
     pub broadcast: Arc<NotificationBroadcast>,
-    pub client: Arc<Client>,
+    pub client: Arc<StreamClient>,
     pub controls: Controls,
     pub position_receiver: PositionReceiver,
     pub tracklist_receiver: TracklistReceiver,
@@ -56,7 +57,7 @@ impl AppState {
         };
 
         let current_volume = self.volume_receiver.borrow();
-        let current_volume = (*current_volume * 100.0) as u32;
+        let current_volume = (*current_volume * 100.0).to_u32().unwrap_or_default();
 
         let tracklist = self.tracklist_receiver.borrow().clone();
         let current_track = tracklist.current_track().cloned();
@@ -69,11 +70,11 @@ impl AppState {
         let (title, artist_link, duration_ms, explicit, hires_available) =
             current_track.as_ref().map_or(
                 (
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
+                    String::default(),
+                    Option::default(),
+                    u32::default(),
+                    bool::default(),
+                    bool::default(),
                 ),
                 |track| {
                     (
@@ -89,10 +90,17 @@ impl AppState {
         let entity = entity_playing(&tracklist, current_track.as_ref());
         let now_playing_id = tracklist.currently_playing();
 
-        let position_ms = self.position_receiver.borrow().as_millis() as u32;
+        let position_ms = self
+            .position_receiver
+            .borrow()
+            .as_millis()
+            .to_u32()
+            .unwrap_or_default();
 
-        let number_of_tracks = tracklist.total() as u32;
-        let current_position = (tracklist.current_position() + 1) as u32;
+        let number_of_tracks = tracklist.total().to_u32().unwrap_or_default();
+        let current_position = (tracklist.current_position() + 1)
+            .to_u32()
+            .unwrap_or_default();
 
         PlayingInfo {
             title,
@@ -121,14 +129,14 @@ impl AppState {
     {
         let playing_info = serde_json::json!({"playing_info": self.playing_info()});
 
-        let context = merge_serialized(&playing_info, context).unwrap();
+        let context = merge_serialized(&playing_info, context).unwrap_or_default();
         let templates = self.templates.borrow();
         let render = templates.render(view, &context);
 
         Html(render).into_response()
     }
 
-    pub fn send_toast(&self, message: Notification) -> Response {
+    pub fn send_toast(&self, message: &Notification) -> Response {
         let (message_string, severity) = match &message {
             Notification::Error(message) => (message, 1),
             Notification::Warning(message) => (message, 2),

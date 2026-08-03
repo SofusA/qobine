@@ -16,7 +16,9 @@ pub fn templates(root_dir: &Path) -> Templates {
     #[cfg(not(debug_assertions))]
     {
         for file in TemplatesEmbed::iter() {
-            let content = TemplatesEmbed::get(&file).unwrap();
+            let Some(content) = TemplatesEmbed::get(&file) else {
+                continue;
+            };
             let content = String::from_utf8_lossy(&content.data);
             templates.load_str(&file, &content);
         }
@@ -24,7 +26,7 @@ pub fn templates(root_dir: &Path) -> Templates {
 
     #[cfg(debug_assertions)]
     {
-        let dir = format!("{}/**/*.html", root_dir.to_str().unwrap());
+        let dir = format!("{}/**/*.html", root_dir.to_string_lossy());
         templates.load_glob(&dir);
     }
     templates

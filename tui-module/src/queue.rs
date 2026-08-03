@@ -2,11 +2,11 @@ use controls_module::{
     controls::Controls,
     models::{Track, TrackStatus},
 };
-use player_module::{AppResult, client::Client, notification::Notification};
+use player_module::{AppResult, client::StreamClient, notification::Notification};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::*,
+    widgets::{Row, TableState},
 };
 
 use crate::{
@@ -24,7 +24,7 @@ impl QueueState {
     pub fn new(tracks: Vec<Track>) -> Self {
         Self {
             items: tracks,
-            state: Default::default(),
+            state: TableState::default(),
         }
     }
     pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
@@ -66,18 +66,18 @@ impl QueueState {
         frame.render_stateful_widget(table, area, &mut self.state);
     }
 
-    pub fn items(&self) -> &Vec<Track> {
+    pub const fn items(&self) -> &Vec<Track> {
         &self.items
     }
 
     pub fn set_items(&mut self, items: Vec<Track>) {
-        self.items = items
+        self.items = items;
     }
 
     pub async fn handle_events(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {

@@ -2,7 +2,8 @@ use controls_module::{
     controls::Controls,
     models::{AlbumSimple, Artist},
 };
-use player_module::{AppResult, client::Client};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::KeyCode,
     prelude::*,
@@ -55,7 +56,7 @@ enum SelectedTabMut<'a> {
 }
 
 impl ArtistOverlay {
-    pub async fn new(artist: &Artist, client: &Client) -> AppResult<Self> {
+    pub async fn new(artist: &Artist, client: &StreamClient) -> AppResult<Self> {
         let artist_page = client.artist_page(artist.id).await?;
 
         Ok(Self {
@@ -104,12 +105,12 @@ impl ArtistOverlay {
     pub async fn handle_event(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match self.focus {
-            OverlayFocus::Sidebar => self.handle_sidebar_event(code),
+            OverlayFocus::Sidebar => Ok(self.handle_sidebar_event(code)),
 
             OverlayFocus::Content => {
                 self.handle_content_event(code, client, controls, notifications)
@@ -132,8 +133,8 @@ impl ArtistOverlay {
 
         let image_width = image
             .as_ref()
-            .map(|image| (image.ratio * (area.height * 2) as f32) as u16)
-            .unwrap_or(0);
+            .and_then(|image| (image.ratio * f32::from(area.height * 2)).to_u16())
+            .unwrap_or_default();
 
         let gap = if image_width > 0 { 2 } else { 0 };
 
@@ -167,7 +168,10 @@ impl ArtistOverlay {
             .as_ref()
             .filter(|description| !description.is_empty())
         {
-            let blurb = header_blurb(description, description_area.width as usize);
+            let blurb = header_blurb(
+                description,
+                description_area.width.to_usize().unwrap_or_default(),
+            );
 
             frame.render_widget(
                 Paragraph::new(blurb).style(Style::new().dim()),
@@ -259,33 +263,33 @@ impl ArtistOverlay {
         }
     }
 
-    fn handle_sidebar_event(&mut self, code: KeyCode) -> AppResult<Output> {
+    fn handle_sidebar_event(&mut self, code: KeyCode) -> Output {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.cycle_subtab_backwards();
-                Ok(Output::Consumed)
+                Output::Consumed
             }
 
             KeyCode::Down | KeyCode::Char('j') => {
                 self.cycle_subtab();
-                Ok(Output::Consumed)
+                Output::Consumed
             }
 
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 self.focus = OverlayFocus::Content;
-                Ok(Output::Consumed)
+                Output::Consumed
             }
 
-            KeyCode::Esc => Ok(Output::PopOverlay),
+            KeyCode::Esc => Output::PopOverlay,
 
-            _ => Ok(Output::Consumed),
+            _ => Output::Consumed,
         }
     }
 
     async fn handle_content_event(
         &mut self,
         code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {

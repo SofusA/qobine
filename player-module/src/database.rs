@@ -1,5 +1,6 @@
-use crate::{AppResult, AudioQuality, Error};
+use crate::{AppResult, AudioQuality, PlayerError};
 use controls_module::tracklist::Tracklist;
+use num_traits::ToPrimitive;
 use qobuz_client::client::OAuthResult;
 use serde_json::to_string;
 use sqlx::types::Json;
@@ -17,13 +18,13 @@ impl Database {
             PathBuf::from(url.replace("sqlite://", ""))
         } else {
             let Some(mut url) = dirs::data_local_dir() else {
-                return Err(Error::DatabaseLocationError);
+                return Err(PlayerError::DatabaseLocationError);
             };
             url.push("qobine");
 
             if !url.exists() {
-                let Ok(_) = std::fs::create_dir_all(&url) else {
-                    return Err(Error::DatabaseLocationError);
+                let Ok(()) = std::fs::create_dir_all(&url) else {
+                    return Err(PlayerError::DatabaseLocationError);
                 };
             }
 
@@ -39,7 +40,7 @@ impl Database {
 
         let pool = SqlitePool::connect_with(options).await?;
 
-        Database::init(pool).await
+        Self::init(pool).await
     }
 
     async fn init(pool: sqlx::Pool<sqlx::Sqlite>) -> AppResult<Self> {
@@ -52,7 +53,7 @@ impl Database {
     }
 
     pub async fn set_credentials(&self, credentials: Option<Credentials>) -> AppResult<()> {
-        let token = credentials.as_ref().map(|c| c.user_auth_token.clone());
+        let token = credentials.as_ref().map(|c| c.user_auth_token.as_str());
         let user_id = credentials.as_ref().map(|c| c.user_id);
 
         sqlx::query!(
@@ -100,11 +101,7 @@ impl Database {
 
     pub async fn set_volume(&self, volume: f32) -> AppResult<()> {
         sqlx::query!(
-            r#"
-             update configuration
-             set volume=?1
-             where rowid = 1
-             "#,
+            "UPDATE configuration SET volume = ?1 WHERE rowid = 1",
             volume
         )
         .execute(&self.pool)
@@ -171,12 +168,12 @@ impl Database {
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
         let directory = directory
             .canonicalize()
-            .map_err(|e| Error::StorageError {
+            .map_err(|e| PlayerError::StorageError {
                 error: e.to_string(),
             })?
             .into_os_string()
             .into_string()
-            .map_err(|_| Error::StorageError {
+            .map_err(|_| PlayerError::StorageError {
                 error: "Error storing cache path".to_string(),
             })?;
 
@@ -228,7 +225,7 @@ impl Database {
     }
 
     pub async fn set_max_audio_quality(&self, quality: AudioQuality) -> AppResult<()> {
-        let quality_id = quality as i32;
+        let quality_id = quality.id();
 
         sqlx::query!(
             r#"
@@ -293,8 +290,15 @@ impl Database {
                 cache_dir
             });
 
-        let cache_ttl_hours = configuration.cache_ttl_hours.unwrap_or(1) as u32;
-        let volume = configuration.volume.unwrap_or(1.0);
+        let cache_ttl_hours = match configuration.cache_ttl_hours {
+            Some(value) => {
+                u32::try_from(value).map_err(|_| PlayerError::DatabaseSerializationError {
+                    message: format!("Invalid cache_ttl_hours value: {value}"),
+                })?
+            }
+            None => 1,
+        };
+        let volume = configuration.volume.and_then(|x| x.to_f32()).unwrap_or(1.0);
         let use_file_based_streaming = configuration.use_file_based_streaming.unwrap_or(false);
         let auto_play = configuration.auto_play.unwrap_or(false);
 
@@ -303,7 +307,7 @@ impl Database {
             cache_directory,
             cache_ttl_hours,
             use_file_based_streaming,
-            volume: volume as f32,
+            volume,
             enable_disconnect: configuration.enable_disconnect,
             device_name: configuration.device_name,
             disconnect_server_url: configuration.disconnect_server_url,
@@ -345,23 +349,22 @@ impl Database {
     }
 
     pub async fn get_reference(&self, id: &str) -> Option<ReferenceType> {
-        let db_reference = match sqlx::query_as!(
+        let Ok(db_reference) = sqlx::query_as!(
             RFIDReference,
             "select * from rfid_references where id = $1",
             id
         )
         .fetch_one(&self.pool)
         .await
-        {
-            Ok(res) => res,
-            Err(_) => return None,
+        else {
+            return None;
         };
 
         match db_reference.reference_type {
             ReferenceTypeDatabase::Album => Some(ReferenceType::Album(db_reference.album_id?)),
-            ReferenceTypeDatabase::Playlist => {
-                Some(ReferenceType::Playlist(db_reference.playlist_id? as u32))
-            }
+            ReferenceTypeDatabase::Playlist => Some(ReferenceType::Playlist(
+                db_reference.playlist_id.and_then(|x| x.to_u32())?,
+            )),
         }
     }
 
@@ -372,7 +375,9 @@ impl Database {
         let cutoff = time::OffsetDateTime::now_utc() - older_than;
         let cutoff_str = cutoff
             .format(&time::format_description::well_known::Rfc3339)
-            .expect("infallible");
+            .map_err(|_| PlayerError::DatabaseSerializationError {
+                message: "Error deserializing date".to_string(),
+            })?;
 
         let rows = sqlx::query!(
             "SELECT path FROM cache_entries WHERE last_opened < ?",
@@ -396,10 +401,12 @@ impl Database {
         Ok(paths)
     }
 
-    pub async fn set_cache_entry(&self, path: &Path) {
+    pub async fn set_cache_entry(&self, path: &Path) -> AppResult<()> {
         let now = time::OffsetDateTime::now_utc()
             .format(&time::format_description::well_known::Rfc3339)
-            .expect("infallible");
+            .map_err(|_| PlayerError::DatabaseSerializationError {
+                message: "Error deserializing date".to_string(),
+            })?;
 
         let path_str: String = path.to_string_lossy().into_owned();
 
@@ -415,8 +422,9 @@ impl Database {
             now
         )
         .execute(&self.pool)
-        .await
-        .expect("infallible");
+        .await?;
+
+        Ok(())
     }
 }
 
@@ -443,9 +451,8 @@ enum ReferenceTypeDatabase {
 impl From<i64> for ReferenceTypeDatabase {
     fn from(value: i64) -> Self {
         match value {
-            1 => ReferenceTypeDatabase::Album,
-            2 => ReferenceTypeDatabase::Playlist,
-            _ => panic!("Unable to parse reference type!"),
+            1 => Self::Album,
+            _ => Self::Playlist,
         }
     }
 }
@@ -504,7 +511,6 @@ struct TracklistDb {
 
 async fn create_credentials_row(pool: &Pool<Sqlite>) -> AppResult<()> {
     let rowid = 1;
-
     sqlx::query!(
         "insert or ignore into credentials (rowid) values (?1)",
         rowid
@@ -525,6 +531,7 @@ async fn create_configuration(pool: &Pool<Sqlite>) -> AppResult<()> {
     Ok(())
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,8 +545,8 @@ mod tests {
         let old_path = Path::new(old_path_str);
         let new_path_str = "path/new";
         let new_path = Path::new(new_path_str);
-        db.set_cache_entry(old_path).await;
-        db.set_cache_entry(new_path).await;
+        db.set_cache_entry(old_path).await.unwrap();
+        db.set_cache_entry(new_path).await.unwrap();
 
         let old_time = OffsetDateTime::now_utc() - Duration::days(10);
         let old_time = old_time
