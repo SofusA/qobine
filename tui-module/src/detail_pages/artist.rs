@@ -133,7 +133,7 @@ impl ArtistOverlay {
 
         let image_width = image
             .as_ref()
-            .and_then(|image| (image.ratio * f32::from(area.height * 2)).to_u16())
+            .and_then(|image| (image.ratio * f32::from(area.height.saturating_mul(2))).to_u16())
             .unwrap_or_default();
 
         let gap = if image_width > 0 { 2 } else { 0 };
@@ -379,8 +379,11 @@ impl ArtistOverlay {
         if count == 0 {
             return;
         }
-
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(count))
+            .unwrap_or(0);
 
         self.about_scroll = ScrollbarState::default();
     }
@@ -391,8 +394,12 @@ impl ArtistOverlay {
         if count == 0 {
             return;
         }
-
-        self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| count.saturating_sub(1))
+            .checked_rem(count)
+            .unwrap_or(0);
 
         self.about_scroll = ScrollbarState::default();
     }

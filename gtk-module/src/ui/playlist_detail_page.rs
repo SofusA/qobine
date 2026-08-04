@@ -475,7 +475,7 @@ fn add_owned_playlist_track_controls(
                     Some(current_index) if current_index > removed_index => {
                         // A row before the playing track was removed,
                         // so its index shifts down.
-                        let new_index = current_index - 1;
+                        let new_index = current_index.saturating_sub(1);
                         *current_selected = Some(new_index);
 
                         let row = i32::try_from(new_index)

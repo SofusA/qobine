@@ -49,7 +49,7 @@ fn now_playing_context(tracklist: &Tracklist, position: &Duration) -> serde_json
     let current_track = tracklist.current_track().cloned();
     let duration_mseconds = current_track
         .as_ref()
-        .map(|track| track.duration_seconds * 1000)
+        .map(|track| track.duration_seconds.saturating_mul(1000))
         .unwrap_or_default();
 
     let position_string = mseconds_to_mm_ss(position_mseconds);

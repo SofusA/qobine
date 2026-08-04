@@ -106,7 +106,7 @@ impl App {
         let labels: Vec<String> = Tab::VALUES
             .iter()
             .enumerate()
-            .map(|(i, tab)| format!("[{}] {}", i + 1, tab))
+            .map(|(i, tab)| format!("[{}] {}", i.saturating_add(1), tab))
             .collect();
 
         let label_refs: Vec<&str> = labels.iter().map(std::string::String::as_str).collect();
@@ -407,7 +407,7 @@ pub fn sidebar(tabs: Vec<&str>, focused: bool) -> (List<'_>, u16) {
         .max()
         .and_then(|x| x.to_u16())
         .unwrap_or_default()
-        + 3;
+        .saturating_add(3);
 
     let items = tabs.into_iter().map(ListItem::new).collect::<Vec<_>>();
 

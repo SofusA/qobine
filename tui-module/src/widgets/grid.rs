@@ -95,11 +95,12 @@ where
             return;
         }
 
-        let visible_rows = usize::from(area.height / T::CARD_HEIGHT);
+        let visible_rows = usize::from(area.height.checked_div(T::CARD_HEIGHT).unwrap_or_default());
         let item_count = self.items.filter().len();
 
         // First calculate assuming no scrollbar.
-        let full_columns = usize::from(area.width / T::CARD_WIDTH).max(1);
+        let full_columns =
+            usize::from(area.width.checked_div(T::CARD_WIDTH).unwrap_or_default()).max(1);
         let full_total_rows = item_count.div_ceil(full_columns);
 
         let show_scrollbar = full_total_rows > visible_rows;
@@ -110,38 +111,67 @@ where
             area
         };
 
-        self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
+        self.columns = usize::from(
+            grid_area
+                .width
+                .checked_div(T::CARD_WIDTH)
+                .unwrap_or_default(),
+        )
+        .max(1);
 
         let content_width =
             (self.columns.to_u16().unwrap_or_default()).saturating_mul(T::CARD_WIDTH);
 
         let cards_area = Rect::new(
-            grid_area.x + grid_area.width.saturating_sub(content_width) / 2,
+            grid_area.x.saturating_add(
+                grid_area
+                    .width
+                    .saturating_sub(content_width)
+                    .checked_div(2)
+                    .unwrap_or_default(),
+            ),
             grid_area.y,
             content_width,
             grid_area.height,
         );
 
-        self.columns = usize::from(grid_area.width / T::CARD_WIDTH).max(1);
+        self.columns = usize::from(
+            grid_area
+                .width
+                .checked_div(T::CARD_WIDTH)
+                .unwrap_or_default(),
+        )
+        .max(1);
 
         let total_rows = item_count.div_ceil(self.columns);
 
         self.update_scroll(visible_rows);
 
         let items = self.items.filter();
-        let first_index = self.scroll_row * self.columns;
+
+        let first_index = self.scroll_row.saturating_mul(self.columns);
         let last_index = first_index
-            .saturating_add(visible_rows * self.columns)
+            .saturating_add(visible_rows.saturating_mul(self.columns))
             .min(items.len());
 
         for (index, item) in items.iter().enumerate().take(last_index).skip(first_index) {
-            let absolute_row = index / self.columns;
-            let column = index % self.columns;
-            let visible_row = absolute_row - self.scroll_row;
+            let absolute_row = index.checked_div(self.columns).unwrap_or_default();
+            let column = index.checked_rem(self.columns).unwrap_or_default();
+            let visible_row = absolute_row.saturating_sub(self.scroll_row);
+
+            let x_offset = column
+                .to_u16()
+                .unwrap_or_default()
+                .saturating_mul(T::CARD_WIDTH);
+
+            let y_offset = visible_row
+                .to_u16()
+                .unwrap_or_default()
+                .saturating_mul(T::CARD_HEIGHT);
 
             let this_card_area = Rect::new(
-                cards_area.x + column.to_u16().unwrap_or_default() * T::CARD_WIDTH,
-                cards_area.y + visible_row.to_u16().unwrap_or_default() * T::CARD_HEIGHT,
+                cards_area.x.saturating_add(x_offset),
+                cards_area.y.saturating_add(y_offset),
                 T::CARD_WIDTH,
                 T::CARD_HEIGHT,
             );
@@ -200,8 +230,9 @@ where
 
             KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(columns) = self.columns.to_isize() {
-                    self.move_selection(-columns);
+                    self.move_selection(columns.saturating_neg());
                 }
+
                 Ok(Output::Consumed)
             }
 
@@ -272,12 +303,12 @@ where
             return;
         };
 
-        let selected_row = selected / self.columns;
+        let selected_row = selected.checked_div(self.columns).unwrap_or_default();
 
         if selected_row < self.scroll_row {
             self.scroll_row = selected_row;
-        } else if selected_row >= self.scroll_row + visible_rows {
-            self.scroll_row = selected_row.saturating_sub(visible_rows - 1);
+        } else if selected_row >= self.scroll_row.saturating_add(visible_rows) {
+            self.scroll_row = selected_row.saturating_sub(visible_rows.saturating_sub(1));
         }
 
         let item_count = self.items.filter().len();
@@ -316,8 +347,8 @@ impl GridItem for AlbumSimple {
             .render(area, buf);
 
         let inner = Rect::new(
-            area.x + 1,
-            area.y + 1,
+            area.x.saturating_add(1),
+            area.y.saturating_add(1),
             area.width.saturating_sub(2),
             area.height.saturating_sub(2),
         );
@@ -442,8 +473,8 @@ impl GridItem for Artist {
             .render(area, buf);
 
         let inner = Rect::new(
-            area.x + 1,
-            area.y + 1,
+            area.x.saturating_add(1),
+            area.y.saturating_add(1),
             area.width.saturating_sub(2),
             area.height.saturating_sub(2),
         );
@@ -538,8 +569,8 @@ impl GridItem for PlaylistSimple {
             .render(area, buf);
 
         let inner = Rect::new(
-            area.x + 1,
-            area.y + 1,
+            area.x.saturating_add(1),
+            area.y.saturating_add(1),
             area.width.saturating_sub(2),
             area.height.saturating_sub(2),
         );
@@ -659,30 +690,29 @@ fn truncate_to_width(value: &str, max_width: usize) -> String {
         return value.to_owned();
     }
 
-    if max_width == 0 {
-        return String::new();
-    }
-
     let ellipsis = "…";
     let ellipsis_width = UnicodeWidthStr::width(ellipsis);
 
-    if max_width < ellipsis_width {
+    let Some(content_width) = max_width.checked_sub(ellipsis_width) else {
         return String::new();
-    }
+    };
 
-    let content_width = max_width - ellipsis_width;
     let mut result = String::new();
-    let mut width = 0;
+    let mut width: usize = 0;
 
     for character in value.chars() {
         let character_width = UnicodeWidthChar::width(character).unwrap_or(0);
 
-        if width + character_width > content_width {
+        let Some(next_width) = width.checked_add(character_width) else {
+            break;
+        };
+
+        if next_width > content_width {
             break;
         }
 
         result.push(character);
-        width += character_width;
+        width = next_width;
     }
 
     result.truncate(result.trim_end().len());

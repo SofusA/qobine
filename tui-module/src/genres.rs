@@ -171,7 +171,13 @@ impl GenresState {
             for (col_idx, (genre, column_area)) in
                 genres.iter().zip([left_area, right_area]).enumerate()
             {
-                let genre_idx = row_idx * items_per_row + col_idx;
+                let Some(genre_idx) = row_idx
+                    .checked_mul(items_per_row)
+                    .and_then(|idx| idx.checked_add(col_idx))
+                else {
+                    continue;
+                };
+
                 let is_selected = genre_idx == self.selected_genre;
 
                 let style = Style::default()
@@ -295,28 +301,28 @@ impl GenresState {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.selected_genre >= 2 {
-                    self.selected_genre -= 2;
+                    self.selected_genre = self.selected_genre.saturating_sub(2);
                 }
 
                 Ok(Output::Consumed)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.selected_genre + 2 < self.genres.len() {
-                    self.selected_genre += 2;
+                if self.selected_genre.saturating_add(2) < self.genres.len() {
+                    self.selected_genre = self.selected_genre.saturating_add(2);
                 }
 
                 Ok(Output::Consumed)
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.selected_genre > 0 {
-                    self.selected_genre -= 1;
+                    self.selected_genre = self.selected_genre.saturating_sub(1);
                 }
 
                 Ok(Output::Consumed)
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                if self.selected_genre + 1 < self.genres.len() {
-                    self.selected_genre += 1;
+                if self.selected_genre.saturating_add(1) < self.genres.len() {
+                    self.selected_genre = self.selected_genre.saturating_add(1);
                 }
 
                 Ok(Output::Consumed)
@@ -463,7 +469,11 @@ impl GenresState {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % total;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(total))
+            .unwrap_or(0);
     }
 
     fn cycle_subtab_backwards(&mut self) {
@@ -473,7 +483,12 @@ impl GenresState {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + total - 1) % total;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| total.saturating_sub(1))
+            .checked_rem(total)
+            .unwrap_or(0);
     }
 }
 

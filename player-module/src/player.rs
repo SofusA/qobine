@@ -265,7 +265,7 @@ impl Player {
     async fn broadcast_tracklist(&self, mut tracklist: Tracklist) -> AppResult<()> {
         if *self.auto_play.borrow() && *self.active.borrow() {
             let queue = tracklist.queue();
-            let tracks_remaining = queue.len() - tracklist.current_position();
+            let tracks_remaining = queue.len().saturating_sub(tracklist.current_position());
 
             if tracks_remaining == 1 {
                 let suggestion = self
@@ -306,7 +306,7 @@ impl Player {
 
         if let Some(duration) = duration {
             let ten_seconds = Duration::from_secs(10);
-            let next_position = self.sink.position() + ten_seconds;
+            let next_position = self.sink.position().saturating_add(ten_seconds);
 
             if next_position < duration {
                 self.seek(next_position)?;
@@ -364,12 +364,14 @@ impl Player {
 
     async fn next(&mut self) -> AppResult<()> {
         let current_position = self.tracklist_rx.borrow().current_position();
-        self.skip_to_position(current_position + 1, true).await
+        self.skip_to_position(current_position.saturating_add(1), true)
+            .await
     }
 
     async fn previous(&mut self) -> AppResult<()> {
         let current_position = self.tracklist_rx.borrow().current_position();
-        self.skip_to_position(current_position - 1, false).await
+        self.skip_to_position(current_position.saturating_sub(1), false)
+            .await
     }
 
     async fn new_queue(&mut self, tracklist: Tracklist, always_play: bool) -> AppResult<()> {
@@ -478,7 +480,7 @@ impl Player {
             tracks_to_queue_items(album.tracks.into_iter().filter(|t| t.available).collect()),
         );
 
-        tracklist.skip_to_track(index - unstreamable_tracks_to_index);
+        tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
         self.new_queue(tracklist, true).await
     }
 
@@ -497,7 +499,7 @@ impl Player {
             tracks_to_queue_items(tracks.into_iter().filter(|t| t.available).collect()),
         );
 
-        tracklist.skip_to_track(index - unstreamable_tracks_to_index);
+        tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
         self.new_queue(tracklist, true).await
     }
 
@@ -520,7 +522,7 @@ impl Player {
         }
 
         let mut tracklist = Tracklist::new(TracklistType::Tracks, tracks_to_queue_items(tracks));
-        tracklist.skip_to_track(index - unstreamable_tracks_to_index);
+        tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
         self.new_queue(tracklist, true).await
     }
 
@@ -564,7 +566,7 @@ impl Player {
             queue,
         );
 
-        tracklist.skip_to_track(index - unstreamable_tracks_to_index);
+        tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
 
         self.new_queue(tracklist, true).await
     }
@@ -608,7 +610,7 @@ impl Player {
 
         tracks.reverse();
         for track in tracks {
-            tracklist.insert_track(current_index + 1, track);
+            tracklist.insert_track(current_index.saturating_add(1), track);
         }
 
         self.update_queue(tracklist).await?;
@@ -767,7 +769,7 @@ impl Player {
         let mut tracklist = self.tracklist_rx.borrow().clone();
 
         let current_position = tracklist.current_position();
-        let new_position = current_position + 1;
+        let new_position = current_position.saturating_add(1);
 
         let next_track = tracklist.skip_to_track(new_position);
 

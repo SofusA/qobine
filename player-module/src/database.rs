@@ -372,7 +372,7 @@ impl Database {
         &self,
         older_than: time::Duration,
     ) -> AppResult<Vec<PathBuf>> {
-        let cutoff = time::OffsetDateTime::now_utc() - older_than;
+        let cutoff = time::OffsetDateTime::now_utc().saturating_sub(older_than);
         let cutoff_str = cutoff
             .format(&time::format_description::well_known::Rfc3339)
             .map_err(|_| PlayerError::DatabaseSerializationError {
@@ -548,7 +548,7 @@ mod tests {
         db.set_cache_entry(old_path).await.unwrap();
         db.set_cache_entry(new_path).await.unwrap();
 
-        let old_time = OffsetDateTime::now_utc() - Duration::days(10);
+        let old_time = OffsetDateTime::now_utc().saturating_sub(Duration::days(10));
         let old_time = old_time
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap();

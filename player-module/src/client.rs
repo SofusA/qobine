@@ -593,7 +593,7 @@ impl StreamClient {
     ) -> AppResult<Playlist> {
         let client = self.get_client().await?;
         client
-            .update_playlist_track_position(index + 1, playlist_id, playlist_track_id)
+            .update_playlist_track_position(index.saturating_add(1), playlist_id, playlist_track_id)
             .await?;
         self.playlist_cache.invalidate(&playlist_id).await;
         self.playlist(playlist_id).await

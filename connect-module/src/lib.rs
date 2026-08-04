@@ -89,7 +89,9 @@ fn current_state(status: Status, position: &Duration, tracklist: &Tracklist) -> 
         value: position,
     });
 
-    let current_duration_ms = tracklist.current_track().map(|x| x.duration_seconds * 1000);
+    let current_duration_ms = tracklist
+        .current_track()
+        .map(|x| x.duration_seconds.saturating_mul(1000));
     response_state.duration = current_duration_ms;
 
     response_state

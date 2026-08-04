@@ -214,10 +214,12 @@ impl Sink {
         let track_handle = tokio::spawn(async move {
             loop {
                 if signal.try_recv().is_ok() {
-                    *duration_played.lock() += track_duration;
+                    {
+                        let mut duration_played = duration_played.lock();
+                        *duration_played = duration_played.saturating_add(track_duration);
+                    }
 
                     let _ = track_finished.send(());
-
                     break;
                 }
 

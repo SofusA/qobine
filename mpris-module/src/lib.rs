@@ -134,13 +134,12 @@ impl PlayerInterface for MprisPlayer {
                 ))
                 .ok_or_else(|| fdo::Error::InvalidArgs("Invalid seek arguments".to_string()))?
         } else {
-            current_position
-                + Duration::from_millis(
-                    offset_millis
-                        .abs()
-                        .try_into()
-                        .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
-                )
+            current_position.saturating_add(Duration::from_millis(
+                offset_millis
+                    .abs()
+                    .try_into()
+                    .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
+            ))
         };
 
         self.controls.seek(new_position);
@@ -241,7 +240,7 @@ impl PlayerInterface for MprisPlayer {
         let queue_length = tracklist.queue().len();
         let current_position = tracklist.current_position();
 
-        Ok(current_position + 1 < queue_length)
+        Ok(current_position.saturating_add(1) < queue_length)
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
@@ -306,7 +305,7 @@ async fn init(
                     let total_tracks = tracklist.total();
 
                     let can_previous = current_position != 0;
-                    let can_next = !(total_tracks != 0 && current_position == total_tracks - 1);
+                    let can_next = !(total_tracks != 0 && current_position == total_tracks.saturating_sub(1));
 
                     let Ok(()) = server
                         .properties_changed([

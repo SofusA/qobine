@@ -531,7 +531,7 @@ impl App {
                                 let available_devices =
                                     self.connect_available_devices.borrow().len();
 
-                                if *selected_device < available_devices - 1 {
+                                if *selected_device < available_devices.saturating_sub(1) {
                                     *selected_device = selected_device.saturating_add(1);
                                 }
                             }

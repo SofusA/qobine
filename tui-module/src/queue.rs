@@ -49,7 +49,7 @@ impl QueueState {
                         favorites.tracks().contains(&track.id),
                     );
 
-                    let mut spans = vec![Span::from(format!("{} ", index + 1))];
+                    let mut spans = vec![Span::from(format!("{} ", index.saturating_add(1)))];
                     spans.extend(title.spans);
                     let spans: Vec<Span> = spans
                         .into_iter()
@@ -96,14 +96,14 @@ impl QueueState {
                         let index = self.state.selected();
 
                         if let Some(index) = index {
-                            if index == self.items().len() - 1 {
+                            if index == self.items().len().saturating_sub(1) {
                                 return Ok(Output::Consumed);
                             }
 
                             let mut order: Vec<_> =
                                 self.items().iter().enumerate().map(|x| x.0).collect();
 
-                            order.swap(index, index + 1);
+                            order.swap(index, index.saturating_add(1));
                             controls.reorder_queue(order);
                         }
                         Ok(Output::Consumed)
@@ -118,7 +118,7 @@ impl QueueState {
                             let mut order: Vec<_> =
                                 self.items().iter().enumerate().map(|x| x.0).collect();
 
-                            order.swap(index, index - 1);
+                            order.swap(index, index.saturating_sub(1));
                             controls.reorder_queue(order);
                         }
                         Ok(Output::Consumed)

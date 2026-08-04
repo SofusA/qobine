@@ -208,23 +208,38 @@ impl DiscoverState {
         self.featured_playlists.get_mut(index)
     }
 
-    const fn cycle_subtab_backwards(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+    fn cycle_subtab_backwards(&mut self) {
+        let count = self
+            .featured_albums
+            .len()
+            .saturating_add(self.featured_playlists.len());
 
         if count == 0 {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| count.saturating_sub(1))
+            .checked_rem(count)
+            .unwrap_or(0);
     }
 
-    const fn cycle_subtab(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+    fn cycle_subtab(&mut self) {
+        let count = self
+            .featured_albums
+            .len()
+            .saturating_add(self.featured_playlists.len());
 
         if count == 0 {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(count))
+            .unwrap_or(0);
     }
 }

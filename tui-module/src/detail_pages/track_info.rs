@@ -299,13 +299,32 @@ impl TrackInfoOverlay {
     }
 
     fn cycle_subtab(&mut self) {
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % tabs().len();
+        let count = tabs().len();
+
+        if count == 0 {
+            return;
+        }
+
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(count))
+            .unwrap_or(0);
     }
 
     fn cycle_subtab_backwards(&mut self) {
         let count = tabs().len();
 
-        self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
+        if count == 0 {
+            return;
+        }
+
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| count.saturating_sub(1))
+            .checked_rem(count)
+            .unwrap_or(0);
     }
 }
 

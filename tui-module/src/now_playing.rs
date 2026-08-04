@@ -85,7 +85,7 @@ pub fn render(
 
     lines.push(Line::from(format!(
         "{} of {}",
-        state.tracklist_position + 1,
+        state.tracklist_position.saturating_add(1),
         state.tracklist_length,
     )));
 
@@ -97,7 +97,7 @@ pub fn render_progress(frame: &mut Frame, area: Rect, duration_ms: u32, track: &
     let total_ms = track.duration_seconds.saturating_mul(1000);
     let duration = duration_ms.min(total_ms);
 
-    let ratio = f64::from(duration) / f64::from(track.duration_seconds * 1000);
+    let ratio = f64::from(duration) / f64::from(track.duration_seconds.saturating_mul(1000));
 
     let [progress_area, gauge_area, duration_area] = Layout::default()
         .direction(Direction::Horizontal)

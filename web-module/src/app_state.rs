@@ -80,7 +80,7 @@ impl AppState {
                     (
                         track.title.clone(),
                         artist_id.map(|id| format!("/artist/{id}")),
-                        track.duration_seconds * 1000,
+                        track.duration_seconds.saturating_mul(1000),
                         track.explicit,
                         track.hires_available,
                     )
@@ -98,7 +98,9 @@ impl AppState {
             .unwrap_or_default();
 
         let number_of_tracks = tracklist.total().to_u32().unwrap_or_default();
-        let current_position = (tracklist.current_position() + 1)
+        let current_position = tracklist
+            .current_position()
+            .saturating_add(1)
             .to_u32()
             .unwrap_or_default();
 

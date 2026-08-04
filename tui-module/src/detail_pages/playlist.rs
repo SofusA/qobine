@@ -148,13 +148,22 @@ impl PlaylistOverlay {
         .areas(area);
 
         if can_render_cover && let Some(AppImage { protocol, ratio }) = image {
-            let width = (*ratio * f32::from(ALBUM_COVER_HEIGHT * 2))
-                .to_u16()
+            let width = ALBUM_COVER_HEIGHT
+                .checked_mul(2)
+                .and_then(|x| x.to_f32())
+                .map(|height| *ratio * height)
+                .and_then(|x| x.to_u16())
+                .unwrap_or_default();
+
+            let y_offset = image_area
+                .height
+                .saturating_sub(ALBUM_COVER_HEIGHT)
+                .checked_div(2)
                 .unwrap_or_default();
 
             let centered_image_area = Rect::new(
                 image_area.x,
-                image_area.y + image_area.height.saturating_sub(ALBUM_COVER_HEIGHT) / 2,
+                image_area.y.saturating_add(y_offset),
                 width.min(image_area.width),
                 ALBUM_COVER_HEIGHT.min(image_area.height),
             );

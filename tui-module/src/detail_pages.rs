@@ -228,7 +228,10 @@ pub fn header_blurb(description: &str, width: usize) -> Line<'static> {
     let hint = " [see about]";
     let ellipsis = "…";
 
-    let reserved_width = hint.chars().count() + ellipsis.chars().count();
+    let reserved_width = hint
+        .chars()
+        .count()
+        .saturating_add(ellipsis.chars().count());
 
     let available_width = width.saturating_sub(reserved_width);
 
@@ -248,25 +251,25 @@ fn wrap_text(text: &str, width: u16) -> Vec<Line<'static>> {
 
     for paragraph in text.lines() {
         let mut current = String::new();
-        let mut current_width = 0;
+        let mut current_width: usize = 0;
 
         for word in paragraph.split_whitespace() {
             let word_width = word.chars().count();
             let separator_width = usize::from(current_width > 0);
-            let required_width = separator_width + word_width;
+            let required_width = separator_width.saturating_add(word_width);
 
-            if current_width > 0 && current_width + required_width > width {
+            if current_width > 0 && current_width.saturating_add(required_width) > width {
                 lines.push(Line::from(std::mem::take(&mut current)));
                 current_width = 0;
             }
 
             if current_width > 0 {
                 current.push(' ');
-                current_width += 1;
+                current_width = current_width.saturating_add(1);
             }
 
             current.push_str(word);
-            current_width += word_width;
+            current_width = current_width.saturating_add(word_width);
         }
 
         lines.push(Line::from(current));
@@ -286,7 +289,7 @@ fn breadcrumb_line(titles: &[String]) -> Line<'_> {
             ));
         }
 
-        let modifier = if index + 1 == titles.len() {
+        let modifier = if index.saturating_add(1) == titles.len() {
             Modifier::BOLD
         } else {
             Modifier::DIM

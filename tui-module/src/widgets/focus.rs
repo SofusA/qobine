@@ -23,16 +23,25 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
     let image_size = image.as_deref().map(|image| {
         image.protocol.size_for(
             Resize::Scale(Some(FilterType::Triangle)),
-            Size::new(area.width * 2 / 5, area.height * 9 / 10),
+            Size::new(
+                area.width
+                    .saturating_mul(2)
+                    .checked_div(5)
+                    .unwrap_or_default(),
+                area.height
+                    .saturating_mul(9)
+                    .checked_div(10)
+                    .unwrap_or_default(),
+            ),
         )
     });
 
     let info_area = match image_size {
         Some(size) => {
-            let info_width = size
-                .width
-                .max(50)
-                .min(area.width.saturating_sub(size.width + IMAGE_INFO_GAP));
+            let info_width = size.width.max(50).min(
+                area.width
+                    .saturating_sub(size.width.saturating_add(IMAGE_INFO_GAP)),
+            );
 
             let [image_area, info_area] = Layout::horizontal([
                 Constraint::Length(size.width),
@@ -58,7 +67,7 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
 
             Rect {
                 x: info_area.x,
-                y: image_area.y + 1,
+                y: image_area.y.saturating_add(1),
                 width: info_area.width,
                 height: image_area.height.saturating_sub(2),
             }
@@ -72,13 +81,23 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         .map(|entity| fit_big_text(entity, info_area.width, info_area.height.saturating_div(4)))
         .unwrap_or_default();
 
-    let entity_height = entity_lines.len().to_u16().unwrap_or_default() * CHAR_HEIGHT;
-    let title_budget = info_area.height.saturating_sub(entity_height + 7);
+    let entity_height = entity_lines
+        .len()
+        .to_u16()
+        .unwrap_or_default()
+        .saturating_mul(CHAR_HEIGHT);
+    let title_budget = info_area
+        .height
+        .saturating_sub(entity_height.saturating_add(7));
     let title_lines = fit_big_text(&track.title, info_area.width, title_budget);
-    let title_height = title_lines.len().to_u16().unwrap_or_default() * CHAR_HEIGHT;
+    let title_height = title_lines
+        .len()
+        .to_u16()
+        .unwrap_or_default()
+        .saturating_mul(CHAR_HEIGHT);
 
     let top_spacer = (info_area.height / 2)
-        .saturating_sub(entity_height + 3)
+        .saturating_sub(entity_height.saturating_add(3))
         .saturating_sub(title_height / 2);
 
     let [
@@ -124,7 +143,7 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::raw(format!(
             "{} of {}",
-            state.tracklist_position + 1,
+            state.tracklist_position.saturating_add(1),
             state.tracklist_length
         ))]))
         .alignment(Alignment::Center),
@@ -213,8 +232,11 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
             continue;
         }
 
-        let required_length =
-            current.chars().count() + usize::from(!current.is_empty()) + word_length;
+        let required_length = current
+            .chars()
+            .count()
+            .saturating_add(usize::from(!current.is_empty()))
+            .saturating_add(word_length);
 
         if required_length > max_chars_usize {
             lines.push(std::mem::take(&mut current));
@@ -245,7 +267,7 @@ fn truncate_with_dots(text: &str, max_chars: u16) -> String {
         return ".".repeat(max_chars);
     }
 
-    let content_length = max_chars - 3;
+    let content_length = max_chars.saturating_sub(3);
     let truncated = text.chars().take(content_length).collect::<String>();
 
     format!("{truncated}...")

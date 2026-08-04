@@ -523,7 +523,7 @@ impl NowPlayingBar {
         }
 
         self.progress_scale
-            .set_range(0.0, f64::from(track.duration_seconds * 1000));
+            .set_range(0.0, f64::from(track.duration_seconds.saturating_mul(1000)));
         self.progress_total_label
             .set_text(&format_time(track.duration_seconds));
 
