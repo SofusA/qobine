@@ -537,7 +537,7 @@ impl NowPlayingBar {
             animate_scale_to(&self.progress_scale, position_ms, 120);
         }
 
-        if let Some(position_s) = position.as_millis().to_u32() {
+        if let Some(position_s) = position.as_secs().to_u32() {
             self.progress_current_label
                 .set_text(&format_time(position_s));
         }
