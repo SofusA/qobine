@@ -6,9 +6,10 @@ use time::macros::format_description;
 
 use crate::models::{
     Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Genre, Playlist, PlaylistSimple,
-    PlaylistTag, SearchResults, Track,
+    PlaylistTag, SearchResults, Track, TrackStatus,
 };
 
+#[must_use]
 pub fn parse_featured_album(value: qobuz_models::featured::FeaturedAlbum) -> AlbumSimple {
     AlbumSimple {
         id: value.id,
@@ -57,14 +58,16 @@ pub fn parse_search_results(
     }
 }
 
+#[must_use]
 pub fn parse_album_simple(
     s: qobuz_models::album_suggestion::AlbumSuggestion,
     max_audio_quality: &AudioQuality,
 ) -> AlbumSimple {
     let artist = s.artists.and_then(|vec| vec.into_iter().next());
-    let (artist_id, artist_name) = artist.map_or((0, "Unknown".into()), |artist| {
-        (artist.id as u32, artist.name.unwrap_or("Unknown".into()))
-    });
+    let (artist_id, artist_name) = artist.map_or_else(
+        || (0, "Unknown".into()),
+        |artist| (artist.id, artist.name.unwrap_or_else(|| "Unknown".into())),
+    );
 
     AlbumSimple {
         id: s.id,
@@ -83,16 +86,20 @@ pub fn parse_album_simple(
     }
 }
 
+// TODO: Change return type to Result
+#[must_use]
 pub fn extract_year(date_str: &str) -> u32 {
     let format = format_description!("[year]-[month]-[day]");
-    let date = time::Date::parse(date_str, &format).expect("failed to parse date");
-    date.year() as u32
+    let date = time::Date::parse(date_str, &format);
+
+    date.map_or(0, |date| u32::try_from(date.year()).unwrap_or_default())
 }
 
+#[must_use]
 pub fn parse_album(value: qobuz_models::album::Album, max_audio_quality: &AudioQuality) -> Album {
     let year = extract_year(&value.release_date_original);
 
-    let tracks = value.tracks.map_or(Default::default(), |tracks| {
+    let tracks = value.tracks.map_or_else(Vec::default, |tracks| {
         tracks
             .items
             .into_iter()
@@ -103,7 +110,7 @@ pub fn parse_album(value: qobuz_models::album::Album, max_audio_quality: &AudioQ
                 explicit: t.parental_warning,
                 hires_available: t.hires_streamable,
                 available: t.streamable,
-                status: Default::default(),
+                status: TrackStatus::default(),
                 image: Some(value.image.large.clone()),
                 image_thumbnail: Some(value.image.small.clone()),
                 duration_seconds: t.duration,
@@ -125,18 +132,15 @@ pub fn parse_album(value: qobuz_models::album::Album, max_audio_quality: &AudioQ
         id: value.id,
         title: value.title,
         artist: parse_artist(value.artist),
-        total_tracks: value.tracks_count as u32,
-        release_year: year
-            .to_string()
-            .parse::<u32>()
-            .expect("error converting year"),
+        total_tracks: value.tracks_count,
+        release_year: year,
         hires_available: hifi_available(value.hires_streamable, max_audio_quality),
         explicit: value.parental_warning,
         available: value.streamable,
         tracks,
         image: value.image.large,
         image_thumbnail: value.image.small,
-        duration_seconds: value.duration.map_or(0, |duration| duration as u32),
+        duration_seconds: value.duration.unwrap_or_default(),
         description: sanitize_html(value.description),
         bit_depth: value.maximum_bit_depth,
         sampling_rate: value.maximum_sampling_rate,
@@ -191,13 +195,14 @@ fn sanitize_html(source: Option<String>) -> Option<String> {
     Some(data.into_owned())
 }
 
-fn image_to_string(value: qobuz_models::artist_page::Image) -> String {
+fn image_to_string(value: &qobuz_models::artist_page::Image) -> String {
     format!(
         "https://static.qobuz.com/images/artists/covers/large/{}.{}",
         value.hash, value.format
     )
 }
 
+#[must_use]
 pub fn parse_artist_page(
     artist: qobuz_models::artist_page::ArtistPage,
     albums: Vec<AlbumSimple>,
@@ -206,12 +211,12 @@ pub fn parse_artist_page(
     compilations: Vec<AlbumSimple>,
     similar_artists: Vec<Artist>,
 ) -> ArtistPage {
-    let artist_image_url = artist.images.portrait.map(image_to_string);
+    let artist_image_url = artist.images.portrait.map(|e| image_to_string(&e));
 
     ArtistPage {
         id: artist.id,
         name: artist.name.display.clone(),
-        image: artist_image_url.clone(),
+        image: artist_image_url,
         albums,
         singles,
         live,
@@ -230,7 +235,7 @@ pub fn parse_artist_page(
                     explicit: t.parental_warning,
                     hires_available: t.rights.hires_streamable,
                     available: t.rights.streamable,
-                    status: Default::default(),
+                    status: TrackStatus::default(),
                     image: Some(album_image_url),
                     image_thumbnail: Some(album_image_url_small),
                     duration_seconds: t.duration,
@@ -251,6 +256,7 @@ pub fn parse_artist_page(
     }
 }
 
+#[must_use]
 pub fn parse_artist(value: qobuz_models::artist::Artist) -> Artist {
     Artist {
         id: value.id,
@@ -259,6 +265,7 @@ pub fn parse_artist(value: qobuz_models::artist::Artist) -> Artist {
     }
 }
 
+#[must_use]
 pub fn parse_genre(value: qobuz_models::genre::Genre) -> Genre {
     Genre {
         name: value.name,
@@ -266,12 +273,13 @@ pub fn parse_genre(value: qobuz_models::genre::Genre) -> Genre {
     }
 }
 
+#[must_use]
 pub fn parse_playlist(
     playlist: qobuz_models::playlist::Playlist,
     user_id: i64,
     max_audio_quality: &AudioQuality,
 ) -> Playlist {
-    let tracks = playlist.tracks.map_or(Default::default(), |tracks| {
+    let tracks = playlist.tracks.map_or_else(Vec::default, |tracks| {
         tracks
             .items
             .into_iter()
@@ -288,31 +296,33 @@ pub fn parse_playlist(
     };
 
     Playlist {
-        id: playlist.id as u32,
+        id: playlist.id,
         is_owned: user_id == playlist.owner.id,
         title: playlist.name,
-        duration_seconds: playlist.duration as u32,
+        duration_seconds: playlist.duration,
         image,
         tracks,
         owner: playlist.owner,
     }
 }
 
+#[must_use]
 pub fn parse_playlist_simple(
     playlist: qobuz_models::playlist::PlaylistSimple,
     user_id: i64,
 ) -> PlaylistSimple {
     PlaylistSimple {
-        id: playlist.id as u32,
+        id: playlist.id,
         is_owned: user_id == playlist.owner.id,
         title: playlist.name,
-        duration_seconds: playlist.duration as u32,
-        tracks_count: playlist.tracks_count as u32,
+        duration_seconds: playlist.duration,
+        tracks_count: playlist.tracks_count,
         image: playlist.image.rectangle,
         owner: playlist.owner,
     }
 }
 
+#[must_use]
 pub fn parse_discover(
     discover: qobuz_models::discover::Discover,
     max_audio_quality: &AudioQuality,
@@ -389,10 +399,11 @@ pub fn parse_discover(
     }
 }
 
+#[must_use]
 pub fn parse_track(value: qobuz_models::track::Track, max_audio_quality: &AudioQuality) -> Track {
     let artist = if let Some(p) = &value.performer {
         Some(Artist {
-            id: p.id as u32,
+            id: p.id,
             name: p.name.clone(),
             image: None,
         })
@@ -411,7 +422,7 @@ pub fn parse_track(value: qobuz_models::track::Track, max_audio_quality: &AudioQ
         explicit: value.parental_warning,
         hires_available: hifi_available(value.hires_streamable, max_audio_quality),
         available: value.streamable,
-        status: Default::default(),
+        status: TrackStatus::default(),
         image,
         image_thumbnail,
         artist_name: artist.as_ref().map(move |a| a.name.clone()),
@@ -432,15 +443,17 @@ pub fn parse_track(value: qobuz_models::track::Track, max_audio_quality: &AudioQ
     }
 }
 
-pub fn hifi_available(track_has_hires_available: bool, max_audio_quality: &AudioQuality) -> bool {
+#[must_use]
+pub const fn hifi_available(
+    track_has_hires_available: bool,
+    max_audio_quality: &AudioQuality,
+) -> bool {
     if !track_has_hires_available {
         return false;
     }
 
     match max_audio_quality {
-        AudioQuality::Mp3 => false,
-        AudioQuality::CD => false,
-        AudioQuality::HIFI96 => true,
-        AudioQuality::HIFI192 => true,
+        AudioQuality::Mp3 | AudioQuality::CD => false,
+        AudioQuality::HIFI96 | AudioQuality::HIFI192 => true,
     }
 }

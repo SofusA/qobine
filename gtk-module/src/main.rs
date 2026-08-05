@@ -1,4 +1,4 @@
-use cli_module::{create_player, error_exit, spawn_clean_up_mut};
+use cli_module::{create_player, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 
 use player_module::{
     AppResult,
-    client::{Client, get_app_id},
+    client::{StreamClient, get_app_id},
     database::Database,
     notification::NotificationBroadcast,
 };
@@ -19,7 +19,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(err);
+            eprintln!("{err}");
         }
     }
 }
@@ -35,7 +35,7 @@ pub async fn run() -> AppResult<()> {
     let configuration = database.get_configuration().await?;
 
     let app_id = get_app_id().await?;
-    let client = Arc::new(Client::new(
+    let client = Arc::new(StreamClient::new(
         credentials,
         configuration.max_audio_quality,
         configuration.use_file_based_streaming,
@@ -85,12 +85,13 @@ pub async fn run() -> AppResult<()> {
     };
 
     let (config_tx, config_rx) = watch::channel(disconnect_client_config);
-    let (available_devices_tx, available_devices_rx) = watch::channel(Default::default());
-    let (active_device_tx, active_device_rx) = watch::channel(Default::default());
+    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
+    let (active_device_tx, active_device_rx) = watch::channel(String::default());
     let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
     spawn_disconnect(
         &player,
+        exit_sender.clone(),
         config_rx,
         available_devices_tx,
         active_device_tx,
@@ -106,7 +107,7 @@ pub async fn run() -> AppResult<()> {
     let volume_receiver = player.volume();
     let database_clone = database.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = gtk_module::init(
+        if let Err(err) = gtk_module::init(
             client,
             app_id,
             tracklist_receiver,
@@ -115,7 +116,7 @@ pub async fn run() -> AppResult<()> {
             volume_receiver,
             controls,
             database_clone,
-            exit_sender,
+            &exit_sender,
             ttl_tx,
             broadcast,
             available_devices_rx,
@@ -123,8 +124,9 @@ pub async fn run() -> AppResult<()> {
             set_active_device_tx,
             config_tx,
         ) {
-            error_exit(e);
-        };
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
+        }
     });
 
     player.player_loop(exit_receiver).await?;
@@ -163,7 +165,7 @@ struct SleepInhibitor {
 
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 impl SleepInhibitor {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self { awake: None }
     }
 

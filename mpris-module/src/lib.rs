@@ -9,7 +9,8 @@ use mpris_server::{
     Server, Time, TrackId, Volume,
     zbus::{self, fdo},
 };
-use player_module::{AppResult, error::Error, player::Player};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, error::PlayerError, player::Player};
 
 pub fn spawn_mpris(player: &Player, exit_sender: &ExitSender, mpris_name: String) {
     let position_receiver = player.position();
@@ -18,20 +19,21 @@ pub fn spawn_mpris(player: &Player, exit_sender: &ExitSender, mpris_name: String
     let status_receiver = player.status();
     let controls = player.controls();
     let exit_sender = exit_sender.clone();
+
     tokio::spawn(async move {
-        if let Err(error) = init(
+        if let Err(err) = init(
             position_receiver,
             tracklist_receiver,
             volume_receiver,
             status_receiver,
             controls,
-            exit_sender,
+            exit_sender.clone(),
             mpris_name,
         )
         .await
         {
-            eprintln!("{error}");
-            std::process::exit(1);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 }
@@ -123,25 +125,22 @@ impl PlayerInterface for MprisPlayer {
         let current_position = *self.position_receiver.borrow();
         let offset_millis = offset.as_millis();
 
-        let new_position = match offset_millis < 0 {
-            true => {
-                current_position
-                    - Duration::from_millis(
-                        offset_millis
-                            .abs()
-                            .try_into()
-                            .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
-                    )
-            }
-            false => {
-                current_position
-                    + Duration::from_millis(
-                        offset_millis
-                            .abs()
-                            .try_into()
-                            .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
-                    )
-            }
+        let new_position = if offset_millis < 0 {
+            current_position
+                .checked_sub(Duration::from_millis(
+                    offset_millis
+                        .abs()
+                        .try_into()
+                        .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
+                ))
+                .ok_or_else(|| fdo::Error::InvalidArgs("Invalid seek arguments".to_string()))?
+        } else {
+            current_position.saturating_add(Duration::from_millis(
+                offset_millis
+                    .abs()
+                    .try_into()
+                    .map_err(|e| fdo::Error::InvalidArgs(format!("{e}")))?,
+            ))
         };
 
         self.controls.seek(new_position);
@@ -205,24 +204,27 @@ impl PlayerInterface for MprisPlayer {
 
         if let Some(current_track) = current_track {
             return Ok(track_to_metadata(current_track));
-        };
+        }
 
         Ok(Metadata::new())
     }
 
     async fn volume(&self) -> fdo::Result<Volume> {
         let volume = self.volume_receiver.borrow();
-        Ok(*volume as f64)
+        Ok(f64::from(*volume))
     }
 
     async fn set_volume(&self, volume: Volume) -> zbus::Result<()> {
-        self.controls.set_volume(volume as f32);
+        let volume = volume.to_f32().ok_or(zbus::Error::ExcessData)?;
+
+        self.controls.set_volume(volume);
         Ok(())
     }
 
     async fn position(&self) -> fdo::Result<Time> {
         let position_millis = self.position_receiver.borrow().as_millis();
-        let time = Time::from_millis(position_millis as i64);
+        let position_millis = position_millis.to_i64().ok_or(zbus::Error::ExcessData)?;
+        let time = Time::from_millis(position_millis);
         Ok(time)
     }
 
@@ -239,7 +241,7 @@ impl PlayerInterface for MprisPlayer {
         let queue_length = tracklist.queue().len();
         let current_position = tracklist.current_position();
 
-        Ok(current_position + 1 < queue_length)
+        Ok(current_position.saturating_add(1) < queue_length)
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
@@ -288,12 +290,12 @@ async fn init(
     )
     .await
     else {
-        return Err(Error::MprisInitError);
+        return Err(PlayerError::MprisInitError);
     };
 
     loop {
         tokio::select! {
-            Ok(_) = tracklist_receiver.changed() => {
+            Ok(()) = tracklist_receiver.changed() => {
                 let tracklist = tracklist_receiver.borrow_and_update().clone();
                 let current_track = tracklist.current_track();
 
@@ -304,48 +306,47 @@ async fn init(
                     let total_tracks = tracklist.total();
 
                     let can_previous = current_position != 0;
-                    let can_next = !(total_tracks != 0 && current_position == total_tracks - 1);
+                    let can_next = !(total_tracks != 0 && current_position == total_tracks.saturating_sub(1));
 
-                    let Ok(_) = server
+                    let Ok(()) = server
                         .properties_changed([
                             Property::Metadata(metadata),
                             Property::CanGoPrevious(can_previous),
                             Property::CanGoNext(can_next),
                         ])
                         .await else {
-                            return Err(Error::MprisPropertyError { property: "Metadata, CanGoPrevious, CanGoNext".into() });
+                            return Err(PlayerError::MprisPropertyError { property: "Metadata, CanGoPrevious, CanGoNext".into() });
                         };
                 }
             },
-            Ok(_) = volume_receiver.changed() => {
+            Ok(()) = volume_receiver.changed() => {
                 let volume = *volume_receiver.borrow_and_update();
-                let Ok(_) = server
+                let Ok(()) = server
                     .properties_changed([Property::Volume(volume.into())])
                     .await else {
-                        return Err(Error::MprisPropertyError { property: "Volume".into() });
+                        return Err(PlayerError::MprisPropertyError { property: "Volume".into() });
                     };
             },
-            Ok(_) = status_receiver.changed() => {
+            Ok(()) = status_receiver.changed() => {
                 let status = *status_receiver.borrow_and_update();
                 let (can_play, can_pause) = match status {
                     Status::Buffering => (false, false),
-                    Status::Paused => (true, true),
-                    Status::Playing => (true, true),
-                };
+                    Status::Paused | Status::Playing => (true, true),
+                    };
 
                 let playback_status = match status {
                     Status::Paused | Status::Buffering => PlaybackStatus::Paused,
                     Status::Playing => PlaybackStatus::Playing,
                 };
 
-                    let Ok(_) = server
+                    let Ok(()) = server
                     .properties_changed([
                         Property::CanPlay(can_play),
                         Property::CanPause(can_pause),
                         Property::PlaybackStatus(playback_status),
                     ])
                     .await else {
-                        return Err(Error::MprisPropertyError { property: "CanPlay, CanPause, PlaybackStatus".into() });
+                        return Err(PlayerError::MprisPropertyError { property: "CanPlay, CanPause, PlaybackStatus".into() });
                     };
             },
             Ok(exit) = exit_receiver.recv() => {
@@ -359,7 +360,7 @@ async fn init(
 
 fn track_to_metadata(track: &Track) -> Metadata {
     let mut metadata = Metadata::new();
-    let duration = mpris_server::Time::from_secs(track.duration_seconds as i64);
+    let duration = mpris_server::Time::from_secs(i64::from(track.duration_seconds));
     metadata.set_length(Some(duration));
 
     metadata.set_album(track.album_title.clone());
@@ -373,13 +374,13 @@ fn track_to_metadata(track: &Track) -> Metadata {
 
     // track
     metadata.set_title(Some(track.title.clone()));
-    metadata.set_track_number(Some(track.number as i32));
+    metadata.set_track_number(track.number.to_i32());
     metadata.set_trackid(track_id(track.id));
 
     metadata
 }
 
 fn track_id(id: u32) -> Option<TrackId> {
-    let string = format!("/org/mpris/MediaPlayer2/Track/{}", id);
+    let string = format!("/org/mpris/MediaPlayer2/Track/{id}");
     string.try_into().ok()
 }

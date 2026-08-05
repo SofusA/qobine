@@ -11,7 +11,7 @@ use controls_module::ExitSender;
 use controls_module::controls::Controls;
 use controls_module::models::PlaylistSimple;
 use controls_module::tracklist::Tracklist;
-use player_module::client::Client;
+use player_module::client::StreamClient;
 use player_module::database::Database;
 use tokio::sync::mpsc;
 
@@ -39,7 +39,7 @@ const SIDEBAR_TRACKS: u32 = 5;
 #[derive(Clone)]
 pub struct AppShell {
     root: adw::NavigationSplitView,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     spinner: gtk4::Spinner,
     waiting_label: gtk4::Label,
     albums_page: Rc<RefCell<AlbumsPage>>,
@@ -50,18 +50,17 @@ pub struct AppShell {
 }
 
 impl AppShell {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app: &libadwaita::Application,
-        client: Arc<Client>,
-        controls: Controls,
+        client: Arc<StreamClient>,
+        controls: &Controls,
         database: Arc<Database>,
-        exit_sender: ExitSender,
-        audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
-        on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
-        on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
-        on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
-        ui_event_sender: UiEventSender,
+        exit_sender: &ExitSender,
+        audio_cache_ttl_sender: &mpsc::UnboundedSender<u32>,
+        on_open_album: &Rc<dyn Fn(AlbumHeaderInfo)>,
+        on_open_artist: &Rc<dyn Fn(ArtistHeaderInfo)>,
+        on_open_playlist: &Rc<dyn Fn(PlaylistHeaderInfo)>,
+        ui_event_sender: &UiEventSender,
     ) -> Self {
         let albums_page = Rc::new(RefCell::new(new_albums_page(on_open_album.clone())));
         let artists_page = Rc::new(RefCell::new(new_artists_page(on_open_artist.clone())));
@@ -80,7 +79,7 @@ impl AppShell {
             client.clone(),
             on_open_album,
             on_open_artist,
-            on_open_playlist.clone(),
+            on_open_playlist,
         )));
 
         let stack = adw::ViewStack::builder()
@@ -251,7 +250,7 @@ impl AppShell {
             .build();
 
         search_entry.connect_activate({
-            let search_page = search_page.clone();
+            let search_page = search_page;
             move |e| {
                 let q = e.text().to_string();
                 search_page.borrow_mut().search(q);
@@ -351,12 +350,12 @@ impl AppShell {
 
         stack.connect_visible_child_notify({
             let sidebar = sidebar.clone();
-            let search_button = search_button.clone();
-            let filter_button = filter_button.clone();
-            let filter_entry = filter_entry.clone();
-            let search_entry = search_entry.clone();
-            let content_header = content_header.clone();
-            let content_title = content_title.clone();
+            let search_button = search_button;
+            let filter_button = filter_button;
+            let filter_entry = filter_entry;
+            let search_entry = search_entry;
+            let content_header = content_header;
+            let content_title = content_title;
 
             move |stack| {
                 let Some(visible_name) = stack.visible_child_name() else {
@@ -493,7 +492,7 @@ impl AppShell {
         }
     }
 
-    pub fn widget(&self) -> &adw::NavigationSplitView {
+    pub const fn widget(&self) -> &adw::NavigationSplitView {
         &self.root
     }
 
@@ -515,9 +514,8 @@ impl AppShell {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn reload_favorites(
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     spinner: &gtk4::Spinner,
     waiting_label: &gtk4::Label,
     albums_page: &Rc<RefCell<AlbumsPage>>,
@@ -548,8 +546,11 @@ fn reload_favorites(
                 albums_page.borrow_mut().load(favorites.albums);
                 artists_page.borrow_mut().load(favorites.artists);
 
-                let favorite_playlists: Vec<PlaylistSimple> =
-                    favorites.playlists.into_iter().map(|x| x.into()).collect();
+                let favorite_playlists: Vec<PlaylistSimple> = favorites
+                    .playlists
+                    .into_iter()
+                    .map(std::convert::Into::into)
+                    .collect();
 
                 let favorite_tracks: HashSet<_> = favorites.tracks.iter().map(|x| x.id).collect();
 
@@ -577,7 +578,7 @@ fn reload_favorites(
 
 fn show_create_playlist_dialog(
     parent: &impl IsA<gtk4::Widget>,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     ui_event_sender: UiEventSender,
 ) {
     let dialog = adw::Dialog::builder()
@@ -679,10 +680,10 @@ fn show_create_playlist_dialog(
 
     create_button.connect_clicked({
         let dialog = dialog.clone();
-        let name_row = name_row.clone();
-        let description_row = description_row.clone();
-        let private_row = private_row.clone();
-        let collaborative_row = collaborative_row.clone();
+        let name_row = name_row;
+        let description_row = description_row;
+        let private_row = private_row;
+        let collaborative_row = collaborative_row;
 
         move |_| {
             let name = name_row.text().trim().to_string();
@@ -699,12 +700,12 @@ fn show_create_playlist_dialog(
                         .create_playlist(name, !is_private, description, Some(is_collaborative))
                         .await
                     {
-                        tracing::error!("{error}")
-                    };
+                        tracing::error!("{error}");
+                    }
 
                     if let Err(error) = ui_event_sender.send(UiEvent::FavoritesChanged) {
-                        tracing::error!("{error}")
-                    };
+                        tracing::error!("{error}");
+                    }
                 }
             });
 

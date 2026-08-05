@@ -16,13 +16,17 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
 use crate::AppResult;
-use crate::error::Error;
+use crate::error::PlayerError;
 use crate::stderr_redirect::silence_stderr;
 
+struct Playback {
+    player: Player,
+    output_stream: rodio::MixerDeviceSink,
+    sender: Arc<rodio::queue::SourcesQueueInput>,
+}
+
 pub struct Sink {
-    sink: Option<Player>,
-    output_stream: Option<rodio::MixerDeviceSink>,
-    sender: Option<Arc<rodio::queue::SourcesQueueInput>>,
+    playback: Option<Playback>,
     volume: VolumeReceiver,
     track_finished: Sender<()>,
     track_handle: Option<JoinHandle<()>>,
@@ -31,18 +35,16 @@ pub struct Sink {
 }
 
 impl Sink {
-    pub fn new(volume: VolumeReceiver, preferred_device_id: Option<String>) -> AppResult<Self> {
+    pub fn new(volume: VolumeReceiver, preferred_device_id: Option<String>) -> Self {
         let (track_finished, _) = watch::channel(());
-        Ok(Self {
-            sink: None,
-            output_stream: None,
-            sender: None,
+        Self {
+            playback: None,
             volume,
             track_finished,
-            track_handle: Default::default(),
-            duration_played: Default::default(),
+            track_handle: Option::default(),
+            duration_played: Arc::default(),
             preferred_device_id,
-        })
+        }
     }
 
     pub fn track_finished(&self) -> Receiver<()> {
@@ -50,31 +52,38 @@ impl Sink {
     }
 
     pub fn position(&self) -> Duration {
-        let position = self.sink.as_ref().map(|x| x.get_pos()).unwrap_or_default();
+        let position = self
+            .playback
+            .as_ref()
+            .map(|x| &x.player)
+            .map(rodio::Player::get_pos)
+            .unwrap_or_default();
 
         let duration_played = *self.duration_played.lock();
 
         if position < duration_played {
-            return Default::default();
+            return Duration::default();
         }
 
-        position - duration_played
+        position.checked_sub(duration_played).unwrap_or_default()
     }
 
     pub fn play(&self) {
-        if let Some(player) = &self.sink {
-            player.play();
+        if let Some(playback) = &self.playback {
+            playback.player.play();
         }
     }
 
     pub fn pause(&self) {
-        if let Some(player) = &self.sink {
-            player.pause();
+        if let Some(playback) = &self.playback {
+            playback.player.pause();
         }
     }
 
     pub fn seek(&self, duration: Duration) -> AppResult<()> {
-        if let Some(player) = &self.sink {
+        if let Some(playback) = &self.playback {
+            let player = &playback.player;
+
             let current_volume = *self.volume.borrow();
             player.set_volume(0.0);
             player.pause();
@@ -82,58 +91,53 @@ impl Sink {
             let result = player.try_seek(duration);
 
             player.play();
-            set_volume(player, &current_volume);
+            set_volume(player, current_volume);
 
             match result {
-                Ok(_) => {
-                    *self.duration_played.lock() = Default::default();
+                Ok(()) => {
+                    *self.duration_played.lock() = Duration::default();
                 }
                 Err(err) => {
                     tracing::warn!("rodio seek error: {err:?}");
                     return Err(err.into());
                 }
-            };
+            }
         }
 
         Ok(())
     }
 
-    pub fn clear(&mut self) -> AppResult<()> {
+    pub fn clear(&mut self) {
         tracing::info!("Clearing sink");
-        self.clear_queue()?;
+        self.clear_queue();
 
-        self.sink = None;
-        self.output_stream = None;
-        self.sender = None;
+        self.playback = None;
 
-        *self.duration_played.lock() = Default::default();
+        *self.duration_played.lock() = Duration::default();
 
         if let Some(handle) = self.track_handle.take() {
             handle.abort();
         }
-
-        Ok(())
     }
 
-    pub fn clear_queue(&mut self) -> AppResult<()> {
+    pub fn clear_queue(&mut self) {
         tracing::info!("Clearing sink queue");
-        *self.duration_played.lock() = Default::default();
+        *self.duration_played.lock() = Duration::default();
 
-        if let Some(sender) = self.sender.as_ref() {
-            sender.clear();
-        };
-        Ok(())
+        if let Some(playback) = self.playback.as_ref() {
+            playback.sender.clear();
+        }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.sink.is_none()
+    pub const fn is_empty(&self) -> bool {
+        self.playback.is_none()
     }
 
     pub fn query_track(&mut self, track_path: &Path) -> AppResult<QueryTrackResult> {
         tracing::info!("Sink query track: {}", track_path.to_string_lossy());
 
-        let file = fs::File::open(track_path).map_err(|err| Error::StreamError {
-            message: format!("Failed to read file: {track_path:?}: {err}"),
+        let file = fs::File::open(track_path).map_err(|err| PlayerError::StreamError {
+            message: format!("Failed to read file: {}: {err}", track_path.display()),
         })?;
 
         let source = Decoder::try_from(file)?;
@@ -152,7 +156,7 @@ impl Sink {
             .with_byte_len(byte_len)
             .with_seekable(true)
             .build()
-            .map_err(|e| Error::StreamError {
+            .map_err(|e| PlayerError::StreamError {
                 message: format!("Failed to decode streaming FLAC: {e}"),
             })?;
 
@@ -164,50 +168,61 @@ impl Sink {
         source: Decoder<R>,
     ) -> AppResult<QueryTrackResult> {
         let sample_rate = source.sample_rate();
+
         let same_sample_rate = self
-            .output_stream
+            .playback
             .as_ref()
-            .map(|mixer| mixer.config().sample_rate() == sample_rate)
-            .unwrap_or(true);
+            .is_none_or(|playback| playback.output_stream.config().sample_rate() == sample_rate);
 
         if !same_sample_rate {
             return Ok(QueryTrackResult::RecreateStreamRequired);
         }
 
-        let needs_stream = self.output_stream.is_none() || self.sink.is_none();
-
-        if needs_stream {
+        if self.playback.is_none() {
             let mut mixer = if let Some(preferred_device_name) = self.preferred_device_id.as_deref()
             {
                 silence_stderr(|| open_preferred_stream(sample_rate, preferred_device_name))?
             } else {
                 open_default_stream(sample_rate)?
             };
+
             mixer.log_on_drop(false);
 
             let (sender, receiver) = queue(true);
+
             let player = rodio::Player::connect_new(mixer.mixer());
             player.append(receiver);
-            set_volume(&player, &self.volume.borrow());
+            set_volume(&player, *self.volume.borrow());
 
-            self.sink = Some(player);
-            self.sender = Some(sender);
-            self.output_stream = Some(mixer);
+            self.playback = Some(Playback {
+                player,
+                output_stream: mixer,
+                sender,
+            });
         }
+
+        let playback = self.playback.as_ref().ok_or(PlayerError::SinkDeviceError {
+            message: "Playback not initialized".to_string(),
+        })?;
 
         let track_finished = self.track_finished.clone();
         let track_duration = source.total_duration().unwrap_or_default();
 
         let duration_played = self.duration_played.clone();
-        let signal = self.sender.as_ref().unwrap().append_with_signal(source);
+        let signal = playback.sender.append_with_signal(source);
 
         let track_handle = tokio::spawn(async move {
             loop {
                 if signal.try_recv().is_ok() {
-                    *duration_played.lock() += track_duration;
-                    track_finished.send(()).expect("infallible");
+                    {
+                        let mut duration_played = duration_played.lock();
+                        *duration_played = duration_played.saturating_add(track_duration);
+                    }
+
+                    let _ = track_finished.send(());
                     break;
                 }
+
                 sleep(Duration::from_millis(200)).await;
             }
         });
@@ -218,13 +233,13 @@ impl Sink {
     }
 
     pub fn sync_volume(&self) {
-        if let Some(player) = &self.sink {
-            set_volume(player, &self.volume.borrow());
+        if let Some(playback) = &self.playback {
+            set_volume(&playback.player, *self.volume.borrow());
         }
     }
 }
 
-fn set_volume(sink: &rodio::Player, volume: &f32) {
+fn set_volume(sink: &rodio::Player, volume: f32) {
     let volume = volume.clamp(0.0, 1.0).powi(3);
     sink.set_volume(volume);
 }
@@ -271,7 +286,7 @@ fn open_preferred_stream(
         .collect();
     let available_devices = available_devices.join(", ");
 
-    Err(Error::SinkDeviceError {
+    Err(PlayerError::SinkDeviceError {
         message: format!("Unable to find device. Available devices: {available_devices}"),
     })
 }
@@ -283,6 +298,6 @@ pub enum QueryTrackResult {
 
 impl Drop for Sink {
     fn drop(&mut self) {
-        self.clear().unwrap();
+        self.clear();
     }
 }

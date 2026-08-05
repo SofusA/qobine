@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "cli-module"
 version.workspace = true

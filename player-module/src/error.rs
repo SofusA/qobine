@@ -2,7 +2,7 @@ use crate::notification::Notification;
 use snafu::prelude::*;
 
 #[derive(Snafu, Debug)]
-pub enum Error {
+pub enum PlayerError {
     #[snafu(display("{message}"))]
     FailedToPlay {
         message: String,
@@ -49,6 +49,10 @@ pub enum Error {
         #[snafu(source)]
         source: sqlx::Error,
     },
+    #[snafu(display("{message}"))]
+    DatabaseSerializationError {
+        message: String,
+    },
     #[snafu(display("Serialization error: {source}"))]
     SerializationError {
         #[snafu(source)]
@@ -78,9 +82,17 @@ pub enum Error {
     IoError {
         message: String,
     },
+    #[snafu(display("{message}"))]
+    Terminal {
+        message: String,
+    },
+    #[snafu(display("{message}"))]
+    Gtk {
+        message: String,
+    },
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for PlayerError {
     fn from(error: std::io::Error) -> Self {
         Self::IoError {
             message: error.to_string(),
@@ -88,45 +100,45 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<sqlx::migrate::MigrateError> for Error {
+impl From<sqlx::migrate::MigrateError> for PlayerError {
     fn from(_value: sqlx::migrate::MigrateError) -> Self {
         Self::DatabaseMigrationError
     }
 }
 
-impl From<serde_json::Error> for Error {
+impl From<serde_json::Error> for PlayerError {
     fn from(source: serde_json::Error) -> Self {
         Self::SerializationError { source }
     }
 }
 
-impl From<sqlx::Error> for Error {
+impl From<sqlx::Error> for PlayerError {
     fn from(source: sqlx::Error) -> Self {
         Self::DatabaseError { source }
     }
 }
 
-impl<T> From<tokio::sync::watch::error::SendError<T>> for Error {
+impl<T> From<tokio::sync::watch::error::SendError<T>> for PlayerError {
     fn from(source: tokio::sync::watch::error::SendError<T>) -> Self {
-        Error::SendError {
+        Self::SendError {
             message: source.to_string(),
         }
     }
 }
 
-impl<T> From<std::sync::PoisonError<T>> for Error {
+impl<T> From<std::sync::PoisonError<T>> for PlayerError {
     fn from(_: std::sync::PoisonError<T>) -> Self {
-        Error::PoisonError
+        Self::PoisonError
     }
 }
 
-impl From<rodio::source::SeekError> for Error {
+impl From<rodio::source::SeekError> for PlayerError {
     fn from(_: rodio::source::SeekError) -> Self {
-        Error::Seek
+        Self::Seek
     }
 }
 
-impl From<rodio::DeviceSinkError> for Error {
+impl From<rodio::DeviceSinkError> for PlayerError {
     fn from(value: rodio::DeviceSinkError) -> Self {
         Self::StreamError {
             message: value.to_string(),
@@ -134,7 +146,7 @@ impl From<rodio::DeviceSinkError> for Error {
     }
 }
 
-impl From<rodio::DevicesError> for Error {
+impl From<rodio::DevicesError> for PlayerError {
     fn from(value: rodio::DevicesError) -> Self {
         Self::StreamError {
             message: value.to_string(),
@@ -142,7 +154,7 @@ impl From<rodio::DevicesError> for Error {
     }
 }
 
-impl From<rodio::decoder::DecoderError> for Error {
+impl From<rodio::decoder::DecoderError> for PlayerError {
     fn from(value: rodio::decoder::DecoderError) -> Self {
         Self::StreamError {
             message: value.to_string(),
@@ -150,7 +162,7 @@ impl From<rodio::decoder::DecoderError> for Error {
     }
 }
 
-impl From<reqwest::Error> for Error {
+impl From<reqwest::Error> for PlayerError {
     fn from(value: reqwest::Error) -> Self {
         Self::StreamError {
             message: value.to_string(),
@@ -158,15 +170,15 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-impl From<qobuz_client::Error> for Error {
+impl From<qobuz_client::Error> for PlayerError {
     fn from(value: qobuz_client::Error) -> Self {
-        Error::Client {
+        Self::Client {
             message: value.to_string(),
         }
     }
 }
 
-impl From<tokio::sync::broadcast::error::SendError<Notification>> for Error {
+impl From<tokio::sync::broadcast::error::SendError<Notification>> for PlayerError {
     fn from(_value: tokio::sync::broadcast::error::SendError<Notification>) -> Self {
         Self::Notification
     }

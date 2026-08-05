@@ -2,7 +2,7 @@ use qobuz_client::qobuz_models::playlist::Owner;
 
 pub mod mapper;
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum TrackStatus {
     Played,
     Playing,
@@ -56,7 +56,7 @@ pub struct Album {
     pub label: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct AlbumSimple {
     pub id: String,
     pub title: String,
@@ -102,7 +102,7 @@ pub struct Favorites {
     pub tracks: Vec<Track>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Artist {
     pub id: u32,
     pub name: String,
@@ -140,7 +140,7 @@ impl From<Playlist> for PlaylistSimple {
             is_owned: value.is_owned,
             title: value.title,
             duration_seconds: value.duration_seconds,
-            tracks_count: value.tracks.len() as u32,
+            tracks_count: value.tracks.len(),
             id: value.id,
             image: value.image,
             owner: value.owner,
@@ -155,30 +155,30 @@ impl From<PlaylistSimple> for Playlist {
             duration_seconds: value.duration_seconds,
             id: value.id,
             image: value.image,
-            tracks: Default::default(),
+            tracks: Vec::default(),
             owner: value.owner,
         }
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct PlaylistSimple {
     pub is_owned: bool,
     pub title: String,
     pub duration_seconds: u32,
-    pub tracks_count: u32,
+    pub tracks_count: usize,
     pub id: u32,
     pub image: Option<String>,
     pub owner: Owner,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct Genre {
     pub name: String,
     pub id: u32,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct DiscoverPage {
     pub new_releases: Vec<AlbumSimple>,
     pub qobuzissims: Vec<AlbumSimple>,

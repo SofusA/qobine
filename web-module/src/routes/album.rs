@@ -47,7 +47,7 @@ async fn action(
             let tracks = album_data.album.tracks;
 
             state.controls.add_tracks_to_queue(tracks);
-            Ok(state.send_toast(Notification::Success(format!(
+            Ok(state.send_toast(&Notification::Success(format!(
                 "{} added to queue",
                 album_data.album.title
             ))))
@@ -58,7 +58,7 @@ async fn action(
 
             state.controls.play_tracks_next(tracks);
 
-            Ok(state.send_toast(Notification::Success(format!(
+            Ok(state.send_toast(&Notification::Success(format!(
                 "Playing {} next",
                 album_data.album.title
             ))))

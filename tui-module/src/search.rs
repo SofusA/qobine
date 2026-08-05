@@ -2,7 +2,7 @@ use controls_module::{
     controls::Controls,
     models::{AlbumSimple, Artist, PlaylistSimple},
 };
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
@@ -48,78 +48,80 @@ impl SearchState {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
-        let tab_content_area_split = Layout::default()
+        let [input_area, content_area] = Layout::default()
             .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .split(area);
+            .areas(area);
 
         render_input(
             &self.filter,
             self.focus == SearchFocus::Editing,
-            tab_content_area_split[0],
+            input_area,
             frame,
             "Search",
         );
 
         let block = block(None);
-        frame.render_widget(block, tab_content_area_split[1]);
+        frame.render_widget(block, content_area);
 
-        let tab_content_area = tab_content_area_split[1].inner(Margin::new(1, 1));
+        let tab_content_area = content_area.inner(Margin::new(1, 1));
 
-        let (sidebar, sidebar_width) =
-            sidebar(SubTab::labels(), self.focus == SearchFocus::Sidebar);
+        let (sidebar, sidebar_width) = sidebar(
+            SubTab::labels().to_vec(),
+            self.focus == SearchFocus::Sidebar,
+        );
 
-        let chunks = Layout::default()
+        let [sidebar_area, content_area] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .split(tab_content_area);
+            .areas(tab_content_area);
 
         let mut sidebar_state = ListState::default();
-        sidebar_state.select(Some(self.sub_tab.selected().into()));
+        sidebar_state.select(Some(self.sub_tab.selected()));
 
-        frame.render_stateful_widget(sidebar, chunks[0], &mut sidebar_state);
+        frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
         let content_focused = self.focus == SearchFocus::Content;
 
         match self.sub_tab {
             SubTab::Albums => self.albums.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 content_focused,
                 favorites.albums(),
                 image_cache,
             ),
             SubTab::Artists => self.artists.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 content_focused,
                 favorites.artists(),
                 image_cache,
             ),
             SubTab::Playlists => self.playlists.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 content_focused,
                 favorites.playlists(),
                 image_cache,
             ),
             SubTab::Tracks => self.tracks.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 true,
                 content_focused,
                 favorites.tracks(),
             ),
-        };
+        }
     }
 
-    pub fn focus_editing(&mut self) {
+    pub const fn focus_editing(&mut self) {
         self.focus = SearchFocus::Editing;
     }
 
     pub async fn handle_events(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -177,7 +179,7 @@ impl SearchState {
     async fn handle_content_events(
         &mut self,
         key_code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -211,7 +213,7 @@ impl SearchState {
         }
     }
 
-    async fn update_search(&mut self, client: &Client) -> AppResult<()> {
+    async fn update_search(&mut self, client: &StreamClient) -> AppResult<()> {
         if !self.filter.value().trim().is_empty() {
             let search_results = client.search(self.filter.value().to_string()).await?;
 
@@ -219,7 +221,7 @@ impl SearchState {
                 search_results
                     .albums
                     .into_iter()
-                    .map(|x| x.into())
+                    .map(std::convert::Into::into)
                     .collect(),
             );
 
@@ -229,7 +231,7 @@ impl SearchState {
                 search_results
                     .playlists
                     .into_iter()
-                    .map(|x| x.into())
+                    .map(std::convert::Into::into)
                     .collect(),
             );
 

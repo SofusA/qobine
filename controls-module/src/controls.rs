@@ -90,17 +90,19 @@ impl Default for Controls {
 }
 
 impl Controls {
+    #[must_use]
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(20);
         Self { tx }
     }
 
+    #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<ControlCommand> {
         self.tx.subscribe()
     }
 
     pub fn send(&self, command: ControlCommand) {
-        self.tx.send(command).expect("infallible");
+        _ = self.tx.send(command);
     }
 
     pub fn next(&self) {

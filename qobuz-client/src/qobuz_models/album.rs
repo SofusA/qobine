@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Album {
     pub artist: Artist,
     pub description: Option<String>,
-    pub duration: Option<i64>,
+    pub duration: Option<u32>,
     pub hires_streamable: bool,
     #[serde(default)]
     pub maximum_bit_depth: Option<u32>,
@@ -20,7 +20,7 @@ pub struct Album {
     pub streamable: bool,
     pub title: String,
     pub tracks: Option<Tracks>,
-    pub tracks_count: i64,
+    pub tracks_count: u32,
     #[serde(default)]
     pub awards: Vec<Award>,
     pub label: Option<Label>,

@@ -1,7 +1,7 @@
 use crate::qobuz_models::{Image, artist::OtherArtists, artist_page::ArtistName};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AlbumSuggestion {
     pub id: String,
     pub title: String,
@@ -13,31 +13,31 @@ pub struct AlbumSuggestion {
     pub rights: Rights,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlbumSuggestionResponse {
     pub algorithm: String,
     pub albums: AlbumSuggestions,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlbumSuggestions {
     pub limit: i64,
     pub items: Vec<AlbumSuggestion>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AlbumOfTheWeekQuery {
     has_more: bool,
     pub items: Vec<AlbumSuggestion>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseQuery {
     has_more: bool,
     pub items: Vec<AlbumSuggestion>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhysicalSupport {
     pub media_number: u32,
     pub track_number: u32,
@@ -50,29 +50,24 @@ pub struct Genre {
     pub id: i64,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Label {
     id: i64,
     pub name: String,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dates {
-    download: String,
     pub original: String,
-    stream: String,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rights {
-    purchasable: bool,
     pub streamable: bool,
-    downloadable: bool,
     pub hires_streamable: bool,
-    hires_purchasable: bool,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artist {
     pub id: u32,
     pub name: ArtistName,

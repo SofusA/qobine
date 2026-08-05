@@ -7,17 +7,19 @@ use controls_module::{
 use disconnect_module::DisconnectClientConfig;
 use favorites::FavoritesState;
 use player_module::{
-    AppResult, client::Client, database::Database, notification::NotificationBroadcast,
+    AppResult, client::StreamClient, database::Database, error::PlayerError,
+    notification::NotificationBroadcast,
 };
 use queue::QueueState;
-use ratatui::{prelude::*, widgets::*};
+use ratatui::{prelude::*, widgets::Paragraph};
 use ratatui_image::picker::Picker;
 use tokio::sync::{mpsc, watch};
 use ui::center;
 
 use crate::{
-    app::build_favorite_ids,
+    app::{AppState, NotificationList, Tab, build_favorite_ids},
     image_cache::{ImageLoaded, ImageManager},
+    search::SearchState,
 };
 
 mod app;
@@ -34,9 +36,8 @@ mod sub_tab;
 mod ui;
 mod widgets;
 
-#[allow(clippy::too_many_arguments)]
 pub async fn init(
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     broadcast: Arc<NotificationBroadcast>,
     controls: Controls,
     position_receiver: PositionReceiver,
@@ -54,7 +55,7 @@ pub async fn init(
 
     let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
 
-    draw_loading_screen(&mut terminal);
+    draw_loading_screen(&mut terminal)?;
 
     let tracklist_value = tracklist_receiver.borrow().clone();
     let status_value = *status_receiver.borrow();
@@ -74,21 +75,21 @@ pub async fn init(
 
     let mut app = App {
         broadcast,
-        notifications: Default::default(),
+        notifications: NotificationList::default(),
         controls,
         database,
         now_playing,
         position: position_receiver,
         tracklist: tracklist_receiver,
         status: status_receiver,
-        current_screen: Default::default(),
-        exit: Default::default(),
+        current_screen: Tab::default(),
+        exit: bool::default(),
         should_draw: true,
         should_clear: false,
-        app_state: Default::default(),
+        state: AppState::default(),
         favorites,
         favorite_ids,
-        search: Default::default(),
+        search: SearchState::default(),
         queue: QueueState::new(queue_tracks),
         discover: discover::DiscoverState::new(&client).await?,
         genres: genres::GenresState::new(&client).await?,
@@ -115,22 +116,18 @@ pub async fn init(
     Ok(result?)
 }
 
-fn draw_loading_screen<B: Backend>(terminal: &mut Terminal<B>) {
-    let ascii_art = r#"
+fn draw_loading_screen<B: Backend>(terminal: &mut Terminal<B>) -> AppResult<()> {
+    let ascii_art = r"
               _     _            
    __ _  ___ | |__ (_)_ __   ___ 
   / _` |/ _ \| '_ \| | '_ \ / _ \
  | (_| | (_) | |_) | | | | |  __/
   \__, |\___/|_.__/|_|_| |_|\___|
      |_|                         
-"#;
+";
 
-    let width = ascii_art
-        .lines()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(0) as u16;
-    let height = ascii_art.lines().count() as u16;
+    let width = 33;
+    let height = 7;
 
     terminal
         .draw(|f| {
@@ -142,5 +139,9 @@ fn draw_loading_screen<B: Backend>(terminal: &mut Terminal<B>) {
             let paragraph = Paragraph::new(ascii_art).alignment(Alignment::Left);
             f.render_widget(paragraph, area);
         })
-        .expect("infallible");
+        .map_err(|_| PlayerError::Terminal {
+            message: "Error rendering".to_string(),
+        })?;
+
+    Ok(())
 }

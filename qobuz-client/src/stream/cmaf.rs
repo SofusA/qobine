@@ -20,18 +20,18 @@ pub struct SegmentTableEntry {
 /// FLAC header and segment table extracted from the init segment.
 pub struct InitInfo {
     pub flac_header: Vec<u8>,
-    /// Per-segment sizes (indices 0..n_segments-1 correspond to segments 1..n_segments).
+    /// Per-segment sizes (indices 0..n_segments-1 correspond to segments `1..n_segments`).
     pub segment_table: Vec<SegmentTableEntry>,
 }
 
-/// One frame entry from the segment's QBZ_SEGMENT_UUID box.
+/// One frame entry from the segment's `QBZ_SEGMENT_UUID` box.
 pub struct FrameEntry {
     pub size: u32,
     pub flags: u16,
     pub iv: [u8; 8],
 }
 
-/// Parsed crypto info from a segment's QBZ_SEGMENT_UUID box.
+/// Parsed crypto info from a segment's `QBZ_SEGMENT_UUID` box.
 pub struct SegmentCrypto {
     /// Offset to the start of audio frame data (usually mdat payload).
     pub data_offset: usize,
@@ -43,25 +43,49 @@ pub struct SegmentCrypto {
 
 /// Parse the init segment (segment 0) to extract the FLAC header.
 pub fn parse_init_segment(data: &[u8]) -> Result<InitInfo, Error> {
-    let mut pos = 0;
-    while pos + 8 <= data.len() {
+    let mut pos: usize = 0;
+
+    while let Some(pos_plus_8) = pos.checked_add(8) {
+        let Some(pos_plus_4) = pos.checked_add(4) else {
+            break;
+        };
+
+        let Some(box_header) = data.get(pos_plus_4..pos_plus_8) else {
+            break;
+        };
+
         let size = read_box_size(data, pos);
-        if size < 8 || pos + size > data.len() {
+
+        let Some(end) = pos.checked_add(size) else {
+            break;
+        };
+
+        if size < 8 || end > data.len() {
             break;
         }
 
-        if &data[pos + 4..pos + 8] == b"uuid" && pos + 24 <= data.len() {
-            let uuid = &data[pos + 8..pos + 24];
+        if box_header == b"uuid" {
+            let Some(posision_plus_24) = pos.checked_add(24) else {
+                break;
+            };
+
+            let Some(uuid) = data.get(pos_plus_8..posision_plus_24) else {
+                break;
+            };
+
             if uuid == QBZ_INIT_UUID {
-                let payload = &data[pos + 24..pos + size];
+                let Some(payload) = data.get(posision_plus_24..end) else {
+                    break;
+                };
+
                 return parse_init_uuid_payload(payload);
             }
         }
 
-        pos += size;
+        pos = end;
     }
 
-    Err(Error::StreamError {
+    Err(Error::Stream {
         message: "init segment: QBZ_INIT_UUID box not found".into(),
     })
 }
@@ -71,35 +95,97 @@ pub fn parse_segment_crypto(data: &[u8]) -> Result<SegmentCrypto, Error> {
     let mut uuid_pos = None;
     let mut mdat_end = data.len();
 
-    let mut pos = 0;
-    while pos + 8 <= data.len() {
-        let size = read_box_size(data, pos);
-        if size < 8 || pos + size > data.len() {
+    let mut pos: usize = 0;
+    while let Some(pos_plus_8) = pos.checked_add(8) {
+        if pos_plus_8 > data.len() {
             break;
         }
 
-        let box_type = &data[pos + 4..pos + 8];
-        if box_type == b"uuid" && pos + 24 <= data.len() {
-            let uuid = &data[pos + 8..pos + 24];
-            if uuid == QBZ_SEGMENT_UUID {
+        let size = read_box_size(data, pos);
+
+        let Some(end) = pos.checked_add(size) else {
+            break;
+        };
+
+        if size < 8 || end > data.len() {
+            break;
+        }
+
+        let Some(pos_plus_4) = pos.checked_add(4) else {
+            break;
+        };
+
+        let Some(box_type) = data.get(pos_plus_4..pos_plus_8) else {
+            break;
+        };
+
+        if box_type == b"uuid" {
+            let Some(posision_plus_24) = pos.checked_add(24) else {
+                break;
+            };
+
+            if let Some(uuid) = data.get(pos_plus_8..posision_plus_24)
+                && uuid == QBZ_SEGMENT_UUID
+            {
                 uuid_pos = Some(pos);
             }
         } else if box_type == b"mdat" {
-            mdat_end = pos + size;
+            mdat_end = end;
         }
 
-        pos += size;
+        pos = end;
     }
 
     match uuid_pos {
         Some(p) => parse_segment_uuid_payload(data, p, mdat_end),
-        None => Err(Error::StreamError {
+        None => Err(Error::Stream {
             message: "audio segment: QBZ_SEGMENT_UUID box not found".into(),
         }),
     }
 }
 
 // --- Internal helpers ---
+struct Cursor<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    fn take(&mut self, len: usize) -> Option<&'a [u8]> {
+        let end = self.pos.checked_add(len)?;
+        let slice = self.buf.get(self.pos..end)?;
+        self.pos = end;
+        Some(slice)
+    }
+
+    fn skip(&mut self, len: usize) -> Option<()> {
+        self.take(len)?;
+        Some(())
+    }
+
+    fn take_u8(&mut self) -> Option<u8> {
+        self.take(1)?.first().copied()
+    }
+
+    fn take_u16(&mut self) -> Option<u16> {
+        let b: [u8; 2] = self.take(2)?.try_into().ok()?;
+        Some(u16::from_be_bytes(b))
+    }
+
+    fn take_u32(&mut self) -> Option<u32> {
+        let b: [u8; 4] = self.take(4)?.try_into().ok()?;
+        Some(u32::from_be_bytes(b))
+    }
+
+    fn take_u24(&mut self) -> Option<u32> {
+        let b: [u8; 3] = self.take(3)?.try_into().ok()?;
+        Some((u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]))
+    }
+}
 
 fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
     // The init UUID payload layout (from JS function d()):
@@ -117,85 +203,72 @@ fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
     //   [2B segment_count]
     //   Per segment: [4B byte_len][4B sample_count]
 
-    if payload.len() < 28 {
-        return Err(Error::StreamError {
-            message: "init UUID payload too short".into(),
-        });
-    }
+    let mut c = Cursor::new(payload);
 
-    let mut a = 4; // skip version/padding
-    a += 4; // track_id
-    a += 4; // file_id
-    a += 4; // sample_rate
-    a += 1; // bits_per_sample
-    a += 3; // channels + padding
-    a += 6; // total_samples_count
+    c.skip(26).ok_or_else(|| Error::Stream {
+        message: "init UUID payload too short".into(),
+    })?;
 
-    if a + 2 > payload.len() {
-        return Err(Error::StreamError {
-            message: "init UUID payload truncated at raw_len".into(),
-        });
-    }
-    let raw_len = u16::from_be_bytes([payload[a], payload[a + 1]]) as usize;
-    a += 2;
+    let raw_len = usize::from(c.take_u16().ok_or_else(|| Error::Stream {
+        message: "init UUID payload truncated at raw_len".into(),
+    })?);
 
-    let raw_data = &payload[a..a + raw_len.min(payload.len() - a)];
-    a += raw_len;
+    let raw_data = c
+        .take(raw_len)
+        .unwrap_or_else(|| payload.get(c.pos..).unwrap_or_default());
 
-    let flac_magic = b"fLaC";
     let flac_pos = raw_data
         .windows(4)
-        .position(|w| w == flac_magic)
-        .ok_or_else(|| Error::StreamError {
+        .position(|w| w == b"fLaC")
+        .ok_or_else(|| Error::Stream {
             message: "init UUID payload: fLaC magic not found".into(),
         })?;
 
-    let header_len = 4 + 4 + 34; // fLaC + STREAMINFO block header + STREAMINFO data
-    if flac_pos + header_len > raw_data.len() {
-        return Err(Error::StreamError {
+    let header_len = 42;
+    let flac_end = flac_pos
+        .checked_add(header_len)
+        .ok_or_else(|| Error::Stream {
             message: "init UUID payload: STREAMINFO truncated".into(),
-        });
-    }
+        })?;
 
-    let mut flac_header = raw_data[flac_pos..flac_pos + header_len].to_vec();
-    flac_header[4] |= 0x80; // set last-metadata-block flag
+    let flac_slice = raw_data
+        .get(flac_pos..flac_end)
+        .ok_or_else(|| Error::Stream {
+            message: "init UUID payload: STREAMINFO truncated".into(),
+        })?;
 
-    if a + 1 > payload.len() {
+    let mut flac_header = flac_slice.to_vec();
+    let flag = flac_header.get_mut(4).ok_or_else(|| Error::Stream {
+        message: "init UUID payload: invalid STREAMINFO header".into(),
+    })?;
+    *flag |= 0x80;
+
+    let Some(key_id_len) = c.take_u8().map(usize::from) else {
         return Ok(InitInfo {
             flac_header,
             segment_table: Vec::new(),
         });
-    }
-    let key_id_len = payload[a] as usize;
-    a += 1 + key_id_len;
+    };
+
+    c.skip(key_id_len);
 
     let mut segment_table = Vec::new();
-    if a + 2 <= payload.len() {
-        let seg_count = u16::from_be_bytes([payload[a], payload[a + 1]]) as usize;
-        a += 2;
 
+    if let Some(seg_count) = c.take_u16().map(usize::from) {
         for _ in 0..seg_count {
-            if a + 8 > payload.len() {
+            let Some(byte_len) = c.take_u32() else {
                 break;
-            }
-            let byte_len =
-                u32::from_be_bytes([payload[a], payload[a + 1], payload[a + 2], payload[a + 3]]);
-            a += 4;
-            let sample_count =
-                u32::from_be_bytes([payload[a], payload[a + 1], payload[a + 2], payload[a + 3]]);
-            a += 4;
+            };
+            let Some(sample_count) = c.take_u32() else {
+                break;
+            };
+
             segment_table.push(SegmentTableEntry {
                 byte_len,
                 sample_count,
             });
         }
     }
-
-    tracing::debug!(
-        "Init UUID: {} segments in table, FLAC header {} bytes",
-        segment_table.len(),
-        flac_header.len()
-    );
 
     Ok(InitInfo {
         flac_header,
@@ -215,29 +288,60 @@ fn parse_segment_uuid_payload(
     //   [3B frame_count]
     //   Per frame (16 bytes): [4B size][2B skip][2B flags][8B iv]
 
-    let base = uuid_box_start + 24; // start of payload after UUID
-    if base + 12 > data.len() {
-        return Err(Error::StreamError {
-            message: "segment UUID payload too short for header".into(),
-        });
-    }
+    let base = uuid_box_start
+        .checked_add(24)
+        .ok_or_else(|| Error::Stream {
+            message: "segment UUID payload offset overflow".into(),
+        })?;
 
-    let mut a = base + 4; // skip 4-byte version/padding
+    let payload = data.get(base..).ok_or_else(|| Error::Stream {
+        message: "segment UUID payload too short for header".into(),
+    })?;
 
-    let data_offset_raw = u32::from_be_bytes([data[a], data[a + 1], data[a + 2], data[a + 3]]);
-    let data_offset = uuid_box_start + data_offset_raw as usize;
-    a += 4;
+    let mut c = Cursor::new(payload);
 
-    let iv_size = data[a] as usize;
-    a += 1;
+    c.skip(4).ok_or_else(|| Error::Stream {
+        message: "segment UUID payload too short for header".into(),
+    })?;
 
-    let frame_count =
-        ((data[a] as usize) << 16) | ((data[a + 1] as usize) << 8) | (data[a + 2] as usize);
-    a += 3;
+    let data_offset_raw = c.take_u32().ok_or_else(|| Error::Stream {
+        message: "segment UUID payload too short for data_offset".into(),
+    })?;
 
-    let entry_size = 4 + 2 + 2 + iv_size; // size + skip + flags + iv
-    if a + frame_count * entry_size > data.len() {
-        return Err(Error::StreamError {
+    let data_offset = uuid_box_start
+        .checked_add(usize::try_from(data_offset_raw).map_err(|_| Error::Stream {
+            message: "segment UUID data_offset overflow".into(),
+        })?)
+        .ok_or_else(|| Error::Stream {
+            message: "segment UUID data_offset overflow".into(),
+        })?;
+
+    let iv_size = usize::from(c.take_u8().ok_or_else(|| Error::Stream {
+        message: "segment UUID payload too short for iv_size".into(),
+    })?);
+
+    let frame_count = usize::try_from(c.take_u24().ok_or_else(|| Error::Stream {
+        message: "segment UUID payload too short for frame_count".into(),
+    })?)
+    .map_err(|_| Error::Stream {
+        message: "segment UUID invalid frame_count".into(),
+    })?;
+
+    let entry_size = 8usize.checked_add(iv_size).ok_or_else(|| Error::Stream {
+        message: "segment UUID entry size overflow".into(),
+    })?;
+
+    let entries_bytes = frame_count
+        .checked_mul(entry_size)
+        .ok_or_else(|| Error::Stream {
+            message: "segment UUID entry table overflow".into(),
+        })?;
+
+    if c.pos
+        .checked_add(entries_bytes)
+        .is_none_or(|end| end > payload.len())
+    {
+        return Err(Error::Stream {
             message: format!(
                 "segment UUID: not enough data for {frame_count} entries of {entry_size} bytes"
             ),
@@ -245,17 +349,31 @@ fn parse_segment_uuid_payload(
     }
 
     let mut entries = Vec::with_capacity(frame_count);
+
     for _ in 0..frame_count {
-        let size = u32::from_be_bytes([data[a], data[a + 1], data[a + 2], data[a + 3]]);
-        a += 4;
-        a += 2; // skip 2 unknown bytes
-        let flags = u16::from_be_bytes([data[a], data[a + 1]]);
-        a += 2;
+        let size = c.take_u32().ok_or_else(|| Error::Stream {
+            message: "segment UUID truncated entry".into(),
+        })?;
+
+        c.skip(2).ok_or_else(|| Error::Stream {
+            message: "segment UUID truncated entry".into(),
+        })?;
+
+        let flags = c.take_u16().ok_or_else(|| Error::Stream {
+            message: "segment UUID truncated entry".into(),
+        })?;
 
         let mut iv = [0u8; 8];
-        let copy_len = iv_size.min(8);
-        iv[..copy_len].copy_from_slice(&data[a..a + copy_len]);
-        a += iv_size;
+
+        let iv_bytes = c.take(iv_size).ok_or_else(|| Error::Stream {
+            message: "segment UUID truncated entry".into(),
+        })?;
+
+        let copy_len = iv_bytes.len().min(iv.len());
+
+        for (dst, src) in iv.iter_mut().zip(iv_bytes.iter()).take(copy_len) {
+            *dst = *src;
+        }
 
         entries.push(FrameEntry { size, flags, iv });
     }
@@ -268,13 +386,23 @@ fn parse_segment_uuid_payload(
 }
 
 fn read_box_size(data: &[u8], pos: usize) -> usize {
-    if pos + 8 > data.len() {
+    let Some(bytes) = data.get(pos..) else {
         return 0;
-    }
-    let s = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+    };
+
+    let Some(header) = bytes.get(..4) else {
+        return 0;
+    };
+
+    let Ok(header): Result<[u8; 4], _> = header.try_into() else {
+        return 0;
+    };
+
+    let s = u32::from_be_bytes(header);
+
     match s {
-        0 => data.len() - pos,
-        s if s < 8 => 0,
-        s => s as usize,
+        0 => data.len().saturating_sub(pos),
+        2..=7 => 0,
+        n => usize::try_from(n).unwrap_or(0),
     }
 }

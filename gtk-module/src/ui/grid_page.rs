@@ -1,3 +1,5 @@
+use std::cell::Ref;
+use std::marker::PhantomData;
 use std::{cell::RefCell, rc::Rc};
 
 use glib::BoxedAnyObject;
@@ -14,7 +16,7 @@ pub struct GridPage<T: 'static> {
 
     filter_model: gtk::FilterListModel,
 
-    _marker: std::marker::PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 
 impl<T: 'static> Clone for GridPage<T> {
@@ -23,57 +25,63 @@ impl<T: 'static> Clone for GridPage<T> {
             widget: self.widget.clone(),
             store: self.store.clone(),
             filter: self.filter.clone(),
-            query: self.query.clone(),
+            query: Rc::clone(&self.query),
             filter_model: self.filter_model.clone(),
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
 
 impl<T: 'static> GridPage<T> {
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)]
-    pub fn new(
+    pub fn new<M, B, A>(
         min_columns: u32,
         max_columns: u32,
         alignment: gtk::Align,
-        matches_query: Rc<dyn Fn(&T, &str) -> bool>,
-        build_tile: Rc<dyn Fn(&T) -> gtk::Widget>,
-        on_activate: Rc<dyn Fn(&T)>,
-    ) -> Self {
+        matches_query: M,
+        build_tile: B,
+        on_activate: A,
+    ) -> Self
+    where
+        M: Fn(&T, &str) -> bool + 'static,
+        B: Fn(&T) -> gtk::Widget + 'static,
+        A: Fn(&T) + 'static,
+    {
         let store = gio::ListStore::new::<BoxedAnyObject>();
-        let query: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+        let query = Rc::new(RefCell::new(String::new()));
 
-        let query_for_filter = query.clone();
-        let matches_query_for_filter = matches_query.clone();
-        let filter = gtk::CustomFilter::new(move |obj: &glib::Object| {
-            let boxed = obj
-                .downcast_ref::<BoxedAnyObject>()
-                .expect("Expected BoxedAnyObject in model");
+        /*
+         * The query is stored by GridPage and captured by the filter.
+         * matches_query is moved directly into the filter callback.
+         */
+        let query_for_filter = Rc::clone(&query);
 
-            let item_ref: std::cell::Ref<T> = boxed.borrow();
+        let filter = gtk::CustomFilter::new(move |object| {
+            let Some(boxed) = object.downcast_ref::<BoxedAnyObject>() else {
+                return false;
+            };
 
-            let q = query_for_filter.borrow();
-            let q = q.trim().to_lowercase();
-            if q.is_empty() {
-                return true;
-            }
+            let item: Ref<'_, T> = boxed.borrow();
+            let query = query_for_filter.borrow();
+            let normalized_query = query.trim().to_lowercase();
 
-            (matches_query_for_filter)(&item_ref, &q)
+            normalized_query.is_empty() || matches_query(&item, &normalized_query)
         });
 
         let filter_model = gtk::FilterListModel::new(Some(store.clone()), Some(filter.clone()));
+
         let selection_model = gtk::NoSelection::new(Some(filter_model.clone()));
+
         let factory = gtk::SignalListItemFactory::new();
 
-        factory.connect_setup(|_, list_item| {
-            let list_item = list_item
-                .downcast_ref::<gtk::ListItem>()
-                .expect("Needs to be a gtk::ListItem");
+        factory.connect_setup(|_, object| {
+            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
 
             list_item.set_activatable(true);
 
             let wrapper = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
             wrapper.set_margin_top(6);
             wrapper.set_margin_bottom(6);
             wrapper.set_margin_start(6);
@@ -85,28 +93,28 @@ impl<T: 'static> GridPage<T> {
             list_item.set_child(Some(&wrapper));
         });
 
-        let build_tile_for_bind = build_tile.clone();
-        factory.connect_bind(move |_, list_item| {
-            let list_item = list_item
-                .downcast_ref::<gtk::ListItem>()
-                .expect("Needs to be a gtk::ListItem");
+        /*
+         * build_tile is moved directly into the bind callback.
+         */
+        factory.connect_bind(move |_, object| {
+            let Some(list_item) = object.downcast_ref::<gtk::ListItem>() else {
+                return;
+            };
 
-            let wrapper = list_item
-                .child()
-                .and_downcast::<gtk::Box>()
-                .expect("ListItem child must be gtk::Box");
+            let Some(wrapper) = list_item.child().and_downcast::<gtk::Box>() else {
+                return;
+            };
+
+            let Some(boxed) = list_item.item().and_downcast::<BoxedAnyObject>() else {
+                return;
+            };
 
             while let Some(child) = wrapper.first_child() {
                 wrapper.remove(&child);
             }
 
-            let boxed = list_item
-                .item()
-                .and_downcast::<BoxedAnyObject>()
-                .expect("Model item must be BoxedAnyObject");
-
-            let item_ref: std::cell::Ref<T> = boxed.borrow();
-            let tile = (build_tile_for_bind)(&item_ref);
+            let item: Ref<'_, T> = boxed.borrow();
+            let tile = build_tile(&item);
 
             wrapper.set_valign(gtk::Align::Fill);
             wrapper.set_vexpand(true);
@@ -118,6 +126,7 @@ impl<T: 'static> GridPage<T> {
         });
 
         let grid = gtk::GridView::new(Some(selection_model), Some(factory));
+
         grid.set_vexpand(true);
         grid.set_hexpand(true);
 
@@ -126,15 +135,24 @@ impl<T: 'static> GridPage<T> {
 
         grid.set_single_click_activate(true);
 
+        /*
+         * GridPage retains the original filter model, while this signal
+         * callback owns another GTK reference-counted handle.
+         */
         let filter_model_for_activate = filter_model.clone();
-        let on_activate_for_signal = on_activate.clone();
-        grid.connect_activate(move |_grid, pos| {
-            if let Some(obj) = filter_model_for_activate.item(pos)
-                && let Ok(boxed) = obj.downcast::<BoxedAnyObject>()
-            {
-                let item_ref: std::cell::Ref<T> = boxed.borrow();
-                (on_activate_for_signal)(&item_ref);
-            }
+
+        grid.connect_activate(move |_grid, position| {
+            let Some(object) = filter_model_for_activate.item(position) else {
+                return;
+            };
+
+            let Ok(boxed) = object.downcast::<BoxedAnyObject>() else {
+                return;
+            };
+
+            let item: Ref<'_, T> = boxed.borrow();
+
+            on_activate(&item);
         });
 
         let scroller = gtk::ScrolledWindow::builder()
@@ -150,11 +168,11 @@ impl<T: 'static> GridPage<T> {
             filter,
             query,
             filter_model,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 
-    pub fn widget(&self) -> &gtk::ScrolledWindow {
+    pub const fn widget(&self) -> &gtk::ScrolledWindow {
         &self.widget
     }
 

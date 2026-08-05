@@ -9,9 +9,9 @@ use disconnect_module::DisconnectClientConfig;
 use libadwaita::{self as adw, ApplicationWindow};
 use player_module::{
     AppResult,
-    client::{Client, exchange_oauth_code},
+    client::{StreamClient, exchange_oauth_code},
     database::{Credentials, Database},
-    error::Error,
+    error::PlayerError,
     notification::{Notification, NotificationBroadcast},
 };
 use tokio::sync::{
@@ -28,9 +28,8 @@ use crate::{
 mod callbacks;
 mod ui;
 
-#[allow(clippy::too_many_arguments)]
 pub fn init(
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     app_id: String,
     tracklist_receiver: TracklistReceiver,
     status_receiver: StatusReceiver,
@@ -38,7 +37,7 @@ pub fn init(
     volume_receiver: VolumeReceiver,
     controls: Controls,
     database: Arc<Database>,
-    exit_sender: ExitSender,
+    exit_sender: &ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     broadcast: Arc<NotificationBroadcast>,
     connect_available_devices: watch::Receiver<Vec<String>>,
@@ -46,7 +45,9 @@ pub fn init(
     set_connect_active_device: mpsc::UnboundedSender<String>,
     disconnect_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) -> AppResult<()> {
-    libadwaita::init().unwrap();
+    libadwaita::init().map_err(|err| PlayerError::Gtk {
+        message: err.to_string(),
+    })?;
 
     let application = libadwaita::Application::builder()
         .application_id("io.github.sofusa.qobine")
@@ -63,12 +64,12 @@ pub fn init(
     application.connect_activate({
         let client = client.clone();
         let database = database.clone();
-        let tracklist_receiver = tracklist_receiver.clone();
-        let status_receiver = status_receiver.clone();
-        let position_receiver = position_receiver.clone();
-        let controls = controls.clone();
+        let tracklist_receiver = tracklist_receiver;
+        let status_receiver = status_receiver;
+        let position_receiver = position_receiver;
+        let controls = controls;
         let exit_sender = exit_sender.clone();
-        let login_sender = login_sender.clone();
+        let login_sender = login_sender;
         let ui_sender = ui_sender.clone();
 
         move |app| {
@@ -85,10 +86,12 @@ pub fn init(
                 oauth_login_window(app, &oauth_url, login_sender.clone());
             }
 
-            let ui_receiver = ui_receiver
+            let Some(ui_receiver) = ui_receiver
                 .borrow_mut()
-                .take()
-                .expect("activate called more than once");
+                .take() else {
+                    tracing::error!("activate called more than once");
+                    return ;
+                };
 
             build_ui(
                 app,
@@ -99,11 +102,11 @@ pub fn init(
                 controls.clone(),
                 client.clone(),
                 database.clone(),
-                exit_sender.clone(),
-                audio_cache_ttl_sender.clone(),
+                &exit_sender,
+                &audio_cache_ttl_sender,
                 ui_sender.clone(),
                 ui_receiver,
-                broadcast.clone(),
+                &broadcast,
                 connect_available_devices.clone(),
                 connect_active_device.clone(),
                 set_connect_active_device.clone(),
@@ -112,20 +115,23 @@ pub fn init(
         }
     });
 
-    let client_clone = client.clone();
-    let database_clone = database.clone();
-    let app_id_for_exchange = app_id.clone();
-    let ui_sender = ui_sender.clone();
+    let client_clone = client;
+    let database_clone = database;
+    let app_id_for_exchange = app_id;
+    let ui_sender = ui_sender;
 
     glib::MainContext::default().spawn_local(async move {
         if is_logged_in {
-            ui_sender.send(UiEvent::FavoritesChanged).unwrap();
+            if let Err(err) = ui_sender.send(UiEvent::FavoritesChanged) {
+                tracing::error!("{err}");
+            }
+
             return;
         }
 
         let result: AppResult<()> = async {
             let Some(code) = login_receiver.recv().await else {
-                return Err(Error::Login {
+                return Err(PlayerError::Login {
                     message: "Error receiving login token".to_string(),
                 });
             };
@@ -134,7 +140,10 @@ pub fn init(
             let credentials: Credentials = oauth.into();
             client_clone.set_credentials(credentials.clone())?;
             database_clone.set_credentials(Some(credentials)).await?;
-            ui_sender.send(UiEvent::FavoritesChanged).unwrap();
+
+            if let Err(err) = ui_sender.send(UiEvent::FavoritesChanged) {
+                tracing::error!("{err}");
+            }
 
             Ok(())
         }
@@ -151,7 +160,6 @@ pub fn init(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_ui(
     app: &Application,
     tracklist_receiver: TracklistReceiver,
@@ -159,13 +167,13 @@ fn build_ui(
     position_receiver: PositionReceiver,
     volume_receiver: VolumeReceiver,
     controls: Controls,
-    client: Arc<Client>,
+    client: Arc<StreamClient>,
     database: Arc<Database>,
-    exit_sender: ExitSender,
-    audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
+    exit_sender: &ExitSender,
+    audio_cache_ttl_sender: &mpsc::UnboundedSender<u32>,
     ui_sender: mpsc::UnboundedSender<UiEvent>,
     ui_receiver: mpsc::UnboundedReceiver<UiEvent>,
-    broadcast: Arc<NotificationBroadcast>,
+    broadcast: &NotificationBroadcast,
     connect_available_devices: watch::Receiver<Vec<String>>,
     connect_active_device: watch::Receiver<String>,
     set_connect_active_device: mpsc::UnboundedSender<String>,
@@ -185,37 +193,36 @@ fn build_ui(
     {
         let detail_pages = detail_pages.clone();
         app_nav.connect_popped(move |_nav, popped_page| {
-            let popped_ptr = popped_page.as_ptr() as usize;
             detail_pages
                 .borrow_mut()
-                .retain(|p| p.page().as_ptr() as usize != popped_ptr);
+                .retain(|detail_page| detail_page.page() != popped_page);
         });
     }
 
     let callback_handles = Rc::new(build_callbacks(
-        app_nav.clone(),
-        controls.clone(),
+        &app_nav,
+        &controls,
         client.clone(),
         detail_pages.clone(),
-        tracklist_receiver.clone(),
-        ui_sender.clone(),
+        &tracklist_receiver,
+        &ui_sender,
     ));
 
-    let on_open_album = callback_handles.open_album.clone();
-    let on_open_artist = callback_handles.open_artist.clone();
-    let on_open_playlist = callback_handles.open_playlist.clone();
+    let on_open_album = callback_handles.album.clone();
+    let on_open_artist = callback_handles.artist.clone();
+    let on_open_playlist = callback_handles.playlist.clone();
 
     let shell = AppShell::new(
         app,
-        client.clone(),
-        controls.clone(),
+        client,
+        &controls,
         database,
-        exit_sender.clone(),
+        exit_sender,
         audio_cache_ttl_sender,
-        on_open_album.clone(),
-        on_open_artist.clone(),
-        on_open_playlist.clone(),
-        ui_sender.clone(),
+        &on_open_album,
+        &on_open_artist,
+        &on_open_playlist,
+        &ui_sender,
     );
 
     let root_page = adw::NavigationPage::builder()
@@ -272,7 +279,6 @@ fn build_ui(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn setup_listener(
     sender: mpsc::UnboundedSender<UiEvent>,
     mut receiver: mpsc::UnboundedReceiver<UiEvent>,
@@ -283,13 +289,13 @@ fn setup_listener(
     disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
     mut connect_available_devices: watch::Receiver<Vec<String>>,
     mut connect_active_device: watch::Receiver<String>,
-    broadcast: Arc<NotificationBroadcast>,
+    broadcast: &NotificationBroadcast,
     now_playing_bar: NowPlayingBar,
     shell: AppShell,
     detail_pages: Rc<RefCell<Vec<Rc<dyn DetailPage>>>>,
     toast_overlay: adw::ToastOverlay,
     callback_handles: Rc<CallbackHandles>,
-    exit_sender: ExitSender,
+    exit_sender: &ExitSender,
     window: ApplicationWindow,
 ) {
     let mut exit_receiver = exit_sender.subscribe();
@@ -298,36 +304,53 @@ fn setup_listener(
     tokio::spawn(async move {
         loop {
             tokio::select! {
-                Ok(_) = tracklist_receiver.changed() => {
+                Ok(()) = tracklist_receiver.changed() => {
                     let tracklist = tracklist_receiver.borrow_and_update().clone();
-                    sender.send(UiEvent::Tracklist(tracklist)).unwrap();
+                    if let Err(err) = sender.send(UiEvent::Tracklist(tracklist)) {
+                        tracing::error!("{err}");
+                    }
                 }
 
-                Ok(_) = status_receiver.changed() => {
+                Ok(()) = status_receiver.changed() => {
                     let status = *status_receiver.borrow_and_update();
-                    sender.send(UiEvent::Status(status)).unwrap();
+                    if let Err(err) =sender.send(UiEvent::Status(status))
+                    {
+                        tracing::error!("{err}");
+                    }
                 }
 
-                Ok(_) = position_receiver.changed() => {
+                Ok(()) = position_receiver.changed() => {
                     let position = *position_receiver.borrow_and_update();
-                    sender.send(UiEvent::Position(position)).unwrap();
+                    if let Err(err) =sender.send(UiEvent::Position(position))
+                    {
+                        tracing::error!("{err}");
+                    }
                 }
 
-                Ok(_) = volume_receiver.changed() => {
+                Ok(()) = volume_receiver.changed() => {
                     let volume = *volume_receiver.borrow_and_update();
-                    sender.send(UiEvent::Volume(volume)).unwrap();
+                    if let Err(err) =sender.send(UiEvent::Volume(volume))
+                    {
+                        tracing::error!("{err}");
+                    }
                 }
 
-                Ok(_) = connect_available_devices.changed() => {
+                Ok(()) = connect_available_devices.changed() => {
                     let connect_available_devices = connect_available_devices.borrow_and_update().to_vec();
                     let connect_active_device = connect_active_device.borrow().to_string();
 
-                    sender.send(UiEvent::Connect((connect_available_devices, connect_active_device ))).unwrap();
+                    if let Err(err) =sender.send(UiEvent::Connect((connect_available_devices, connect_active_device )))
+                    {
+                        tracing::error!("{err}");
+                    }
                 }
 
-                Ok(_) = connect_active_device.changed() => {
+                Ok(()) = connect_active_device.changed() => {
                     let position = *position_receiver.borrow_and_update();
-                    sender.send(UiEvent::Position(position)).unwrap();
+                    if let Err(err) =sender.send(UiEvent::Position(position))
+                    {
+                        tracing::error!("{err}");
+                    }
                 }
 
                 Ok(exit) = exit_receiver.recv() => {
@@ -341,11 +364,12 @@ fn setup_listener(
                     if let Ok(notification) = notification {
                         let text = match notification {
                             Notification::Error(text) => format!("Error: {text}"),
-                            Notification::Warning(text) => text,
-                            Notification::Success(text) => text,
-                            Notification::Info(text) => text,
-                        };
-                        sender.send(UiEvent::Toast(text)).unwrap();
+                            Notification::Warning(text) | Notification::Success(text) | Notification::Info(text) => text,
+                            };
+                        if let Err(err) = sender.send(UiEvent::Toast(text))
+                        {
+                            tracing::error!("{err}");
+                        }
                     }
                 }
             }
@@ -368,7 +392,7 @@ fn setup_listener(
                     }
                 }
                 UiEvent::Status(status) => {
-                    now_playing_bar.update_now_playing_button_icon(&status);
+                    now_playing_bar.update_now_playing_button_icon(status);
                 }
                 UiEvent::Position(duration) => {
                     now_playing_bar.update_progress(&duration);
@@ -438,7 +462,9 @@ fn oauth_login_window(
             && uri.starts_with("http://localhost/")
             && let Some(code) = extract_code_from_uri(&uri)
         {
-            sender.send(code).unwrap();
+            if let Err(err) = sender.send(code) {
+                tracing::error!("{err}");
+            }
 
             if let Some(window) = window_weak.upgrade() {
                 window.close();

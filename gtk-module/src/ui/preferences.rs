@@ -1,7 +1,8 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use futures::executor::block_on;
-use glib::clone;
 use gtk::gio;
 use gtk::prelude::*;
 use gtk4 as gtk;
@@ -20,11 +21,11 @@ use crate::UiEventSender;
 
 pub fn build_preferences_menu(
     app: &adw::Application,
-    controls: Controls,
+    controls: &Controls,
     database: Arc<Database>,
-    exit_sender: ExitSender,
-    audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
-    ui_event_sender: UiEventSender,
+    exit_sender: &ExitSender,
+    audio_cache_ttl_sender: &mpsc::UnboundedSender<u32>,
+    ui_event_sender: &UiEventSender,
 ) -> gtk::MenuButton {
     let menu = gio::Menu::new();
     menu.append(Some("Preferences"), Some("app.preferences"));
@@ -43,39 +44,32 @@ pub fn build_preferences_menu(
 
         move |_, _| {
             if let Err(error) = ui_event_sender.send(crate::UiEvent::Exit) {
-                tracing::error!("Error sending ui event: {error}");
-            };
+                tracing::error!("Error sending UI event: {error}");
+            }
         }
     });
 
     let preferences_action = gio::SimpleAction::new("preferences", None);
 
     preferences_action.connect_activate({
-        clone!(
-            #[weak]
-            app,
-            #[strong]
-            controls,
-            #[weak]
-            database,
-            #[strong]
-            exit_sender,
-            #[strong]
-            audio_cache_ttl_sender,
-            #[strong]
-            ui_event_sender,
-            move |_, _| {
-                show_preferences_dialog(
-                    &app,
-                    controls.clone(),
-                    database,
-                    exit_sender.clone(),
-                    audio_cache_ttl_sender.clone(),
-                    ui_event_sender.clone(),
-                );
-            }
-        )
+        let app = app.clone();
+        let controls = controls.clone();
+        let exit_sender = exit_sender.clone();
+        let audio_cache_ttl_sender = audio_cache_ttl_sender.clone();
+        let ui_event_sender = ui_event_sender.clone();
+
+        move |_, _| {
+            show_preferences_dialog(
+                &app,
+                controls.clone(),
+                database.clone(),
+                exit_sender.clone(),
+                audio_cache_ttl_sender.clone(),
+                &ui_event_sender,
+            );
+        }
     });
+
     app.add_action(&preferences_action);
     app.add_action(&quit_action);
 
@@ -88,7 +82,7 @@ fn show_preferences_dialog(
     database: Arc<Database>,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
-    ui_event_sender: UiEventSender,
+    ui_event_sender: &UiEventSender,
 ) {
     let dialog = adw::PreferencesDialog::new();
 
@@ -109,16 +103,18 @@ fn preferences_page(
     database: Arc<Database>,
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
-    ui_event_sender: UiEventSender,
+    ui_event_sender: &UiEventSender,
 ) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::new();
     page.set_title("Preferences");
 
-    let configuration = block_on(database.get_configuration()).unwrap();
+    let Ok(configuration) = block_on(database.get_configuration()) else {
+        return page;
+    };
 
     page.add(&cache_group(
         app,
-        controls.clone(),
+        &controls,
         audio_cache_ttl_sender,
         &configuration,
     ));
@@ -139,7 +135,7 @@ fn preferences_page(
 
 fn cache_group(
     app: &adw::Application,
-    controls: Controls,
+    controls: &Controls,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     configuration: &Configuration,
 ) -> adw::PreferencesGroup {
@@ -237,13 +233,12 @@ fn cache_ttl_row(
 
     row.connect_selected_notify(move |r| {
         let hours = match r.selected() {
-            0 => 0,
             1 => 1,
             2 => 720,
             3 => 2160,
             _ => 0,
         };
-        audio_cache_ttl_sender.send(hours).unwrap();
+        _ = audio_cache_ttl_sender.send(hours);
     });
 
     row
@@ -280,7 +275,6 @@ fn audio_group(controls: Controls, configuration: &Configuration) -> adw::Prefer
                 0 => AudioQuality::Mp3,
                 1 => AudioQuality::CD,
                 2 => AudioQuality::HIFI96,
-                3 => AudioQuality::HIFI192,
                 _ => AudioQuality::HIFI192,
             };
             controls.set_audio_max_quality(value);
@@ -294,7 +288,7 @@ fn audio_group(controls: Controls, configuration: &Configuration) -> adw::Prefer
     file_based_streaming.set_active(configuration.use_file_based_streaming);
 
     file_based_streaming.connect_active_notify({
-        let controls = controls.clone();
+        let controls = controls;
         move |row| {
             controls.set_use_file_based_streaming(row.is_active());
         }
@@ -333,7 +327,7 @@ fn logout_group(exit_sender: ExitSender, database: Arc<Database>) -> adw::Prefer
 
         glib::MainContext::default().spawn_local(async move {
             if database.set_credentials(None).await.is_ok() {
-                exit_sender.send(true).unwrap();
+                _ = exit_sender.send(true);
             }
         });
     });
@@ -344,7 +338,7 @@ fn logout_group(exit_sender: ExitSender, database: Arc<Database>) -> adw::Prefer
 
 fn disconnect_group(
     configuration: &Configuration,
-    ui_event_sender: UiEventSender,
+    ui_event_sender: &UiEventSender,
     database: Arc<Database>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
@@ -357,11 +351,11 @@ fn disconnect_group(
         .build();
 
     info.connect_clicked(move |_| {
-        if let Err(err) = gio::AppInfo::launch_default_for_uri(
+        if let Err(error) = gio::AppInfo::launch_default_for_uri(
             "https://github.com/SofusA/qobine/tree/main/disconnect-module",
             None::<&gio::AppLaunchContext>,
         ) {
-            tracing::error!("Failed to open information page: {err}");
+            tracing::error!("Failed to open information page: {error}");
         }
     });
 
@@ -398,7 +392,7 @@ fn disconnect_group(
     save.add_css_class("suggested-action");
     save.set_sensitive(false);
 
-    let saved_state = std::rc::Rc::new(std::cell::RefCell::new(
+    let saved_state = Rc::new(RefCell::new(
         match (
             configuration.enable_disconnect,
             configuration.disconnect_server_url.as_deref(),
@@ -407,28 +401,23 @@ fn disconnect_group(
         ) {
             (true, Some(server_url), Some(password), Some(device_name)) => {
                 Some(DisconnectClientConfig {
-                    server_url: server_url.to_string(),
-                    password: password.to_string(),
-                    device_name: device_name.to_string(),
+                    server_url: server_url.to_owned(),
+                    password: password.to_owned(),
+                    device_name: device_name.to_owned(),
                 })
             }
             _ => None,
         },
     ));
 
-    let validate = clone!(
-        #[weak]
-        enabled,
-        #[weak]
-        server_row,
-        #[weak]
-        password_row,
-        #[weak]
-        device_row,
-        #[weak]
-        save,
-        #[strong]
-        saved_state,
+    let validate = {
+        let enabled = enabled.clone();
+        let server_row = server_row.clone();
+        let password_row = password_row.clone();
+        let device_row = device_row.clone();
+        let save = save.clone();
+        let saved_state = saved_state.clone();
+
         move || {
             let active = enabled.is_active();
 
@@ -474,7 +463,7 @@ fn disconnect_group(
 
             save.set_sensitive(*saved_state.borrow() != current);
         }
-    );
+    };
 
     enabled.connect_active_notify({
         let validate = validate.clone();
@@ -496,28 +485,20 @@ fn disconnect_group(
         move |_| validate()
     });
 
-    save.connect_activated(clone!(
-        #[weak]
-        enabled,
-        #[weak]
-        server_row,
-        #[weak]
-        password_row,
-        #[weak]
-        device_row,
-        #[strong]
-        saved_state,
-        #[strong]
-        ui_event_sender,
-        #[strong]
-        database,
+    save.connect_activated({
+        let enabled = enabled.clone();
+        let server_row = server_row.clone();
+        let password_row = password_row.clone();
+        let device_row = device_row.clone();
+        let saved_state = saved_state.clone();
+        let ui_event_sender = ui_event_sender.clone();
+
         move |_| {
             let server_url = server_row.text().to_string();
             let password = password_row.text().to_string();
             let device_name = device_row.text().to_string();
-            let enabled = enabled.is_active();
 
-            let config = if enabled {
+            let config = if enabled.is_active() {
                 Some(DisconnectClientConfig {
                     server_url,
                     password,
@@ -527,33 +508,42 @@ fn disconnect_group(
                 None
             };
 
-            *saved_state.borrow_mut() = config.clone();
+            saved_state.borrow_mut().clone_from(&config);
 
-            let _ = ui_event_sender.send(crate::UiEvent::DisconnectClientConfig(config.clone()));
+            if let Err(error) =
+                ui_event_sender.send(crate::UiEvent::DisconnectClientConfig(config.clone()))
+            {
+                tracing::error!("Failed to send disconnect configuration: {error}");
+            }
 
             glib::MainContext::default().spawn_local({
-                let database = database.clone();
-                let config = config.clone();
+                let database = Arc::clone(&database);
 
                 async move {
-                    // TODO: Show notification
+                    // TODO: Show notification.
                     if let Some(config) = config {
-                        _ = database
+                        if let Err(error) = database
                             .set_disconnect_config(
                                 &config.server_url,
                                 &config.password,
                                 &config.device_name,
                             )
-                            .await;
+                            .await
+                        {
+                            tracing::error!("Failed to save disconnect configuration: {error}");
+                            return;
+                        }
 
-                        _ = database.set_disconnect_enabled(true).await;
-                    } else {
-                        _ = database.set_disconnect_enabled(false).await;
+                        if let Err(error) = database.set_disconnect_enabled(true).await {
+                            tracing::error!("Failed to enable disconnect: {error}");
+                        }
+                    } else if let Err(error) = database.set_disconnect_enabled(false).await {
+                        tracing::error!("Failed to disable disconnect: {error}");
                     }
                 }
             });
         }
-    ));
+    });
 
     validate();
 

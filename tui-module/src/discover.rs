@@ -2,8 +2,8 @@ use controls_module::controls::Controls;
 use controls_module::models::{AlbumSimple, PlaylistSimple};
 use futures::future::try_join_all;
 use player_module::AppResult;
-use player_module::client::{Client, GenrePlaylistSlug};
-use player_module::error::Error;
+use player_module::client::{GenrePlaylistSlug, StreamClient};
+use player_module::error::PlayerError;
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
@@ -34,7 +34,7 @@ pub struct DiscoverState {
 }
 
 impl DiscoverState {
-    pub async fn new(client: &Client) -> AppResult<Self> {
+    pub async fn new(client: &StreamClient) -> AppResult<Self> {
         let discover = client.discover_page(None).await?;
 
         let featured_albums = vec![
@@ -67,7 +67,7 @@ impl DiscoverState {
                     })
                     .await?;
 
-                Ok::<_, Error>((tag.name, Grid::new(playlists)))
+                Ok::<_, PlayerError>((tag.name, Grid::new(playlists)))
             }))
             .await?;
 
@@ -75,7 +75,7 @@ impl DiscoverState {
             featured_albums,
             featured_playlists,
             selected_sub_tab: 0,
-            focus: Default::default(),
+            focus: DiscoverFocus::default(),
         })
     }
 
@@ -104,21 +104,21 @@ impl DiscoverState {
 
         let (sidebar, sidebar_width) = sidebar(labels, self.focus == DiscoverFocus::Sidebar);
 
-        let chunks = Layout::default()
+        let [sidebar_area, content_area] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .split(tab_content_area);
+            .areas(tab_content_area);
 
         let mut sidebar_state = ListState::default();
         sidebar_state.select(Some(self.selected_sub_tab));
 
-        frame.render_stateful_widget(sidebar, chunks[0], &mut sidebar_state);
+        frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
         let content_focused = self.focus == DiscoverFocus::Content;
 
         if let Some((_, list)) = self.selected_album_mut() {
             list.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 content_focused,
                 favorites.albums(),
@@ -126,7 +126,7 @@ impl DiscoverState {
             );
         } else if let Some((_, list)) = self.selected_playlist_mut() {
             list.render(
-                chunks[1],
+                content_area,
                 frame.buffer_mut(),
                 content_focused,
                 favorites.playlists(),
@@ -138,7 +138,7 @@ impl DiscoverState {
     pub async fn handle_events(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -177,7 +177,7 @@ impl DiscoverState {
     async fn handle_content_events(
         &mut self,
         key_code: KeyCode,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -209,22 +209,37 @@ impl DiscoverState {
     }
 
     fn cycle_subtab_backwards(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+        let count = self
+            .featured_albums
+            .len()
+            .saturating_add(self.featured_playlists.len());
 
         if count == 0 {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| count.saturating_sub(1))
+            .checked_rem(count)
+            .unwrap_or(0);
     }
 
     fn cycle_subtab(&mut self) {
-        let count = self.featured_albums.len() + self.featured_playlists.len();
+        let count = self
+            .featured_albums
+            .len()
+            .saturating_add(self.featured_playlists.len());
 
         if count == 0 {
             return;
         }
 
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % count;
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(count))
+            .unwrap_or(0);
     }
 }

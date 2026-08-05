@@ -3,34 +3,38 @@ use std::fmt;
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum SubTab {
     #[default]
-    Albums = 0,
-    Artists = 1,
-    Playlists = 2,
-    Tracks = 3,
+    Albums,
+    Artists,
+    Playlists,
+    Tracks,
 }
 
 impl SubTab {
-    pub const COUNT: u8 = 4;
-
-    pub fn selected(self) -> u8 {
-        self as u8
-    }
-
-    pub fn from_u8(v: u8) -> Self {
-        match v % Self::COUNT {
-            0 => Self::Albums,
-            1 => Self::Artists,
-            2 => Self::Playlists,
-            _ => Self::Tracks,
+    pub const fn selected(self) -> usize {
+        match self {
+            Self::Albums => 0,
+            Self::Artists => 1,
+            Self::Playlists => 2,
+            Self::Tracks => 3,
         }
     }
 
-    pub fn next(self) -> Self {
-        Self::from_u8(self.selected().wrapping_add(1))
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Albums => Self::Artists,
+            Self::Artists => Self::Playlists,
+            Self::Playlists => Self::Tracks,
+            Self::Tracks => Self::Albums,
+        }
     }
 
-    pub fn previous(self) -> Self {
-        Self::from_u8(self.selected().wrapping_add(Self::COUNT - 1))
+    pub const fn previous(self) -> Self {
+        match self {
+            Self::Albums => Self::Tracks,
+            Self::Artists => Self::Albums,
+            Self::Playlists => Self::Artists,
+            Self::Tracks => Self::Playlists,
+        }
     }
 
     pub const fn as_str(self) -> &'static str {
@@ -42,11 +46,8 @@ impl SubTab {
         }
     }
 
-    pub const VALUES: [Self; Self::COUNT as usize] =
-        [Self::Albums, Self::Artists, Self::Playlists, Self::Tracks];
-
-    pub fn labels() -> Vec<&'static str> {
-        Self::VALUES.iter().map(|tab| tab.as_str()).collect()
+    pub const fn labels() -> [&'static str; 4] {
+        ["Albums", "Artists", "Playlists", "Tracks"]
     }
 }
 

@@ -1,15 +1,21 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::indexing_slicing,
+    clippy::unwrap_used
+)]
+
 use player_module::database::{Credentials, Database};
-use qobuz_client::client::{Client, ReleaseType};
+use qobuz_client::client::{QobuzClient, ReleaseType};
 
 async fn get_token() -> Option<Credentials> {
     let database = Database::new().await.ok()?;
     database.get_credentials().await.ok()?
 }
 
-async fn get_client() -> Option<Client> {
+async fn get_client() -> Option<QobuzClient> {
     let credentials = get_token().await?;
 
-    qobuz_client::client::Client::new(
+    qobuz_client::client::QobuzClient::new(
         &credentials.user_auth_token,
         credentials.user_id,
         qobuz_client::client::AudioQuality::Mp3,
@@ -22,7 +28,20 @@ async fn get_client() -> Option<Client> {
 #[tokio::test]
 async fn track_suggestion() {
     let client = get_client().await.unwrap();
-    let queue = vec![20808551, 20808552, 20808553, 20808554, 20808555];
+    let queue = vec![
+        200_690_746,
+        150_242,
+        26_651_994,
+        26_651_993,
+        330_039_671,
+        3_114_035,
+        4_300_641,
+        242_975_829,
+        33_932_278,
+        3_114_027,
+        26_651_991,
+        387_387_266,
+    ];
 
     let _suggestion = client.suggest_track(queue, None, None).await.unwrap();
 }
@@ -77,7 +96,7 @@ async fn favorites() {
 #[tokio::test]
 async fn playlist() {
     let client = get_client().await.unwrap();
-    client.playlist(28869445).await.unwrap();
+    client.playlist(28_869_445).await.unwrap();
 }
 
 #[tokio::test]
@@ -110,7 +129,7 @@ async fn album_2() {
 #[tokio::test]
 async fn track() {
     let client = get_client().await.unwrap();
-    client.track(64868955).await.unwrap();
+    client.track(64_868_955).await.unwrap();
 }
 
 #[tokio::test]
@@ -122,32 +141,32 @@ async fn suggested_albums() {
 #[tokio::test]
 async fn artist() {
     let client = get_client().await.unwrap();
-    client.artist(9316383).await.unwrap();
+    client.artist(9_316_383).await.unwrap();
 }
 
 #[tokio::test]
 async fn similar_artist() {
     let client = get_client().await.unwrap();
-    client.similar_artists(9316383, Some(3)).await.unwrap();
+    client.similar_artists(9_316_383, Some(3)).await.unwrap();
 }
 
 #[tokio::test]
 async fn artist_releases() {
     let client = get_client().await.unwrap();
     client
-        .artist_releases(9316383, ReleaseType::Albums, Some(3))
+        .artist_releases(9_316_383, ReleaseType::Albums, Some(3))
         .await
         .unwrap();
     client
-        .artist_releases(9316383, ReleaseType::EPsAndSingles, Some(3))
+        .artist_releases(9_316_383, ReleaseType::EPsAndSingles, Some(3))
         .await
         .unwrap();
     client
-        .artist_releases(9316383, ReleaseType::Live, Some(3))
+        .artist_releases(9_316_383, ReleaseType::Live, Some(3))
         .await
         .unwrap();
     client
-        .artist_releases(9316383, ReleaseType::Compilations, Some(3))
+        .artist_releases(9_316_383, ReleaseType::Compilations, Some(3))
         .await
         .unwrap();
 }

@@ -1,5 +1,5 @@
 use controls_module::models::{Artist, Track};
-use player_module::{AppResult, client::Client};
+use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::KeyCode,
     prelude::*,
@@ -27,7 +27,7 @@ enum TrackTabKind {
 }
 
 impl TrackInfoOverlay {
-    pub fn new(track: Track) -> Self {
+    pub const fn new(track: Track) -> Self {
         Self {
             track,
             selected_sub_tab: 0,
@@ -53,7 +53,11 @@ impl TrackInfoOverlay {
         self.render_body(frame, body_area);
     }
 
-    pub async fn handle_event(&mut self, code: KeyCode, client: &Client) -> AppResult<Output> {
+    pub async fn handle_event(
+        &mut self,
+        code: KeyCode,
+        client: &StreamClient,
+    ) -> AppResult<Output> {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.cycle_subtab_backwards();
@@ -140,7 +144,7 @@ impl TrackInfoOverlay {
     }
 
     fn render_body(&self, frame: &mut Frame, area: Rect) {
-        let (sidebar_widget, sidebar_width) = sidebar(self.tabs(), true);
+        let (sidebar_widget, sidebar_width) = sidebar(tabs(), true);
 
         let [sidebar_area, content_area] =
             Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)]).areas(area);
@@ -187,7 +191,7 @@ impl TrackInfoOverlay {
         let mut lines = Vec::new();
 
         if let Some(release_date) = &self.track.release_date {
-            lines.push(Line::from(format!("Released: {release_date}",)));
+            lines.push(Line::from(format!("Released: {release_date}")));
         }
 
         if let Some(performers) = self
@@ -244,7 +248,7 @@ impl TrackInfoOverlay {
                 (self.track.bit_depth, self.track.sampling_rate)
             {
                 metadata.push(Span::styled(
-                    format!(" {bit_depth} bit - {sampling_rate}kHz",),
+                    format!(" {bit_depth} bit - {sampling_rate}kHz"),
                     Style::new().dim(),
                 ));
             }
@@ -259,7 +263,7 @@ impl TrackInfoOverlay {
         Line::from(metadata)
     }
 
-    async fn open_album(&self, client: &Client) -> AppResult<Output> {
+    async fn open_album(&self, client: &StreamClient) -> AppResult<Output> {
         let Some(album_id) = self.track.album_id.as_ref() else {
             return Ok(Output::Consumed);
         };
@@ -270,7 +274,7 @@ impl TrackInfoOverlay {
         Ok(Output::Overlay(Overlay::Album(popup)))
     }
 
-    async fn open_artist(&self, client: &Client) -> AppResult<Output> {
+    async fn open_artist(&self, client: &StreamClient) -> AppResult<Output> {
         let Some(artist_id) = self.track.artist_id else {
             return Ok(Output::Consumed);
         };
@@ -286,7 +290,7 @@ impl TrackInfoOverlay {
         Ok(Output::Overlay(Overlay::Artist(popup)))
     }
 
-    fn selected_tab_kind(&self) -> TrackTabKind {
+    const fn selected_tab_kind(&self) -> TrackTabKind {
         match self.selected_sub_tab {
             0 => TrackTabKind::Info,
             1 => TrackTabKind::GoToAlbum,
@@ -295,16 +299,35 @@ impl TrackInfoOverlay {
     }
 
     fn cycle_subtab(&mut self) {
-        self.selected_sub_tab = (self.selected_sub_tab + 1) % self.tabs().len();
+        let count = tabs().len();
+
+        if count == 0 {
+            return;
+        }
+
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_add(1)
+            .and_then(|value| value.checked_rem(count))
+            .unwrap_or(0);
     }
 
     fn cycle_subtab_backwards(&mut self) {
-        let count = self.tabs().len();
+        let count = tabs().len();
 
-        self.selected_sub_tab = (self.selected_sub_tab + count - 1) % count;
-    }
+        if count == 0 {
+            return;
+        }
 
-    fn tabs(&self) -> Vec<&'static str> {
-        vec!["Info", "Go to Album", "Go to Artist"]
+        self.selected_sub_tab = self
+            .selected_sub_tab
+            .checked_sub(1)
+            .unwrap_or_else(|| count.saturating_sub(1))
+            .checked_rem(count)
+            .unwrap_or(0);
     }
+}
+
+fn tabs() -> Vec<&'static str> {
+    vec!["Info", "Go to Album", "Go to Artist"]
 }

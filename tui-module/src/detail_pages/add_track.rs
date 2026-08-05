@@ -1,5 +1,4 @@
 use controls_module::models::{PlaylistSimple, Track};
-use player_module::AppResult;
 use ratatui::{crossterm::event::KeyCode, prelude::*};
 
 use crate::{
@@ -26,7 +25,7 @@ impl AddTrackOverlay {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
-        let title = format!("Add {} to playlist", self.track.title,);
+        let title = format!("Add {} to playlist", self.track.title);
 
         let outer_block = block(Some(&title));
         let inner = outer_block.inner(area);
@@ -37,16 +36,16 @@ impl AddTrackOverlay {
             .render(inner, frame.buffer_mut(), true, favorites.playlists());
     }
 
-    pub fn handle_event(&mut self, code: KeyCode) -> AppResult<Output> {
+    pub fn handle_event(&mut self, code: KeyCode) -> Output {
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.playlists.select_previous();
-                Ok(Output::Consumed)
+                Output::Consumed
             }
 
             KeyCode::Down | KeyCode::Char('j') => {
                 self.playlists.select_next();
-                Ok(Output::Consumed)
+                Output::Consumed
             }
 
             KeyCode::Enter => {
@@ -57,18 +56,17 @@ impl AddTrackOverlay {
                     .map(|playlist| playlist.id);
 
                 match playlist_id {
-                    Some(playlist_id) => Ok(Output::AddTrackToPlaylistAndPopOverlay((
-                        self.track.id,
-                        playlist_id,
-                    ))),
+                    Some(playlist_id) => {
+                        Output::AddTrackToPlaylistAndPopOverlay((self.track.id, playlist_id))
+                    }
 
-                    None => Ok(Output::Consumed),
+                    None => Output::Consumed,
                 }
             }
 
-            KeyCode::Esc => Ok(Output::PopOverlay),
+            KeyCode::Esc => Output::PopOverlay,
 
-            _ => Ok(Output::Consumed),
+            _ => Output::Consumed,
         }
     }
 }

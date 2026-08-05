@@ -103,7 +103,7 @@ async fn login(
         Some(secret) => {
             if secret == parameters.secret {
                 return (set_auth_cookie(jar, secret), response);
-            };
+            }
         }
     }
 

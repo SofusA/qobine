@@ -1,6 +1,6 @@
 use tokio::sync::broadcast::{self, Receiver, Sender};
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum Notification {
     Error(String),
     Warning(String),
@@ -15,22 +15,22 @@ pub struct NotificationBroadcast {
 }
 
 impl NotificationBroadcast {
+    #[must_use]
     pub fn new() -> Self {
         let (tx, rx) = broadcast::channel(20);
         Self { tx, rx }
     }
 
     pub fn send(&self, notification: Notification) {
-        self.tx.send(notification).expect("infallible");
+        _ = self.tx.send(notification);
     }
 
     pub fn send_error(&self, message: String) {
         tracing::error!(message);
-        self.tx
-            .send(Notification::Error(message))
-            .expect("infallible");
+        _ = self.tx.send(Notification::Error(message));
     }
 
+    #[must_use]
     pub fn subscribe(&self) -> Receiver<Notification> {
         self.rx.resubscribe()
     }

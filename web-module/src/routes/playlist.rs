@@ -8,7 +8,7 @@ use axum::{
 };
 use axum_extra::extract::Form;
 use controls_module::tracklist::PlayingEntity;
-use player_module::{database::ReferenceType, error::Error, notification::Notification};
+use player_module::{database::ReferenceType, error::PlayerError, notification::Notification};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -58,7 +58,7 @@ async fn action(
             let tracks = playlist.tracks;
 
             state.controls.add_tracks_to_queue(tracks);
-            Ok(state.send_toast(Notification::Success(format!(
+            Ok(state.send_toast(&Notification::Success(format!(
                 "{} added to queue",
                 playlist.title
             ))))
@@ -68,7 +68,7 @@ async fn action(
             let tracks = playlist.tracks;
 
             state.controls.play_tracks_next(tracks);
-            Ok(state.send_toast(Notification::Success(format!(
+            Ok(state.send_toast(&Notification::Success(format!(
                 "Playing {} next",
                 playlist.title
             ))))
@@ -77,27 +77,33 @@ async fn action(
 }
 
 #[derive(Deserialize)]
-struct ModifyTrackParameters {
-    track_id: u64,
+struct AddTrackParameters {
+    track_id: u32,
     playlist_id: u32,
 }
 
 async fn add_track_to_playlist_action(
     State(state): State<Arc<AppState>>,
-    Form(req): Form<ModifyTrackParameters>,
+    Form(req): Form<AddTrackParameters>,
 ) -> ResponseResult {
     let res = state
         .client
-        .playlist_add_track(req.playlist_id, &[req.track_id as u32])
+        .playlist_add_track(req.playlist_id, &[req.track_id])
         .await;
     let res = ok_or_send_error_toast(&state, res)?;
 
-    Ok(state.send_toast(Notification::Success(format!("Added to {}", res.title))))
+    Ok(state.send_toast(&Notification::Success(format!("Added to {}", res.title))))
+}
+
+#[derive(Deserialize)]
+struct RemoveTrackParameters {
+    track_id: u64,
+    playlist_id: u32,
 }
 
 async fn remove_track_from_playlist_action(
     State(state): State<Arc<AppState>>,
-    Form(req): Form<ModifyTrackParameters>,
+    Form(req): Form<RemoveTrackParameters>,
 ) -> ResponseResult {
     let res = state
         .client
@@ -128,12 +134,12 @@ async fn reorder_tracks(
     let moved_track = playlist
         .tracks
         .get(moved_output.moved_index)
-        .ok_or(Error::PlaylistReorderError);
+        .ok_or(PlayerError::PlaylistReorderError);
     let moved_track = ok_or_send_error_toast(&state, moved_track)?;
 
     let moved_track_playlist_id = moved_track
         .playlist_track_id
-        .ok_or(Error::PlaylistReorderError);
+        .ok_or(PlayerError::PlaylistReorderError);
     let moved_track_playlist_id = ok_or_send_error_toast(&state, moved_track_playlist_id)?;
 
     let res = state
@@ -263,7 +269,7 @@ async fn content(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> Res
     let click_string = format!("/playlist/{}/play/", playlist.id);
 
     let playing_entity = &state.tracklist_receiver.borrow().current_playing_entity();
-    let playing_index = index_if_playlist(playing_entity, id);
+    let playing_index = index_if_playlist(playing_entity.as_ref(), id);
 
     Ok(state.render(
         "playlist.html",
@@ -284,7 +290,7 @@ async fn tracks_partial(State(state): State<Arc<AppState>>, Path(id): Path<u32>)
     let click_string = format!("/playlist/{}/play/", playlist.id);
 
     let playing_entity = &state.tracklist_receiver.borrow().current_playing_entity();
-    let playing_index = index_if_playlist(playing_entity, id);
+    let playing_index = index_if_playlist(playing_entity.as_ref(), id);
 
     Ok(state.render(
         "playlist-tracks.html",
@@ -297,15 +303,16 @@ async fn tracks_partial(State(state): State<Arc<AppState>>, Path(id): Path<u32>)
     ))
 }
 
-fn index_if_playlist(playing_entity: &Option<PlayingEntity>, playlist_id: u32) -> Option<usize> {
+fn index_if_playlist(playing_entity: Option<&PlayingEntity>, playlist_id: u32) -> Option<usize> {
     playing_entity.as_ref().and_then(|x| match x {
         PlayingEntity::Playlist(playing_playlist) => {
-            match playing_playlist.playlist_id == playlist_id {
-                true => Some(playing_playlist.index),
-                false => None,
+            if playing_playlist.playlist_id == playlist_id {
+                Some(playing_playlist.index)
+            } else {
+                None
             }
         }
-        _ => None,
+        PlayingEntity::Track(_) => None,
     })
 }
 
@@ -330,41 +337,44 @@ struct MovedIndexOutput {
 }
 
 fn moved_index(perm: &[usize]) -> Option<MovedIndexOutput> {
-    if perm.iter().enumerate().all(|(i, &v)| i == v) {
-        return None;
-    }
+    let mut moved: Option<(usize, usize)> = None;
 
-    let n = perm.len();
-    let mut inv = vec![0; n];
-    for (new_pos, &old_idx) in perm.iter().enumerate() {
-        inv[old_idx] = new_pos;
-    }
-    let mut moved = None;
-    for old_idx in 0..n {
-        let disp = inv[old_idx] as i64 - old_idx as i64;
-        let ad = disp.abs();
-        let better = match moved {
-            None => true,
-            Some(m) => {
-                let cur = inv[m] as i64 - m as i64;
-                ad > cur.abs() || (ad == cur.abs() && disp > 0 && cur <= 0)
-            }
-        };
+    for (new_pos, old_idx) in perm.iter().copied().enumerate() {
+        if new_pos == old_idx {
+            continue;
+        }
+
+        let displacement = new_pos.abs_diff(old_idx);
+        let moved_right = new_pos > old_idx;
+
+        let better = moved.is_none_or(|(current_pos, current_idx)| {
+            let current_displacement = current_pos.abs_diff(current_idx);
+            let current_moved_right = current_pos > current_idx;
+
+            displacement > current_displacement
+                || (displacement == current_displacement && moved_right && !current_moved_right)
+        });
+
         if better {
-            moved = Some(old_idx);
+            moved = Some((new_pos, old_idx));
         }
     }
-    let m = moved.unwrap();
-    let p = inv[m];
 
-    let insert_before = if p + 1 < n { perm[p + 1] } else { n };
+    let (new_pos, moved_index) = moved?;
+
+    let insert_before = new_pos
+        .checked_add(1)
+        .and_then(|position| perm.get(position))
+        .copied()
+        .unwrap_or(perm.len());
 
     Some(MovedIndexOutput {
-        moved_index: m,
+        moved_index,
         insert_before,
     })
 }
 
+#[allow(clippy::unwrap_used)]
 #[cfg(test)]
 mod test {
     use super::*;

@@ -6,7 +6,8 @@ use controls_module::{
     tracklist::Tracklist,
 };
 
-use player_module::{AppResult, AudioQuality, error::Error};
+use num_traits::ToPrimitive;
+use player_module::{AppResult, AudioQuality, error::PlayerError};
 use qonductor::{
     ActivationState, BufferState, Command, DeviceConfig, DeviceSession, Notification, PlayingState,
     SessionEvent, SessionManager,
@@ -23,7 +24,6 @@ struct ConnectState {
     connected: bool,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn init(
     app_id: &str,
     connect_name: String,
@@ -50,16 +50,12 @@ pub async fn init(
     connect_state
         .run(app_id, connect_name, connect_port)
         .await
-        .map_err(map_err)?;
+        .map_err(|x| map_err(&x))?;
 
     Ok(())
 }
 
-fn current_state(
-    status: &Status,
-    position: &Duration,
-    tracklist: &Tracklist,
-) -> QueueRendererState {
+fn current_state(status: Status, position: &Duration, tracklist: &Tracklist) -> QueueRendererState {
     let mut response_state = msg::QueueRendererState::default();
 
     let current_state = match status {
@@ -72,8 +68,12 @@ fn current_state(
         Status::Buffering => BufferState::Buffering,
     };
 
-    response_state.current_queue_item_id = tracklist.current_queue_id().map(|x| x as i32);
-    response_state.next_queue_item_id = tracklist.next_track_queue_id().map(|x| x as i32);
+    response_state.current_queue_item_id = tracklist
+        .current_queue_id()
+        .and_then(|x| i32::try_from(x).ok());
+    response_state.next_queue_item_id = tracklist
+        .next_track_queue_id()
+        .and_then(|x| i32::try_from(x).ok());
 
     response_state.set_playing_state(current_state);
     response_state.set_buffer_state(buffering_state);
@@ -81,21 +81,23 @@ fn current_state(
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .ok()
-        .map(|x| x.as_millis() as u64);
+        .and_then(|x| u64::try_from(x.as_millis()).ok());
 
-    let position = Some(position.as_millis() as u32);
+    let position = u32::try_from(position.as_millis()).ok();
     response_state.current_position = Some(Position {
         timestamp,
         value: position,
     });
 
-    let current_duration_ms = tracklist.current_track().map(|x| x.duration_seconds * 1000);
+    let current_duration_ms = tracklist
+        .current_track()
+        .map(|x| x.duration_seconds.saturating_mul(1000));
     response_state.duration = current_duration_ms;
 
     response_state
 }
 
-fn convert_audio_quality(max_audio_quality: AudioQuality) -> i32 {
+const fn convert_audio_quality(max_audio_quality: AudioQuality) -> i32 {
     match max_audio_quality {
         AudioQuality::Mp3 => 1,
         AudioQuality::CD => 2,
@@ -105,7 +107,7 @@ fn convert_audio_quality(max_audio_quality: AudioQuality) -> i32 {
 }
 
 fn convert_volume(volume: f32) -> u32 {
-    ((volume * 100.0) as u32).clamp(0, 100)
+    (volume * 100.0).clamp(0.0, 100.0).to_u32().unwrap_or(0)
 }
 
 impl ConnectState {
@@ -120,7 +122,7 @@ impl ConnectState {
         let status = { *self.status_receiver.borrow() };
         let tracklist = self.tracklist_receiver.borrow().clone();
 
-        let new_state = current_state(&status, &position, &tracklist);
+        let new_state = current_state(status, &position, &tracklist);
 
         session.report_state(new_state).await?;
         Ok(())
@@ -136,7 +138,7 @@ impl ConnectState {
             *position
         };
         let status = { *self.status_receiver.borrow() };
-        let new_state = current_state(&status, &position, &tracklist);
+        let new_state = current_state(status, &position, &tracklist);
 
         tracing::info!("Updating current state after tracklist change");
         session.report_state(new_state).await?;
@@ -163,7 +165,7 @@ impl ConnectState {
         };
         let status = { *self.status_receiver.borrow_and_update() };
         let tracklist = self.tracklist_receiver.borrow().clone();
-        let new_state = current_state(&status, &position, &tracklist);
+        let new_state = current_state(status, &position, &tracklist);
         session.report_state(new_state).await?;
         Ok(())
     }
@@ -185,16 +187,16 @@ impl ConnectState {
                 Some(event) = session.recv() => {
                     self.handle_event(event);
                 }
-                Ok(_) = self.position_receiver.changed() => {
+                Ok(()) = self.position_receiver.changed() => {
                     self.handle_position_changed(&session).await?;
                 },
-                Ok(_) = self.tracklist_receiver.changed() => {
+                Ok(()) = self.tracklist_receiver.changed() => {
                     self.handle_tracklist_changed(&session).await?;
                 },
-                Ok(_) = self.volume_receiver.changed() => {
+                Ok(()) = self.volume_receiver.changed() => {
                     self.handle_volume_changed(&session).await?;
                 }
-                Ok(_) = self.status_receiver.changed() => {
+                Ok(()) = self.status_receiver.changed() => {
                     self.handle_status_changed(&session).await?;
                 }
             }
@@ -219,7 +221,7 @@ impl ConnectState {
                         PlayingState::Unknown => {
                             // don't change current playing state, used for seeking
                         }
-                    };
+                    }
 
                     let position = cmd
                         .current_position
@@ -235,14 +237,14 @@ impl ConnectState {
                     let tracklist_position = cmd
                         .current_queue_item
                         .map(|x| x.queue_item_id)
-                        .map(|x| x as usize);
+                        .and_then(|x| usize::try_from(x).ok());
 
                     if let Some(tracklist_position) = tracklist_position
                         && let Some(current_queue_id) = current_queue_id
-                        && current_queue_id != tracklist_position as u64
+                        && Some(current_queue_id) != u64::try_from(tracklist_position).ok()
                     {
                         self.controls.skip_to_position(tracklist_position, true);
-                    };
+                    }
 
                     respond.send(response);
                 }
@@ -250,10 +252,10 @@ impl ConnectState {
                     tracing::info!("Device activated!");
 
                     let current_volume = convert_volume(*self.volume_receiver.borrow());
-                    let status = self.status_receiver.borrow();
                     let position = self.position_receiver.borrow();
                     let tracklist = self.tracklist_receiver.borrow();
-                    let response = current_state(&status, &position, &tracklist);
+                    let response =
+                        current_state(*self.status_receiver.borrow(), &position, &tracklist);
 
                     respond.send(ActivationState {
                         muted: false,
@@ -263,16 +265,18 @@ impl ConnectState {
                     });
                 }
                 Command::SetVolume { cmd, respond } => {
-                    let volume = cmd.volume;
+                    let volume = cmd.volume.and_then(|x| x.to_f32());
                     tracing::info!("Volume command received: {:?}", volume);
 
-                    let current_volume = convert_volume(*self.volume_receiver.borrow());
+                    let current_volume = *self.volume_receiver.borrow() * 100.0;
 
                     if let Some(volume) = volume
-                        && volume != current_volume
+                        && (volume - current_volume).abs() > 1.0
                     {
-                        self.controls.set_volume(volume as f32 / 100.0);
+                        self.controls.set_volume(volume / 100.0);
                     }
+
+                    let volume = volume.and_then(|x| x.to_u32());
 
                     respond.send(VolumeChanged { volume });
                 }
@@ -282,7 +286,7 @@ impl ConnectState {
                     let tracklist = self.tracklist_receiver.borrow();
                     let response = match *status {
                         Status::Playing | Status::Buffering => {
-                            Some(current_state(&status, &position, &tracklist))
+                            Some(current_state(*status, &position, &tracklist))
                         }
                         Status::Paused => None,
                     };
@@ -294,7 +298,7 @@ impl ConnectState {
             SessionEvent::Notification(n) => match n {
                 Notification::Connected => {
                     self.connected = true;
-                    tracing::info!("Connected!")
+                    tracing::info!("Connected!");
                 }
                 Notification::DeviceRegistered { renderer_id, .. } => {
                     tracing::info!("Ignoring device registered as renderer {}", renderer_id);
@@ -328,7 +332,7 @@ impl ConnectState {
                         })
                         .collect();
 
-                    let start_index = queue.queue_position.map(|x| x as usize);
+                    let start_index = queue.queue_position.and_then(|x| usize::try_from(x).ok());
                     self.controls.new_queue(queue_items, false, start_index);
 
                     self.controls.play();
@@ -348,16 +352,7 @@ impl ConnectState {
                     tracing::info!("Queue tracks reordered: {:?}", reordered);
                 }
                 Notification::VolumeChanged(volume) => {
-                    let volume = volume.volume;
-                    tracing::info!("Volume received: {:?}", volume);
-
-                    let current_volume = convert_volume(*self.volume_receiver.borrow());
-
-                    if let Some(volume) = volume
-                        && volume != current_volume
-                    {
-                        self.controls.set_volume(volume as f32 / 100.0);
-                    }
+                    tracing::info!("Volume changed: {:?}", volume);
                 }
                 Notification::AutoplayModeSet(_) => {
                     tracing::info!("Error. Autoplay not supported");
@@ -419,8 +414,8 @@ impl ConnectState {
     }
 }
 
-fn map_err(err: qonductor::Error) -> Error {
-    Error::ConnectError {
+fn map_err(err: &qonductor::Error) -> PlayerError {
+    PlayerError::ConnectError {
         error: err.to_string(),
     }
 }

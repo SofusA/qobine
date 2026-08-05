@@ -25,7 +25,6 @@ use std::{
 use tokio::sync::{RwLock, broadcast};
 use tokio_stream::wrappers::{BroadcastStream, errors::BroadcastStreamRecvError};
 use tower_http::limit::RequestBodyLimitLayer;
-use tracing::info;
 
 const MAX_ID_LEN: usize = 20;
 const MAX_GROUP_COUNT: usize = 1_000;
@@ -93,16 +92,22 @@ async fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    info!("listening on {}", addr);
+    tracing::info!("listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let Ok(listener) = tokio::net::TcpListener::bind(addr).await else {
+        tracing::error!("Unable to bind to address: {addr}");
+        return;
+    };
+
+    let Ok(()) = axum::serve(listener, app).await else {
+        return;
+    };
 }
 
 fn sanitize_id(value: &str) -> String {
     value
         .chars()
-        .filter(|c| c.is_ascii())
+        .filter(char::is_ascii)
         .take(MAX_ID_LEN)
         .collect()
 }
@@ -115,7 +120,7 @@ fn sanitize_device_id(value: &str) -> String {
     sanitize_id(value)
 }
 
-fn validate_non_empty(value: &str) -> Result<(), StatusCode> {
+const fn validate_non_empty(value: &str) -> Result<(), StatusCode> {
     if value.is_empty() {
         Err(StatusCode::BAD_REQUEST)
     } else {
@@ -123,13 +128,13 @@ fn validate_non_empty(value: &str) -> Result<(), StatusCode> {
     }
 }
 
-fn sanitize_auth_query(auth: AuthQuery) -> Result<String, StatusCode> {
+fn sanitize_auth_query(auth: &AuthQuery) -> Result<String, StatusCode> {
     let secret = sanitize_secret(&auth.secret);
     validate_non_empty(&secret)?;
     Ok(secret)
 }
 
-fn sanitize_stream_query(query: StreamQuery) -> Result<(String, String), StatusCode> {
+fn sanitize_stream_query(query: &StreamQuery) -> Result<(String, String), StatusCode> {
     let secret = sanitize_secret(&query.secret);
     let device_id = sanitize_device_id(&query.device_id);
 
@@ -139,7 +144,7 @@ fn sanitize_stream_query(query: StreamQuery) -> Result<(String, String), StatusC
     Ok((secret, device_id))
 }
 
-fn sanitize_device_request(req: DeviceRequest) -> Result<String, StatusCode> {
+fn sanitize_device_request(req: &DeviceRequest) -> Result<String, StatusCode> {
     let device_id = sanitize_device_id(&req.device_id);
     validate_non_empty(&device_id)?;
     Ok(device_id)
@@ -165,24 +170,22 @@ async fn rate_limit_middleware(
     let key = rate_limit_key_from_uri(req.uri());
     let now = Instant::now();
 
-    {
-        let mut rate_limits = state.rate_limits.write().await;
-        let timestamps = rate_limits.entry(key).or_default();
+    let mut rate_limits = state.rate_limits.write().await;
+    let timestamps = rate_limits.entry(key).or_default();
 
-        while let Some(oldest) = timestamps.front() {
-            if now.duration_since(*oldest) > RATE_LIMIT_WINDOW {
-                timestamps.pop_front();
-            } else {
-                break;
-            }
+    while let Some(oldest) = timestamps.front() {
+        if now.duration_since(*oldest) > RATE_LIMIT_WINDOW {
+            timestamps.pop_front();
+        } else {
+            break;
         }
-
-        if timestamps.len() >= RATE_LIMIT_MAX_REQUESTS {
-            return StatusCode::TOO_MANY_REQUESTS.into_response();
-        }
-
-        timestamps.push_back(now);
     }
+
+    if timestamps.len() >= RATE_LIMIT_MAX_REQUESTS {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+
+    timestamps.push_back(now);
 
     next.run(req).await
 }
@@ -192,15 +195,14 @@ async fn is_active_device(state: &AppState, secret: &str, device_id: &str) -> bo
 
     groups
         .get(secret)
-        .map(|g| g.active_device == device_id)
-        .unwrap_or(false)
+        .is_some_and(|g| g.active_device == device_id)
 }
 
 async fn get_state(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
 ) -> Result<Json<DisconnectState>, StatusCode> {
-    let secret = sanitize_auth_query(auth)?;
+    let secret = sanitize_auth_query(&auth)?;
 
     let groups = state.groups.read().await;
 
@@ -225,11 +227,11 @@ async fn control(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<ControlCommand>,
 ) -> Result<StatusCode, StatusCode> {
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if is_active_device(&state, &secret, &device_id).await {
-        info!("control blocked. Active device cannot control over Disconnect");
+        tracing::info!("control blocked. Active device cannot control over Disconnect");
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -237,7 +239,7 @@ async fn control(
 
     let group = groups.get(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    info!("control: {:?}", req);
+    tracing::info!("control: {:?}", req);
 
     let _ = group.tx.send(DisconnectServerEvent::Control(req));
 
@@ -249,8 +251,8 @@ async fn set_active_device(
     Query(auth): Query<AuthQuery>,
     Json(req): Json<DeviceRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(req)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&req)?;
 
     let mut groups = state.groups.write().await;
 
@@ -264,9 +266,9 @@ async fn set_active_device(
         return Ok(StatusCode::OK);
     }
 
-    info!("new active device {}", device_id);
+    tracing::info!("new active device {}", device_id);
 
-    group.active_device = device_id.clone();
+    group.active_device.clone_from(&device_id);
 
     let _ = group
         .tx
@@ -281,10 +283,10 @@ async fn set_tracklist(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<Tracklist>,
 ) -> Result<StatusCode, StatusCode> {
-    info!("New set tracklist request");
+    tracing::info!("New set tracklist request");
 
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if !is_active_device(&state, &secret, &device_id).await {
         return Err(StatusCode::FORBIDDEN);
@@ -296,7 +298,7 @@ async fn set_tracklist(
 
     group.tracklist = req.clone();
 
-    info!("tracklist {:?}", req);
+    tracing::info!("tracklist {:?}", req);
 
     let _ = group.tx.send(DisconnectServerEvent::Tracklist(req));
 
@@ -309,10 +311,10 @@ async fn set_status(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<Status>,
 ) -> Result<StatusCode, StatusCode> {
-    info!("New set status request");
+    tracing::info!("New set status request");
 
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if !is_active_device(&state, &secret, &device_id).await {
         return Err(StatusCode::FORBIDDEN);
@@ -326,7 +328,7 @@ async fn set_status(
 
     let _ = group.tx.send(DisconnectServerEvent::Status(req));
 
-    info!("Status updated {:?}", req);
+    tracing::info!("Status updated {:?}", req);
 
     Ok(StatusCode::OK)
 }
@@ -337,8 +339,8 @@ async fn set_position(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<Duration>,
 ) -> Result<StatusCode, StatusCode> {
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if !is_active_device(&state, &secret, &device_id).await {
         return Err(StatusCode::FORBIDDEN);
@@ -352,7 +354,7 @@ async fn set_position(
 
     let _ = group.tx.send(DisconnectServerEvent::Position(req));
 
-    info!("Position updated {:?}", req);
+    tracing::info!("Position updated {:?}", req);
 
     Ok(StatusCode::OK)
 }
@@ -363,10 +365,10 @@ async fn set_volume(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<f32>,
 ) -> Result<StatusCode, StatusCode> {
-    info!("New set volume request");
+    tracing::info!("New set volume request");
 
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if !req.is_finite() || !(0.0..=1.0).contains(&req) {
         return Err(StatusCode::BAD_REQUEST);
@@ -384,7 +386,7 @@ async fn set_volume(
 
     let _ = group.tx.send(DisconnectServerEvent::Volume(req));
 
-    info!("Volume updated {:?}", req);
+    tracing::info!("Volume updated {:?}", req);
 
     Ok(StatusCode::OK)
 }
@@ -395,10 +397,10 @@ async fn set_auto_play(
     Query(device): Query<DeviceRequest>,
     Json(req): Json<bool>,
 ) -> Result<StatusCode, StatusCode> {
-    info!("New set autoplay request");
+    tracing::info!("New set autoplay request");
 
-    let secret = sanitize_auth_query(auth)?;
-    let device_id = sanitize_device_request(device)?;
+    let secret = sanitize_auth_query(&auth)?;
+    let device_id = sanitize_device_request(&device)?;
 
     if !is_active_device(&state, &secret, &device_id).await {
         return Err(StatusCode::FORBIDDEN);
@@ -412,7 +414,7 @@ async fn set_auto_play(
 
     let _ = group.tx.send(DisconnectServerEvent::AutoPlay(req));
 
-    info!("auto_play updated {:?}", req);
+    tracing::info!("auto_play updated {:?}", req);
 
     Ok(StatusCode::OK)
 }
@@ -441,13 +443,13 @@ impl Drop for Guard {
                     groups.remove(&secret);
                 } else {
                     if group.active_device == device
-                        && let Some(new_active) = group.streams.iter().next().cloned()
+                        && let Some(new_active) = group.streams.iter().next()
                     {
-                        group.active_device = new_active.clone();
+                        group.active_device.clone_from(new_active);
 
                         let _ = group
                             .tx
-                            .send(DisconnectServerEvent::ActiveDevice(new_active));
+                            .send(DisconnectServerEvent::ActiveDevice(new_active.clone()));
                     }
 
                     let devices: Vec<String> = group.streams.iter().cloned().collect();
@@ -467,7 +469,7 @@ async fn stream_handler(
     State(state): State<AppState>,
     Query(query): Query<StreamQuery>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    let (secret, device_id) = sanitize_stream_query(query)?;
+    let (secret, device_id) = sanitize_stream_query(&query)?;
 
     let rx = {
         let mut groups = state.groups.write().await;
@@ -485,9 +487,9 @@ async fn stream_handler(
                 streams,
                 tx,
                 active_device: device_id.clone(),
-                tracklist: Default::default(),
-                playback_status: Default::default(),
-                position: Default::default(),
+                tracklist: Tracklist::default(),
+                playback_status: Status::default(),
+                position: Duration::default(),
                 volume: 1.0,
                 auto_play: false,
             }
@@ -500,7 +502,7 @@ async fn stream_handler(
         group.streams.insert(device_id.clone());
 
         if group.active_device.is_empty() {
-            group.active_device = device_id.clone();
+            group.active_device.clone_from(&device_id);
         }
 
         let rx = group.tx.subscribe();
@@ -546,18 +548,14 @@ async fn map_event(
     device: &str,
     msg: Result<DisconnectServerEvent, BroadcastStreamRecvError>,
 ) -> Option<Result<Event, Infallible>> {
-    let change = match msg {
-        Ok(change) => change,
-        Err(_) => return None,
-    };
+    let Ok(change) = msg else { return None };
 
     let is_active_device = {
         let groups = state.groups.read().await;
 
         groups
             .get(secret)
-            .map(|g| g.active_device == device)
-            .unwrap_or(false)
+            .is_some_and(|g| g.active_device == device)
     };
 
     let should_send = match &change {
@@ -576,7 +574,9 @@ async fn map_event(
         return None;
     }
 
-    let json = serde_json::to_string(&change).unwrap();
+    let Ok(json) = serde_json::to_string(&change) else {
+        return None;
+    };
 
     Some(Ok(Event::default().data(json)))
 }

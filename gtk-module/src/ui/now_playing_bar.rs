@@ -4,10 +4,12 @@ use std::{
     time::Duration,
 };
 
+use adw::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
-use adw::prelude::*;
+use num_traits::ToPrimitive;
+
 use controls_module::{
     Status,
     controls::Controls,
@@ -121,10 +123,10 @@ impl NowPlayingBar {
         connect_button.set_popover(Some(&connect_popover));
 
         connect_popover.connect_show({
-            let connect_list = connect_list.clone();
+            let connect_list = connect_list;
             let available_devices = available_devices.clone();
             let active_device = active_device.clone();
-            let sender = set_connect_active_device.clone();
+            let sender = set_connect_active_device;
             let popover = connect_popover.clone();
 
             move |_| {
@@ -152,8 +154,7 @@ impl NowPlayingBar {
                     let row_popover = popover.clone();
 
                     row.connect_activated(move |_| {
-                        *row_active_device.borrow_mut() = row_device.clone();
-
+                        row_active_device.borrow_mut().clone_from(&row_device);
                         let _ = row_sender.send(row_device.clone());
 
                         row_popover.popdown();
@@ -180,7 +181,7 @@ impl NowPlayingBar {
             .build();
 
         volume_scale.set_range(0.0, 1.0);
-        volume_scale.set_value(volume as f64);
+        volume_scale.set_value(f64::from(volume));
 
         volume_scale.connect_value_changed({
             let volume_button = volume_button.clone();
@@ -188,10 +189,10 @@ impl NowPlayingBar {
             let updating = setting_volume_from_backend.clone();
 
             move |scale| {
-                let value = scale.value();
+                let value = scale.value().to_f32().unwrap_or(1.0);
 
                 if !updating.get() {
-                    controls.set_volume(value as f32);
+                    controls.set_volume(value);
                 }
 
                 let icon = if value <= 0.0 {
@@ -284,9 +285,12 @@ impl NowPlayingBar {
             .valign(gtk::Align::Center)
             .build();
 
-        let controls_seek = controls.clone();
+        let controls_seek = controls;
         progress_scale.connect_change_value(move |_, _, value| {
-            controls_seek.seek(Duration::from_millis(value as u64));
+            if let Some(value) = value.to_u64() {
+                controls_seek.seek(Duration::from_millis(value));
+            }
+
             glib::Propagation::Stop
         });
 
@@ -369,7 +373,7 @@ impl NowPlayingBar {
             .vexpand(false)
             .build();
 
-        NowPlayingBar {
+        Self {
             revealer,
             track_title_label: title_label,
             subtitle_box,
@@ -390,7 +394,7 @@ impl NowPlayingBar {
     }
 
     pub fn set_volume(&self, volume: f32) {
-        let volume = volume.clamp(0.0, 1.0) as f64;
+        let volume = f64::from(volume.clamp(0.0, 1.0));
 
         if (self.volume_scale.value() - volume).abs() < 0.001 {
             return;
@@ -405,7 +409,7 @@ impl NowPlayingBar {
         let has_devices = !available_devices.is_empty();
 
         *self.available_devices.borrow_mut() = available_devices;
-        *self.active_device.borrow_mut() = active_device.clone();
+        *self.active_device.borrow_mut() = active_device;
 
         self.connect_button.set_visible(has_devices);
     }
@@ -447,7 +451,7 @@ impl NowPlayingBar {
                 let id = album.id.clone();
 
                 let button = clickable_tile(&label.upcast(), move || {
-                    on_open(AlbumHeaderInfo { id: id.clone() })
+                    on_open(AlbumHeaderInfo { id: id.clone() });
                 });
                 self.subtitle_box.append(&button);
 
@@ -457,7 +461,7 @@ impl NowPlayingBar {
                     let on_open = self.on_open_artist.clone();
 
                     let button = clickable_tile(&label.upcast(), move || {
-                        on_open(ArtistHeaderInfo { id: artist_id })
+                        on_open(ArtistHeaderInfo { id: artist_id });
                     });
                     self.subtitle_box.append(&button);
                 }
@@ -519,7 +523,7 @@ impl NowPlayingBar {
         }
 
         self.progress_scale
-            .set_range(0.0, (track.duration_seconds * 1000) as f64);
+            .set_range(0.0, f64::from(track.duration_seconds.saturating_mul(1000)));
         self.progress_total_label
             .set_text(&format_time(track.duration_seconds));
 
@@ -529,13 +533,17 @@ impl NowPlayingBar {
     }
 
     pub fn update_progress(&self, position: &Duration) {
-        animate_scale_to(&self.progress_scale, position.as_millis() as f64, 120);
+        if let Some(position_ms) = position.as_millis().to_f64() {
+            animate_scale_to(&self.progress_scale, position_ms, 120);
+        }
 
-        self.progress_current_label
-            .set_text(&format_time(position.as_secs() as u32));
+        if let Some(position_s) = position.as_secs().to_u32() {
+            self.progress_current_label
+                .set_text(&format_time(position_s));
+        }
     }
 
-    pub fn update_now_playing_button_icon(&self, status: &Status) {
+    pub fn update_now_playing_button_icon(&self, status: Status) {
         match status {
             Status::Playing => self
                 .play_button
@@ -556,17 +564,20 @@ fn animate_scale_to(scale: &gtk::Scale, target: f64, duration_ms: u32) {
     let start_time = std::time::Instant::now();
 
     scale.add_tick_callback(move |_, _| {
-        let elapsed = start_time.elapsed().as_millis() as u32;
-        let t = (elapsed as f64 / duration_ms as f64).min(1.0);
+        if let Some(elapsed) = start_time.elapsed().as_millis().to_u32() {
+            let t = (f64::from(elapsed) / f64::from(duration_ms)).min(1.0);
 
-        let eased = 1.0 - (1.0 - t).powi(3);
+            let eased = 1.0 - (1.0 - t).powi(3);
 
-        adjustment.set_value(start + delta * eased);
+            adjustment.set_value(delta.mul_add(eased, start));
 
-        if t >= 1.0 {
-            gtk::glib::ControlFlow::Break
+            if t >= 1.0 {
+                gtk::glib::ControlFlow::Break
+            } else {
+                gtk::glib::ControlFlow::Continue
+            }
         } else {
-            gtk::glib::ControlFlow::Continue
+            gtk::glib::ControlFlow::Break
         }
     });
 }

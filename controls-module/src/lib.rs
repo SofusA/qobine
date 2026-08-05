@@ -14,7 +14,7 @@ pub type AutoPlayReceiver = watch::Receiver<bool>;
 pub type StatusReceiver = watch::Receiver<Status>;
 pub type TracklistReceiver = watch::Receiver<Tracklist>;
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Status {
     Playing,
     Buffering,

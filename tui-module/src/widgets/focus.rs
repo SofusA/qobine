@@ -3,7 +3,8 @@ use crate::{
     now_playing::{NowPlayingState, get_status, render_progress},
     ui::{HIGHLIGHT_TEXT_STYLE, center},
 };
-use ratatui::{layout::Flex, prelude::*, widgets::*};
+use num_traits::ToPrimitive;
+use ratatui::{layout::Flex, prelude::*, widgets::Paragraph};
 use ratatui_image::{FilterType, Resize, StatefulImage};
 use tui_big_text::{BigText, PixelSize};
 
@@ -13,9 +14,8 @@ const CHAR_HEIGHT: u16 = 2;
 
 pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut ImageManager) {
     let area = frame.area();
-    let track = match &state.playing_track {
-        Some(track) => track,
-        None => return,
+    let Some(track) = &state.playing_track else {
+        return;
     };
 
     let image = track.image.as_ref().and_then(|x| image_cache.get_mut(x));
@@ -23,27 +23,36 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
     let image_size = image.as_deref().map(|image| {
         image.protocol.size_for(
             Resize::Scale(Some(FilterType::Triangle)),
-            Size::new(area.width * 2 / 5, area.height * 9 / 10),
+            Size::new(
+                area.width
+                    .saturating_mul(2)
+                    .checked_div(5)
+                    .unwrap_or_default(),
+                area.height
+                    .saturating_mul(9)
+                    .checked_div(10)
+                    .unwrap_or_default(),
+            ),
         )
     });
 
     let info_area = match image_size {
         Some(size) => {
-            let info_width = size
-                .width
-                .max(50)
-                .min(area.width.saturating_sub(size.width + IMAGE_INFO_GAP));
+            let info_width = size.width.max(50).min(
+                area.width
+                    .saturating_sub(size.width.saturating_add(IMAGE_INFO_GAP)),
+            );
 
-            let chunks = Layout::horizontal([
+            let [image_area, info_area] = Layout::horizontal([
                 Constraint::Length(size.width),
                 Constraint::Length(info_width),
             ])
             .spacing(IMAGE_INFO_GAP)
             .flex(Flex::Center)
-            .split(area);
+            .areas(area);
 
             let image_area = center(
-                chunks[0],
+                image_area,
                 Constraint::Length(size.width),
                 Constraint::Length(size.height),
             );
@@ -57,9 +66,9 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
             }
 
             Rect {
-                x: chunks[1].x,
-                y: image_area.y + 1,
-                width: chunks[1].width,
+                x: info_area.x,
+                y: image_area.y.saturating_add(1),
+                width: info_area.width,
                 height: image_area.height.saturating_sub(2),
             }
         }
@@ -72,16 +81,35 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         .map(|entity| fit_big_text(entity, info_area.width, info_area.height.saturating_div(4)))
         .unwrap_or_default();
 
-    let entity_height = entity_lines.len() as u16 * CHAR_HEIGHT;
-    let title_budget = info_area.height.saturating_sub(entity_height + 7);
+    let entity_height = entity_lines
+        .len()
+        .to_u16()
+        .unwrap_or_default()
+        .saturating_mul(CHAR_HEIGHT);
+    let title_budget = info_area
+        .height
+        .saturating_sub(entity_height.saturating_add(7));
     let title_lines = fit_big_text(&track.title, info_area.width, title_budget);
-    let title_height = title_lines.len() as u16 * CHAR_HEIGHT;
+    let title_height = title_lines
+        .len()
+        .to_u16()
+        .unwrap_or_default()
+        .saturating_mul(CHAR_HEIGHT);
 
     let top_spacer = (info_area.height / 2)
-        .saturating_sub(entity_height + 3)
+        .saturating_sub(entity_height.saturating_add(3))
         .saturating_sub(title_height / 2);
 
-    let rows = Layout::vertical([
+    let [
+        entity_area,
+        artist_area,
+        _spacer,
+        of_area,
+        _spacer_2,
+        title_area,
+        status_area,
+        gauge_area,
+    ] = Layout::vertical([
         Constraint::Length(entity_height),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -92,7 +120,7 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         Constraint::Length(1),
         Constraint::Length(1),
     ])
-    .split(info_area);
+    .areas(info_area);
 
     if !entity_lines.is_empty() {
         frame.render_widget(
@@ -101,37 +129,37 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
                 .lines(entity_lines.iter().map(Line::raw).collect::<Vec<_>>())
                 .centered()
                 .build(),
-            rows[0],
+            entity_area,
         );
     }
 
     if let Some(artist) = &track.artist_name {
         frame.render_widget(
             Paragraph::new(format!("by {artist}")).alignment(Alignment::Center),
-            rows[1],
+            artist_area,
         );
     }
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![Span::raw(format!(
             "{} of {}",
-            state.tracklist_position + 1,
+            state.tracklist_position.saturating_add(1),
             state.tracklist_length
         ))]))
         .alignment(Alignment::Center),
-        rows[3],
+        of_area,
     );
 
     let title_width = title_lines
         .iter()
-        .map(|line| line.chars().count() as u16)
+        .map(|line| line.chars().count().to_u16().unwrap_or_default())
         .max()
         .unwrap_or_default()
         .saturating_mul(CHAR_WIDTH)
-        .min(rows[5].width);
+        .min(title_area.width);
 
     let title_area = center(
-        rows[5],
+        title_area,
         Constraint::Length(title_width),
         Constraint::Percentage(100),
     );
@@ -148,14 +176,18 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         );
     }
 
-    let status_area = center(rows[6], Constraint::Percentage(100), Constraint::Length(1));
+    let status_area = center(
+        status_area,
+        Constraint::Percentage(100),
+        Constraint::Length(1),
+    );
 
     frame.render_widget(
         Paragraph::new(get_status(state.status)).alignment(Alignment::Center),
         status_area,
     );
 
-    render_progress(frame, rows[7], state.duration_ms, track);
+    render_progress(frame, gauge_area, state.duration_ms, track);
 }
 
 fn fit_big_text(text: &str, max_width: u16, max_height: u16) -> Vec<String> {
@@ -168,8 +200,8 @@ fn fit_big_text(text: &str, max_width: u16, max_height: u16) -> Vec<String> {
 
     let mut lines = wrap_big_text(text, max_chars);
 
-    if lines.len() > max_lines as usize {
-        lines.truncate(max_lines as usize);
+    if lines.len() > max_lines.to_usize().unwrap_or_default() {
+        lines.truncate(max_lines.to_usize().unwrap_or_default());
 
         if let Some(last) = lines.last_mut() {
             *last = truncate_with_dots(last, max_chars);
@@ -184,26 +216,29 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
         return Vec::new();
     }
 
-    let max_chars = max_chars as usize;
+    let max_chars_usize = max_chars.to_usize().unwrap_or_default();
     let mut lines = Vec::new();
     let mut current = String::new();
 
     for word in text.split_whitespace() {
         let word_length = word.chars().count();
 
-        if word_length > max_chars {
+        if word_length > max_chars_usize {
             if !current.is_empty() {
                 lines.push(std::mem::take(&mut current));
             }
 
-            lines.push(truncate_with_dots(word, max_chars as u16));
+            lines.push(truncate_with_dots(word, max_chars));
             continue;
         }
 
-        let required_length =
-            current.chars().count() + usize::from(!current.is_empty()) + word_length;
+        let required_length = current
+            .chars()
+            .count()
+            .saturating_add(usize::from(!current.is_empty()))
+            .saturating_add(word_length);
 
-        if required_length > max_chars {
+        if required_length > max_chars_usize {
             lines.push(std::mem::take(&mut current));
         }
 
@@ -222,7 +257,7 @@ fn wrap_big_text(text: &str, max_chars: u16) -> Vec<String> {
 }
 
 fn truncate_with_dots(text: &str, max_chars: u16) -> String {
-    let max_chars = max_chars as usize;
+    let max_chars = max_chars.to_usize().unwrap_or_default();
 
     if max_chars == 0 {
         return String::new();
@@ -232,7 +267,7 @@ fn truncate_with_dots(text: &str, max_chars: u16) -> String {
         return ".".repeat(max_chars);
     }
 
-    let content_length = max_chars - 3;
+    let content_length = max_chars.saturating_sub(3);
     let truncated = text.chars().take(content_length).collect::<String>();
 
     format!("{truncated}...")

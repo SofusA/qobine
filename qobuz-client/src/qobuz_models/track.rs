@@ -37,7 +37,7 @@ pub struct Track {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Performer {
-    pub id: i64,
+    pub id: u32,
     pub name: String,
 }
 
@@ -62,7 +62,7 @@ pub struct SuggestTrackRequest {
 
 #[derive(Debug, Serialize)]
 pub struct SuggestTrackInput {
-    pub artist_id: Option<i64>,
+    pub artist_id: Option<u32>,
     pub genre_id: Option<u32>,
     pub label_id: Option<u32>,
     pub track_id: u32,

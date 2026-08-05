@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use image::load_from_memory;
+use num_traits::ToPrimitive;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use tokio::sync::mpsc;
 
@@ -34,7 +35,7 @@ impl ImageManager {
     pub fn new(picker: Picker, sender: mpsc::UnboundedSender<ImageLoaded>) -> Self {
         let http_client = reqwest::Client::new();
         Self {
-            cache: Default::default(),
+            cache: HashMap::default(),
             picker,
             http_client,
             tx: sender,
@@ -83,7 +84,7 @@ async fn fetch_image(
 
     tokio::task::spawn_blocking(move || {
         let image = load_from_memory(&img_bytes).ok()?;
-        let ratio = image.width() as f32 / image.height() as f32;
+        let ratio = image.width().to_f32()? / image.height().to_f32()?;
         let protocol = picker.new_resize_protocol(image);
 
         Some(AppImage { protocol, ratio })

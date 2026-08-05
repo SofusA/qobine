@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use controls_module::{
-    AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AutoPlayReceiver, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
+    VolumeReceiver,
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
@@ -14,6 +15,7 @@ mod client;
 
 pub fn spawn_disconnect(
     player: &Player,
+    exit_sender: ExitSender,
     client_config: watch::Receiver<Option<DisconnectClientConfig>>,
     available_devices_sender: watch::Sender<Vec<String>>,
     active_device_sender: watch::Sender<String>,
@@ -33,7 +35,7 @@ pub fn spawn_disconnect(
     let auto_play_receiver = player.auto_play();
 
     tokio::spawn(async move {
-        if let Err(error) = init(
+        if let Err(err) = init(
             client_config,
             controls,
             tracklist_sender,
@@ -53,8 +55,8 @@ pub fn spawn_disconnect(
         )
         .await
         {
-            eprintln!("{error}");
-            std::process::exit(1);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 }
@@ -120,11 +122,12 @@ impl DisconnectState {
                 self.active_device_sender.clone(),
             );
 
-            let mut listen_client = disconnect_client.clone();
+            let listen_client = disconnect_client.clone();
 
-            let rx = set_active_device_receiver
-                .take()
-                .expect("set_active_device_receiver missing");
+            let Some(rx) = set_active_device_receiver.take() else {
+                tracing::error!("set_active_device_receiver missing");
+                break;
+            };
 
             let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -143,7 +146,7 @@ impl DisconnectState {
 
                         result = listen_client.connect_and_listen(&mut rx) => {
                             match result {
-                                Ok(_) => {
+                                Ok(()) => {
                                     tracing::warn!(
                                         "Disconnect client disconnected, retrying in 5 seconds"
                                     );
@@ -160,7 +163,7 @@ impl DisconnectState {
 
                     tokio::select! {
                         _ = &mut stop_rx => break,
-                        _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                        () = tokio::time::sleep(Duration::from_secs(5)) => {}
                     }
                 }
 
@@ -169,7 +172,7 @@ impl DisconnectState {
 
             loop {
                 tokio::select! {
-                    Ok(_) = self.client_config.changed() => {
+                    Ok(()) = self.client_config.changed() => {
                         tracing::info!("Disconnect config changed");
 
                         let _ = stop_tx.send(());
@@ -187,33 +190,33 @@ impl DisconnectState {
                         break;
                     }
 
-                    Ok(_) = self.position_receiver.changed() => {
+                    Ok(()) = self.position_receiver.changed() => {
                         let position = *self.position_receiver.borrow_and_update();
                         let _ = disconnect_client.set_position(&position).await;
                     }
 
-                    Ok(_) = self.tracklist_receiver.changed() => {
+                    Ok(()) = self.tracklist_receiver.changed() => {
                         let tracklist =
                             self.tracklist_receiver.borrow_and_update().clone();
 
                         let _ = disconnect_client.set_tracklist(&tracklist).await;
                     }
 
-                    Ok(_) = self.status_receiver.changed() => {
+                    Ok(()) = self.status_receiver.changed() => {
                         let status =
                             *self.status_receiver.borrow_and_update();
 
                         let _ = disconnect_client.set_playback_status(&status).await;
                     }
 
-                    Ok(_) = self.volume_receiver.changed() => {
+                    Ok(()) = self.volume_receiver.changed() => {
                         let volume =
                             *self.volume_receiver.borrow_and_update();
 
                         let _ = disconnect_client.set_volume(&volume).await;
                     }
 
-                    Ok(_) = self.auto_play_receiver.changed() => {
+                    Ok(()) = self.auto_play_receiver.changed() => {
                         let auto_play =
                             *self.auto_play_receiver.borrow_and_update();
 
@@ -229,7 +232,6 @@ impl DisconnectState {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn init(
     client_config: watch::Receiver<Option<DisconnectClientConfig>>,
     controls: Controls,

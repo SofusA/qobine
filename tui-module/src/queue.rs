@@ -2,11 +2,11 @@ use controls_module::{
     controls::Controls,
     models::{Track, TrackStatus},
 };
-use player_module::{AppResult, client::Client, notification::Notification};
+use player_module::{AppResult, client::StreamClient, notification::Notification};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::*,
+    widgets::{Row, TableState},
 };
 
 use crate::{
@@ -24,7 +24,7 @@ impl QueueState {
     pub fn new(tracks: Vec<Track>) -> Self {
         Self {
             items: tracks,
-            state: Default::default(),
+            state: TableState::default(),
         }
     }
     pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
@@ -49,7 +49,7 @@ impl QueueState {
                         favorites.tracks().contains(&track.id),
                     );
 
-                    let mut spans = vec![Span::from(format!("{} ", index + 1))];
+                    let mut spans = vec![Span::from(format!("{} ", index.saturating_add(1)))];
                     spans.extend(title.spans);
                     let spans: Vec<Span> = spans
                         .into_iter()
@@ -66,18 +66,18 @@ impl QueueState {
         frame.render_stateful_widget(table, area, &mut self.state);
     }
 
-    pub fn items(&self) -> &Vec<Track> {
+    pub const fn items(&self) -> &Vec<Track> {
         &self.items
     }
 
     pub fn set_items(&mut self, items: Vec<Track>) {
-        self.items = items
+        self.items = items;
     }
 
     pub async fn handle_events(
         &mut self,
         event: Event,
-        client: &Client,
+        client: &StreamClient,
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
@@ -96,14 +96,14 @@ impl QueueState {
                         let index = self.state.selected();
 
                         if let Some(index) = index {
-                            if index == self.items().len() - 1 {
+                            if index == self.items().len().saturating_sub(1) {
                                 return Ok(Output::Consumed);
                             }
 
                             let mut order: Vec<_> =
                                 self.items().iter().enumerate().map(|x| x.0).collect();
 
-                            order.swap(index, index + 1);
+                            order.swap(index, index.saturating_add(1));
                             controls.reorder_queue(order);
                         }
                         Ok(Output::Consumed)
@@ -118,7 +118,7 @@ impl QueueState {
                             let mut order: Vec<_> =
                                 self.items().iter().enumerate().map(|x| x.0).collect();
 
-                            order.swap(index, index - 1);
+                            order.swap(index, index.saturating_sub(1));
                             controls.reorder_queue(order);
                         }
                         Ok(Output::Consumed)
