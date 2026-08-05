@@ -1,4 +1,4 @@
-use cli_module::{create_player, error_exit, spawn_clean_up_mut};
+use cli_module::{create_player, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
@@ -19,7 +19,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(&err);
+            eprintln!("{err}");
         }
     }
 }
@@ -91,6 +91,7 @@ pub async fn run() -> AppResult<()> {
 
     spawn_disconnect(
         &player,
+        exit_sender.clone(),
         config_rx,
         available_devices_tx,
         active_device_tx,
@@ -106,7 +107,7 @@ pub async fn run() -> AppResult<()> {
     let volume_receiver = player.volume();
     let database_clone = database.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(e) = gtk_module::init(
+        if let Err(err) = gtk_module::init(
             client,
             app_id,
             tracklist_receiver,
@@ -123,7 +124,8 @@ pub async fn run() -> AppResult<()> {
             set_active_device_tx,
             config_tx,
         ) {
-            error_exit(&e);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 

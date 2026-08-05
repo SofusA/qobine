@@ -86,6 +86,7 @@ pub async fn init(
         set_connect_active_device,
     );
 
+    tracing::info!("Listening on {interface}");
     axum::serve(listener, router)
         .await
         .map_err(|err| PlayerError::IoError {

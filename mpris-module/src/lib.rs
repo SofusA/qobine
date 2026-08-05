@@ -19,20 +19,21 @@ pub fn spawn_mpris(player: &Player, exit_sender: &ExitSender, mpris_name: String
     let status_receiver = player.status();
     let controls = player.controls();
     let exit_sender = exit_sender.clone();
+
     tokio::spawn(async move {
-        if let Err(error) = init(
+        if let Err(err) = init(
             position_receiver,
             tracklist_receiver,
             volume_receiver,
             status_receiver,
             controls,
-            exit_sender,
+            exit_sender.clone(),
             mpris_name,
         )
         .await
         {
-            eprintln!("{error}");
-            std::process::exit(1);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 }

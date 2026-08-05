@@ -1,4 +1,6 @@
-use controls_module::{TracklistReceiver, controls::Controls, tracklist::TracklistType};
+use controls_module::{
+    ExitSender, TracklistReceiver, controls::Controls, tracklist::TracklistType,
+};
 use player_module::{
     AppResult,
     database::{Database, ReferenceType},
@@ -23,6 +25,7 @@ pub struct RfidState {
 
 pub fn spawn_rfid(
     player: &Player,
+    exit_sender: ExitSender,
     database: Arc<Database>,
     broadcast: Arc<NotificationBroadcast>,
     connect_device_name: Option<String>,
@@ -35,7 +38,7 @@ pub fn spawn_rfid(
     let tracklist_receiver = player.tracklist();
 
     tokio::spawn(async move {
-        if let Err(error) = init(
+        if let Err(err) = init(
             state,
             tracklist_receiver,
             controls,
@@ -48,8 +51,8 @@ pub fn spawn_rfid(
         )
         .await
         {
-            eprintln!("{error}");
-            std::process::exit(1);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 }

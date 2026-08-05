@@ -91,7 +91,7 @@ todo = "warn"
 string_slice = "warn"
 panic_in_result_fn = "warn"
 panic = "warn"
-# exit = "warn"
+exit = "warn"
 as_conversions = "warn"
 dbg_macro = "warn"
 

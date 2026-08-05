@@ -1,7 +1,7 @@
 #[cfg(feature = "connect")]
 use cli_module::ConnectArgs;
 use cli_module::{
-    SharedArgs, SharedCommands, create_player, default_audio_quality, error_exit, get_client,
+    SharedArgs, SharedCommands, create_player, default_audio_quality, get_client,
     handle_shared_commands, spawn_clean_up_mut,
 };
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
@@ -35,7 +35,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(&err);
+            eprintln!("{err}");
         }
     }
 }
@@ -102,7 +102,7 @@ pub async fn run() -> AppResult<()> {
         let controls = player.controls();
 
         tokio::spawn(async move {
-            if let Err(e) = connect_module::init(
+            if let Err(err) = connect_module::init(
                 &app_id,
                 args.connect.name_args.connect_name,
                 args.connect.name_args.connect_port,
@@ -115,7 +115,7 @@ pub async fn run() -> AppResult<()> {
             )
             .await
             {
-                error_exit(e);
+                eprintln!("{err}");
             }
         });
     }
@@ -149,6 +149,7 @@ pub async fn run() -> AppResult<()> {
 
     spawn_disconnect(
         &player,
+        exit_sender.clone(),
         config_rx,
         available_devices_tx,
         active_device_tx,
@@ -156,14 +157,14 @@ pub async fn run() -> AppResult<()> {
     );
 
     tokio::spawn(async move {
-        if let Err(e) = tui_module::init(
+        if let Err(err) = tui_module::init(
             client,
             broadcast,
             controls,
             position_receiver,
             tracklist_receiver,
             status_receiver,
-            exit_sender,
+            exit_sender.clone(),
             ttl_tx,
             database,
             available_devices_rx,
@@ -173,7 +174,8 @@ pub async fn run() -> AppResult<()> {
         )
         .await
         {
-            error_exit(&e);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 

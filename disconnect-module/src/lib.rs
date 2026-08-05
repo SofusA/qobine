@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use controls_module::{
-    AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
+    AutoPlayReceiver, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
+    VolumeReceiver,
     controls::{ControlCommand, Controls},
     tracklist::Tracklist,
 };
@@ -14,6 +15,7 @@ mod client;
 
 pub fn spawn_disconnect(
     player: &Player,
+    exit_sender: ExitSender,
     client_config: watch::Receiver<Option<DisconnectClientConfig>>,
     available_devices_sender: watch::Sender<Vec<String>>,
     active_device_sender: watch::Sender<String>,
@@ -33,7 +35,7 @@ pub fn spawn_disconnect(
     let auto_play_receiver = player.auto_play();
 
     tokio::spawn(async move {
-        if let Err(error) = init(
+        if let Err(err) = init(
             client_config,
             controls,
             tracklist_sender,
@@ -53,8 +55,8 @@ pub fn spawn_disconnect(
         )
         .await
         {
-            eprintln!("{error}");
-            std::process::exit(1);
+            _ = exit_sender.send(true);
+            eprintln!("{err}");
         }
     });
 }

@@ -4,7 +4,7 @@ use cli_module::ConnectArgs;
 use cli_module::GpioArgs;
 use cli_module::{
     DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
-    default_audio_quality, error_exit, get_client, handle_shared_commands, parse_disconnect_args,
+    default_audio_quality, get_client, handle_shared_commands, parse_disconnect_args,
     spawn_clean_up,
 };
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
@@ -47,7 +47,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(&err);
+            eprintln!("{err}");
         }
     }
 }
@@ -62,7 +62,7 @@ pub async fn run() -> AppResult<()> {
         return Ok(());
     }
 
-    let (_, exit_receiver) = broadcast::channel(5);
+    let (exit_sender, exit_receiver) = broadcast::channel(5);
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
     let client = get_client(
@@ -120,14 +120,15 @@ pub async fn run() -> AppResult<()> {
         let status_receiver = player.status();
         let active_receiver = player.active();
         tokio::spawn(async move {
-            if let Err(e) = gpio_module::init(status_receiver, active_receiver).await {
-                error_exit(e.into());
+            if let Err(err) = gpio_module::init(status_receiver, active_receiver).await {
+                eprintln!("{err}");
             }
         });
     }
 
     spawn_rfid(
         &player,
+        exit_sender.clone(),
         database.clone(),
         broadcast,
         disconnect_args.as_ref().map(|x| x.device_name.clone()),
@@ -150,6 +151,7 @@ pub async fn run() -> AppResult<()> {
     ) {
         spawn_disconnect(
             &player,
+            exit_sender,
             config_rx,
             available_devices_tx,
             active_device_tx,
@@ -167,7 +169,7 @@ pub async fn run() -> AppResult<()> {
         let controls = player.controls();
 
         tokio::spawn(async move {
-            if let Err(e) = connect_module::init(
+            if let Err(err) = connect_module::init(
                 &app_id,
                 args.connect.name_args.connect_name,
                 args.connect.name_args.connect_port,
@@ -180,7 +182,7 @@ pub async fn run() -> AppResult<()> {
             )
             .await
             {
-                error_exit(e);
+                eprintln!("{err}");
             }
         });
     }

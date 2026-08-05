@@ -1,6 +1,6 @@
 use clap::{Args, Subcommand};
 use player_module::{
-    AppResult, AudioQuality, client::StreamClient, database::Database, error::PlayerError,
+    AppResult, AudioQuality, client::StreamClient, database::Database,
     notification::NotificationBroadcast, player::Player,
 };
 use std::{path::PathBuf, sync::Arc, time::Duration};
@@ -185,7 +185,8 @@ pub async fn get_client(
         StreamClient::new(Some(credentials), max_audio_quality, file_based_streaming)
     } else {
         let (client, oauth_result) =
-            StreamClient::new_with_oauth_login(max_audio_quality, file_based_streaming, headless).await?;
+            StreamClient::new_with_oauth_login(max_audio_quality, file_based_streaming, headless)
+                .await?;
 
         database.set_credentials(Some(oauth_result.into())).await?;
 
@@ -311,9 +312,4 @@ pub async fn create_player(
     )?;
 
     Ok(player)
-}
-
-pub fn error_exit(error: &PlayerError) {
-    eprintln!("{error}");
-    std::process::exit(1);
 }

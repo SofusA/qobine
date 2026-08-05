@@ -1,6 +1,6 @@
 use cli_module::{
-    DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality, error_exit,
-    get_client, handle_shared_commands, spawn_clean_up,
+    DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality, get_client,
+    handle_shared_commands, spawn_clean_up,
 };
 use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
 use std::sync::Arc;
@@ -39,7 +39,7 @@ async fn main() {
     match run().await {
         Ok(()) => {}
         Err(err) => {
-            error_exit(&err);
+            eprintln!("{err}");
         }
     }
 }
@@ -54,7 +54,7 @@ pub async fn run() -> AppResult<()> {
         return Ok(());
     }
 
-    let (_, exit_receiver) = broadcast::channel(5);
+    let (exit_sender, exit_receiver) = broadcast::channel(5);
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
     let client = get_client(
@@ -91,6 +91,7 @@ pub async fn run() -> AppResult<()> {
 
     spawn_disconnect(
         &player,
+        exit_sender,
         config_rx,
         available_devices_tx,
         active_device_sender,
