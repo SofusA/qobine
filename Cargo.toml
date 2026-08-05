@@ -27,7 +27,7 @@ description = "Music player for Qobuz"
 axum = { version = "0.8" }
 axum-extra = { version = "0.12", features = ["cookie", "form"] }
 time = "0.3"
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 rust-embed = { version = "8", features = ["axum", "tokio", "mime_guess"] }
 dirs = "6"
