@@ -171,7 +171,7 @@ pub enum AppState {
 
 impl App {
     pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        let mut notification_tick_interval = time::interval(Duration::from_millis(2000));
+        let mut notification_tick_interval = time::interval(Duration::from_secs(2));
         let mut receiver = self.broadcast.subscribe();
         let mut event_stream = EventStream::new();
 
@@ -317,8 +317,7 @@ impl App {
                         .database
                         .get_configuration()
                         .await
-                        .map(|x| x.enable_disconnect)
-                        .unwrap_or(false);
+                        .is_ok_and(|x| x.enable_disconnect);
 
                     if enable_connect {
                         self.state = AppState::ConnectOverlay(0);

@@ -25,7 +25,7 @@ impl AddTrackOverlay {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
-        let title = format!("Add {} to playlist", self.track.title,);
+        let title = format!("Add {} to playlist", self.track.title);
 
         let outer_block = block(Some(&title));
         let inner = outer_block.inner(area);

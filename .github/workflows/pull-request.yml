@@ -87,6 +87,18 @@ jobs:
       - name: Test 
         run: cargo test --workspace --exclude qobuz-client --exclude gtk-module
 
+      - name: Clippy
+        if: startsWith(matrix.os, 'ubuntu')
+        run: cargo clippy --workspace --features gpio,connect --exclude gtk-module -- -D warnings
+
+      - name: Clippy
+        if: startsWith(matrix.os, 'windows')
+        run: cargo clippy --workspace --features connect --exclude gtk-module -- -D warnings
+
+      - name: Clippy
+        if: startsWith(matrix.os, 'mac')
+        run: cargo clippy --workspace --features connect --exclude gtk-module -- -D warnings
+
       - name: Build optional features
         if: startsWith(matrix.os, 'ubuntu')
         run: cargo build --workspace --features gpio,connect --exclude gtk-module

@@ -556,7 +556,7 @@ async fn prefetch_segment(shared: &SharedDownloadState, seg: u32) {
         *slot = None;
     }
 
-    let segment_total = shared.n_segments.checked_sub(1).unwrap_or_default();
+    let segment_total = shared.n_segments.saturating_sub(1);
     tracing::debug!("Segment {seg}/{segment_total}: prefetched");
 }
 
@@ -579,7 +579,7 @@ async fn send_with_skip(
         return false;
     }
 
-    let segment_total = n_segments.checked_sub(1).unwrap_or_default();
+    let segment_total = n_segments.saturating_sub(1);
 
     tracing::debug!(
         "Segment {seg}/{segment_total}: {} bytes (from {source})",

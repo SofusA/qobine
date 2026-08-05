@@ -89,31 +89,31 @@ impl StreamClient {
         file_based_streaming: bool,
     ) -> Self {
         let album_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24 * 7))
+            .time_to_live(std::time::Duration::from_hours(24 * 7))
             .build();
 
         let artist_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
         let playlist_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
         let suggested_albums_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24 * 7))
+            .time_to_live(std::time::Duration::from_hours(24 * 7))
             .build();
 
         let search_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
         let genre_playlists_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
         let discover_cache = moka::future::CacheBuilder::new(1000)
-            .time_to_live(std::time::Duration::from_secs(60 * 60 * 24))
+            .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
         let credentials = Mutex::new(credentials);

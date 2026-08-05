@@ -191,7 +191,7 @@ impl TrackInfoOverlay {
         let mut lines = Vec::new();
 
         if let Some(release_date) = &self.track.release_date {
-            lines.push(Line::from(format!("Released: {release_date}",)));
+            lines.push(Line::from(format!("Released: {release_date}")));
         }
 
         if let Some(performers) = self
@@ -248,7 +248,7 @@ impl TrackInfoOverlay {
                 (self.track.bit_depth, self.track.sampling_rate)
             {
                 metadata.push(Span::styled(
-                    format!(" {bit_depth} bit - {sampling_rate}kHz",),
+                    format!(" {bit_depth} bit - {sampling_rate}kHz"),
                     Style::new().dim(),
                 ));
             }

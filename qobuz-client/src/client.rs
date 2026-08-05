@@ -261,7 +261,7 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
 
         tokio::select! {
             result = async {
-                tokio::time::timeout(Duration::from_secs(300), rx.recv())
+                tokio::time::timeout(Duration::from_mins(5), rx.recv())
                     .await
                     .ok()
                     .flatten()
@@ -278,7 +278,7 @@ pub async fn browser_oauth_login(headless: bool, app_id: &str) -> Result<OAuthRe
             }
         }
     } else {
-        tokio::time::timeout(Duration::from_secs(300), rx.recv())
+        tokio::time::timeout(Duration::from_mins(5), rx.recv())
             .await
             .ok()
             .flatten()
@@ -534,7 +534,7 @@ impl QobuzClient {
     async fn renew_session(&mut self) -> Result<()> {
         tracing::info!("Renewing session");
 
-        let endpoint = format!("{}{}", &self.base_url, Endpoint::SessionStart);
+        let endpoint = format!("{}{}", self.base_url, Endpoint::SessionStart);
         let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
 
         let mut args = BTreeMap::<&str, String>::new();
@@ -682,7 +682,7 @@ impl QobuzClient {
     pub async fn get_streaming_info(&mut self, track_id: u32) -> Result<TrackInfo> {
         let session_id = self.ensure_valid_session().await?.session_id.clone();
 
-        let endpoint = format!("{}{}", &self.base_url, Endpoint::File);
+        let endpoint = format!("{}{}", self.base_url, Endpoint::File);
         let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
         let quality_string = self.max_audio_quality.to_string();
         let track_id_str = track_id.to_string();
@@ -1272,7 +1272,7 @@ pub async fn exchange_oauth_code(code: &str, app_id: &str) -> Result<OAuthResult
 /// Build the OAuth URL that the user should open in their browser.
 fn build_oauth_url(app_id: &str, redirect_port: u16) -> String {
     let redirect = format!("http://localhost:{redirect_port}");
-    format!("https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url={redirect}",)
+    format!("https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url={redirect}")
 }
 
 struct Secrets {

@@ -34,9 +34,7 @@ async fn index(
     Path(tab): Path<Tab>,
     Query(parameters): Query<SearchParameters>,
 ) -> ResponseResult {
-    let query = parameters
-        .query
-        .and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let query = parameters.query.filter(|s| !s.is_empty());
     let search_results = match query {
         Some(query) => ok_or_error_page(&state, state.client.search(query).await)?,
         None => SearchResults::default(),
@@ -53,9 +51,7 @@ async fn search(
     Path(tab): Path<Tab>,
     Form(parameters): Form<SearchParameters>,
 ) -> ResponseResult {
-    let query = parameters
-        .query
-        .and_then(|s| if s.is_empty() { None } else { Some(s) });
+    let query = parameters.query.filter(|s| !s.is_empty());
     let search_results = match query {
         Some(query) => ok_or_send_error_toast(&state, state.client.search(query).await)?,
         None => SearchResults::default(),

@@ -1,5 +1,5 @@
 use controls_module::{Status, StatusReceiver};
-use player_module::{AppResult, error::Error};
+use player_module::{AppResult, error::PlayerError};
 use rppal::gpio::Gpio;
 use tokio::sync::watch;
 
@@ -10,9 +10,9 @@ pub async fn init(
     mut active_receiver: watch::Receiver<bool>,
 ) -> AppResult<()> {
     let mut pin = Gpio::new()
-        .or(Err(Error::GpioUnavailable { pin: GPIO }))?
+        .or(Err(PlayerError::GpioUnavailable { pin: GPIO }))?
         .get(GPIO)
-        .or(Err(Error::GpioUnavailable { pin: GPIO }))?
+        .or(Err(PlayerError::GpioUnavailable { pin: GPIO }))?
         .into_output();
     tracing::info!("Pin claimed");
 
