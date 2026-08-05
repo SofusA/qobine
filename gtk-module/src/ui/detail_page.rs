@@ -315,7 +315,10 @@ pub fn build_detail_scaffold(
     }
 }
 
-async fn fetch_tracks(client: &StreamClient, favorite_button_type: DetailType) -> AppResult<Vec<Track>> {
+async fn fetch_tracks(
+    client: &StreamClient,
+    favorite_button_type: DetailType,
+) -> AppResult<Vec<Track>> {
     let tracks = match favorite_button_type {
         DetailType::Album(id) => client.album(&id).await?.tracks,
         DetailType::Artist(id) => client.artist_page(id).await?.top_tracks,

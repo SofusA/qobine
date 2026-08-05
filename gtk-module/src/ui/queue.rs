@@ -31,7 +31,11 @@ pub struct QueuePage {
 }
 
 impl QueuePage {
-    pub fn new(controls: Controls, client: Arc<StreamClient>, ui_event_sender: UiEventSender) -> Self {
+    pub fn new(
+        controls: Controls,
+        client: Arc<StreamClient>,
+        ui_event_sender: UiEventSender,
+    ) -> Self {
         let listbox = gtk::ListBox::builder()
             .selection_mode(gtk::SelectionMode::Single)
             .css_classes(vec!["boxed-list"])

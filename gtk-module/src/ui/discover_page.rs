@@ -8,7 +8,7 @@ use gtk::{gio, glib, prelude::*};
 use gtk4 as gtk;
 
 use controls_module::models::{AlbumSimple, Genre, PlaylistSimple, PlaylistTag};
-use player_module::client::{StreamClient, GenrePlaylistSlug};
+use player_module::client::{GenrePlaylistSlug, StreamClient};
 
 use crate::ui::{
     album_detail_page::AlbumHeaderInfo, album_scroller, playlist_detail_page::PlaylistHeaderInfo,

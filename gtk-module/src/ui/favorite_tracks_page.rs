@@ -29,7 +29,11 @@ pub struct FavoriteTracksPage {
 }
 
 impl FavoriteTracksPage {
-    pub fn new(controls: Controls, client: Arc<StreamClient>, ui_event_sender: UiEventSender) -> Self {
+    pub fn new(
+        controls: Controls,
+        client: Arc<StreamClient>,
+        ui_event_sender: UiEventSender,
+    ) -> Self {
         let tracks = Rc::new(RefCell::new(Vec::<Track>::new()));
 
         let title = gtk::Label::builder()

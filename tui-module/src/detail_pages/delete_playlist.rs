@@ -32,7 +32,11 @@ impl DeletePlaylistOverlay {
         frame.render_widget(buttons, area);
     }
 
-    pub async fn handle_event(&mut self, code: KeyCode, client: &StreamClient) -> AppResult<Output> {
+    pub async fn handle_event(
+        &mut self,
+        code: KeyCode,
+        client: &StreamClient,
+    ) -> AppResult<Output> {
         match code {
             KeyCode::Enter if self.confirm => {
                 client.delete_playlist(self.id).await?;
