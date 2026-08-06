@@ -108,6 +108,7 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         _spacer_2,
         title_area,
         status_area,
+        _spacer_3,
         gauge_area,
     ] = Layout::vertical([
         Constraint::Length(entity_height),
