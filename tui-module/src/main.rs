@@ -101,12 +101,14 @@ pub async fn run() -> AppResult<()> {
         let status_receiver = player.status();
         let controls = player.controls();
 
+        let value = client.clone();
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
                 &app_id,
                 args.connect.name_args.connect_name,
                 args.connect.name_args.connect_port,
                 controls,
+                value,
                 position_receiver,
                 tracklist_receiver,
                 status_receiver,

@@ -580,6 +580,17 @@ impl Player {
     }
 
     async fn add_tracks_to_queue(&mut self, tracks: Vec<Track>) -> AppResult<()> {
+        let tracklist = self.tracklist_rx.borrow().clone();
+        let last_track_id = tracklist
+            .queue()
+            .last()
+            .map(|x| x.track.id as usize)
+            .unwrap_or(0);
+
+        self.insert_tracks_to_queue(tracks, last_track_id).await
+    }
+
+    async fn insert_tracks_to_queue(&mut self, tracks: Vec<Track>, after: usize) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
         tracklist.set_list_type(TracklistType::Tracks);
 
@@ -588,8 +599,8 @@ impl Player {
 
         let notification = Notification::Info(format!("{track_titles} added to queue"));
 
-        for track in tracks {
-            tracklist.push_track(track);
+        for (index, track) in tracks.into_iter().enumerate() {
+            tracklist.insert_track(after + index, track);
         }
 
         self.update_queue(tracklist).await?;
@@ -728,10 +739,13 @@ impl Player {
             ControlCommand::SetAutoPlay { enable } => {
                 self.set_auto_play(enable).await?;
             }
+            ControlCommand::AddTracksToQueue { tracks } => self.add_tracks_to_queue(tracks).await?,
+            ControlCommand::InsertTracksToQueue { tracks, after } => {
+                self.insert_tracks_to_queue(tracks, after).await?
+            }
             ControlCommand::RemoveIndexFromQueue { index } => {
                 self.remove_index_from_queue(index).await?;
             }
-            ControlCommand::AddTracksToQueue { tracks } => self.add_tracks_to_queue(tracks).await?,
             ControlCommand::PlayTracksNext { tracks } => self.play_tracks_next(tracks).await?,
             ControlCommand::ReorderQueue { new_order } => self.reorder_queue(&new_order).await?,
             ControlCommand::NewQueue {
