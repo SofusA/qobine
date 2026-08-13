@@ -78,13 +78,6 @@ tower-http = { version = "0.7", features = ["limit"] }
 futures-util = "0.3"
 html-escape = "0.2"
 num-traits = "0.2"
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSObject", "NSString", "NSDictionary", "NSValue", "NSData"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage"] }
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFRunLoop", "CFCGTypes"] }
-objc2-media-player = { version = "0.3", default-features = false, features = ["std", "MPNowPlayingInfoCenter", "MPRemoteCommandCenter", "MPRemoteCommand", "MPRemoteCommandEvent", "MPMediaItem", "block2", "objc2-app-kit", "objc2-core-foundation"] }
-block2 = "0.6"
-dispatch2 = "0.3"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

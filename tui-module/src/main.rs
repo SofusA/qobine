@@ -43,7 +43,10 @@ async fn main() {
 
 #[cfg(target_os = "macos")]
 fn main() {
-    std::thread::spawn(|| {
+    let main_loop = macos_module::MainLoop::new();
+    let stopper = main_loop.stopper();
+
+    std::thread::spawn(move || {
         match tokio::runtime::Runtime::new() {
             Ok(runtime) => {
                 if let Err(err) = runtime.block_on(run()) {
@@ -55,10 +58,10 @@ fn main() {
             }
         }
 
-        macos_module::stop_main_loop();
+        stopper.stop();
     });
 
-    macos_module::run_main_loop();
+    main_loop.run();
 }
 
 pub async fn run() -> AppResult<()> {

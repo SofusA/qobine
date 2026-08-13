@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "macos-module"
 
@@ -13,11 +16,7 @@ player-module = { version = "*", path = "../player-module" }
 tokio.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2.workspace = true
-objc2-foundation.workspace = true
-objc2-app-kit.workspace = true
-objc2-core-foundation.workspace = true
-objc2-media-player.workspace = true
-block2.workspace = true
-dispatch2.workspace = true
+mediaplayer = "0.4.3"
+apple-cf = "=0.7.1"
+dispatch2 = "0.3"
 reqwest.workspace = true
