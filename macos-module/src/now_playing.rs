@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -19,46 +20,26 @@ use mediaplayer::{
 };
 use player_module::player::Player;
 
-pub struct MainLoop {
-    exited: Arc<AtomicBool>,
-}
+pub fn run_with_main_loop<F, Fut>(run: F)
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = ()>,
+{
+    let exited = Arc::new(AtomicBool::new(false));
 
-pub struct MainLoopStopper {
-    exited: Arc<AtomicBool>,
-}
-
-impl Default for MainLoop {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MainLoop {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            exited: Arc::new(AtomicBool::new(false)),
+    let thread_exited = exited.clone();
+    std::thread::spawn(move || {
+        match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime.block_on(run()),
+            Err(err) => eprintln!("{err}"),
         }
-    }
 
-    #[must_use]
-    pub fn stopper(&self) -> MainLoopStopper {
-        MainLoopStopper {
-            exited: self.exited.clone(),
-        }
-    }
-
-    pub fn run(&self) {
-        while !self.exited.load(Ordering::Acquire) {
-            let _ = CFRunLoop::current().run_in_default_mode(Duration::from_secs(1), false);
-        }
-    }
-}
-
-impl MainLoopStopper {
-    pub fn stop(&self) {
-        self.exited.store(true, Ordering::Release);
+        thread_exited.store(true, Ordering::Release);
         CFRunLoop::main().stop();
+    });
+
+    while !exited.load(Ordering::Acquire) {
+        let _ = CFRunLoop::current().run_in_default_mode(Duration::from_secs(1), false);
     }
 }
 
