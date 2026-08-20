@@ -729,7 +729,7 @@ impl QobuzClient {
         track_id: u32,
         max_audio_quality: AudioQuality,
     ) -> Result<crate::qobuz_models::TrackUrl> {
-        let secret = self.active_secret.as_deref().ok_or(Error::ActiveSecret)?;
+        let secret = self.active_secret.as_deref().ok_or(Error::SecretNotSet)?;
         track_url(
             track_id,
             secret,
