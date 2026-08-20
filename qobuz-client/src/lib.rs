@@ -10,6 +10,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub enum Error {
     #[snafu(display("Failed to get a usable secret from Qobuz."))]
     ActiveSecret,
+    #[snafu(display("Internal error: Secret not set."))]
+    SecretNotSet,
     #[snafu(display("Failed to get an app id from Qobuz."))]
     AppID,
     #[snafu(display("Failed to login."))]

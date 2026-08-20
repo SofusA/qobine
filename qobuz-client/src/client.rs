@@ -14,7 +14,7 @@ use crate::{
         track::{SuggestTrackInput, SuggestTrackRequest, Track, TrackSuggestionResponse},
     },
     stream::{
-        cmaf, crypto, fetch_segment,
+        cmaf, crypto, fetch_segment, file_based,
         flac_source_stream::{
             FlacSourceParams, FlacSourceStream, SeekableStreamReader, SegmentByteInfo,
         },
@@ -48,7 +48,6 @@ pub struct QobuzClient {
     http_client: reqwest::Client,
     user_token: String,
     user_id: i64,
-    max_audio_quality: AudioQuality,
     active_secret: Option<String>,
 }
 
@@ -323,7 +322,6 @@ impl QobuzClient {
     pub async fn new(
         user_auth_token: &str,
         user_id: i64,
-        max_audio_quality: AudioQuality,
         file_based_streaming: bool,
     ) -> Result<Self> {
         let http_client = reqwest::Client::builder().cookie_store(true).build()?;
@@ -334,13 +332,8 @@ impl QobuzClient {
             let SecretsForFileBasedStreaming {
                 app_id,
                 active_secret,
-            } = get_secrets_for_file_based_streaming(
-                &http_client,
-                &base_url,
-                user_auth_token,
-                max_audio_quality,
-            )
-            .await?;
+            } = get_secrets_for_file_based_streaming(&http_client, &base_url, user_auth_token)
+                .await?;
             tracing::debug!("Got login secrets + active secret, app_id: {}", app_id);
             (app_id, Some(active_secret))
         } else {
@@ -356,7 +349,6 @@ impl QobuzClient {
             user_id,
             app_id,
             base_url,
-            max_audio_quality,
             active_secret,
         };
 
@@ -679,12 +671,16 @@ impl QobuzClient {
         Ok(SeekableStreamReader::new(reader, total_byte_len))
     }
 
-    pub async fn get_streaming_info(&mut self, track_id: u32) -> Result<TrackInfo> {
+    pub async fn get_streaming_info(
+        &mut self,
+        track_id: u32,
+        max_audio_quality: AudioQuality,
+    ) -> Result<TrackInfo> {
         let session_id = self.ensure_valid_session().await?.session_id.clone();
 
         let endpoint = format!("{}{}", self.base_url, Endpoint::File);
         let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
-        let quality_string = self.max_audio_quality.to_string();
+        let quality_string = max_audio_quality.to_string();
         let track_id_str = track_id.to_string();
 
         let mut args = BTreeMap::<&str, String>::new();
@@ -731,6 +727,7 @@ impl QobuzClient {
     pub async fn get_file_based_streaming_info(
         &self,
         track_id: u32,
+        max_audio_quality: AudioQuality,
     ) -> Result<crate::qobuz_models::TrackUrl> {
         let secret = self.active_secret.as_deref().ok_or(Error::ActiveSecret)?;
         track_url(
@@ -740,7 +737,7 @@ impl QobuzClient {
             &self.http_client,
             &self.app_id,
             &self.user_token,
-            self.max_audio_quality,
+            max_audio_quality,
         )
         .await
     }
@@ -750,49 +747,7 @@ impl QobuzClient {
         url: &str,
         cache_path: &std::path::Path,
     ) -> Result<SeekableStreamReader> {
-        use stream_download::http::HttpStream;
-        use stream_download::http::reqwest::{Client as SdClient, Url as SdUrl};
-        use stream_download::source::SourceStream;
-
-        use crate::stream::passthrough_storage::PassthroughStorageProvider;
-
-        let url_parsed: SdUrl = url.parse().map_err(|e: url::ParseError| Error::Stream {
-            message: format!("invalid track URL: {e}"),
-        })?;
-
-        let stream = HttpStream::new(SdClient::new(), url_parsed)
-            .await
-            .map_err(|e| Error::Stream {
-                message: format!("failed to open HTTP stream: {e}"),
-            })?;
-
-        let content_length = stream.content_length().unwrap_or(0);
-
-        let partial_path = cache_path.with_extension("partial");
-        let provider = PassthroughStorageProvider {
-            partial_path: partial_path.clone(),
-        };
-
-        let download = StreamDownload::from_stream(
-            stream,
-            provider,
-            Settings::default().prefetch_bytes(64 * 1024),
-        )
-        .await
-        .map_err(|e| Error::Stream {
-            message: format!("failed to create stream-download: {e}"),
-        })?;
-
-        if content_length > 0 {
-            let handle = download.handle();
-            let final_path = cache_path.to_path_buf();
-            tokio::spawn(async move {
-                handle.wait_for_completion().await;
-                finalize_cache(&partial_path, &final_path, content_length);
-            });
-        }
-
-        Ok(SeekableStreamReader::new(download, content_length))
+        file_based::stream_track_file_based(url, cache_path).await
     }
 
     pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
@@ -1337,7 +1292,6 @@ async fn get_secrets_for_file_based_streaming(
     client: &reqwest::Client,
     base_url: &str,
     user_token: &str,
-    max_audio_quality: AudioQuality,
 ) -> Result<SecretsForFileBasedStreaming> {
     use base64::{Engine, engine::general_purpose};
 
@@ -1432,15 +1386,7 @@ async fn get_secrets_for_file_based_streaming(
         }
     }
 
-    let active_secret = find_active_secret(
-        secrets,
-        base_url,
-        client,
-        &app_id,
-        user_token,
-        max_audio_quality,
-    )
-    .await?;
+    let active_secret = find_active_secret(secrets, base_url, client, &app_id, user_token).await?;
 
     Ok(SecretsForFileBasedStreaming {
         app_id,
@@ -1456,9 +1402,9 @@ async fn find_active_secret(
     client: &reqwest::Client,
     app_id: &str,
     user_token: &str,
-    max_audio_quality: AudioQuality,
 ) -> Result<String> {
     tracing::debug!("probing {} timezone secrets", secrets.len());
+    let audio_quality = AudioQuality::Mp3;
 
     for (timezone, secret) in secrets {
         let response = track_url(
@@ -1468,7 +1414,7 @@ async fn find_active_secret(
             client,
             app_id,
             user_token,
-            max_audio_quality,
+            audio_quality,
         )
         .await;
 
@@ -1529,26 +1475,4 @@ fn capitalize(s: &mut str) {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessfulResponse {
     status: String,
-}
-
-fn finalize_cache(partial: &PathBuf, final_path: &PathBuf, expected: u64) {
-    match std::fs::metadata(partial) {
-        Ok(meta) if meta.len() == expected => {
-            if let Err(e) = std::fs::rename(partial, final_path) {
-                tracing::warn!("Failed to finalize cache: {e}");
-                let _ = std::fs::remove_file(partial);
-            } else {
-                tracing::info!("Cached: {} ({} bytes)", final_path.display(), expected);
-            }
-        }
-        Ok(meta) => {
-            tracing::debug!(
-                "Stream incomplete ({} of {} bytes), discarding partial",
-                meta.len(),
-                expected
-            );
-            let _ = std::fs::remove_file(partial);
-        }
-        Err(_) => {}
-    }
 }

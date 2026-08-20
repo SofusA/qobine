@@ -758,7 +758,7 @@ impl Player {
                         .await?;
                     self.client
                         .use_file_based_streaming(use_file_based_streaming)
-                        .await;
+                        .await?;
                 }
             },
         }

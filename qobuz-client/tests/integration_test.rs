@@ -15,14 +15,9 @@ async fn get_token() -> Option<Credentials> {
 async fn get_client() -> Option<QobuzClient> {
     let credentials = get_token().await?;
 
-    qobuz_client::client::QobuzClient::new(
-        &credentials.user_auth_token,
-        credentials.user_id,
-        qobuz_client::client::AudioQuality::Mp3,
-        false,
-    )
-    .await
-    .ok()
+    qobuz_client::client::QobuzClient::new(&credentials.user_auth_token, credentials.user_id, false)
+        .await
+        .ok()
 }
 
 #[tokio::test]

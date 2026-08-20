@@ -2,6 +2,7 @@ use crate::Error;
 
 pub mod cmaf;
 pub mod crypto;
+pub mod file_based;
 pub mod flac_source_stream;
 pub mod passthrough_storage;
 

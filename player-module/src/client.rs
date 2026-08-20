@@ -146,13 +146,11 @@ impl StreamClient {
             });
         };
 
-        let max_audio_quality = self.max_audio_quality.read().await;
         let file_based_streaming = self.file_based_streaming.read().await;
 
         let client = QobuzClient::new(
             &credentials.user_auth_token,
             credentials.user_id,
-            *max_audio_quality,
             *file_based_streaming,
         )
         .await?;
@@ -189,20 +187,40 @@ impl StreamClient {
         *max_audio_quality = new_quality;
     }
 
-    pub async fn use_file_based_streaming(&self, use_file_based_streaming: bool) {
-        let mut file_based_streaming = self.file_based_streaming.write().await;
-        *file_based_streaming = use_file_based_streaming;
+    pub async fn use_file_based_streaming(&self, use_file_based_streaming: bool) -> AppResult<()> {
+        {
+            let mut file_based_streaming = self.file_based_streaming.write().await;
+
+            if *file_based_streaming == use_file_based_streaming {
+                return Ok(());
+            }
+
+            *file_based_streaming = use_file_based_streaming;
+        }
+
+        let new_client = self.init_client().await?;
+
+        if let Some(client) = self.qobuz_client.get() {
+            *client.write().await = new_client;
+        }
+
+        Ok(())
     }
 
     pub async fn get_streaming_info(&self, track_id: u32) -> AppResult<TrackInfo> {
         let mut client = self.get_client_mut().await?;
-        let info = client.get_streaming_info(track_id).await?;
+        let audio_quality = self.max_audio_quality.read().await;
+
+        let info = client.get_streaming_info(track_id, *audio_quality).await?;
         Ok(info)
     }
 
     pub async fn get_file_based_streaming_info(&self, track_id: u32) -> AppResult<TrackUrl> {
         let client = self.get_client().await?;
-        let info = client.get_file_based_streaming_info(track_id).await?;
+        let audio_quality = self.max_audio_quality.read().await;
+        let info = client
+            .get_file_based_streaming_info(track_id, *audio_quality)
+            .await?;
         Ok(info)
     }
 

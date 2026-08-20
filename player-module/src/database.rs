@@ -166,16 +166,7 @@ impl Database {
     }
 
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
-        let directory = directory
-            .canonicalize()
-            .map_err(|e| PlayerError::StorageError {
-                error: e.to_string(),
-            })?
-            .into_os_string()
-            .into_string()
-            .map_err(|_| PlayerError::StorageError {
-                error: "Error storing cache path".to_string(),
-            })?;
+        let directory = directory.to_string_lossy();
 
         sqlx::query!(
             r#"
