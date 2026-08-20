@@ -166,7 +166,19 @@ impl Database {
     }
 
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
-        let directory = directory.to_string_lossy();
+        tokio::fs::create_dir_all(directory)
+            .await
+            .map_err(|e| PlayerError::StorageError {
+                error: format!("Unable to create directory: {e}"),
+            })?;
+
+        let directory = directory
+            .canonicalize()
+            .map_err(|e| PlayerError::StorageError {
+                error: format!("Unable to canonicalize: {e}"),
+            })?
+            .to_string_lossy()
+            .into_owned();
 
         sqlx::query!(
             r#"

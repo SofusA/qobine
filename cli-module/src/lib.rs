@@ -304,7 +304,7 @@ pub async fn create_player(
         configuration.volume,
         configuration.auto_play,
         broadcast,
-        audio_cache,
+        &audio_cache,
         database,
         state_change_delay,
         sample_rate_change_delay,

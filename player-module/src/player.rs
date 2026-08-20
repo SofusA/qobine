@@ -17,7 +17,7 @@ use tokio::{
     time::sleep,
 };
 
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use crate::{
     AppResult,
@@ -62,7 +62,7 @@ impl Player {
         volume: f32,
         enable_auto_play: bool,
         broadcast: Arc<NotificationBroadcast>,
-        audio_cache_directory: std::path::PathBuf,
+        audio_cache_directory: &Path,
         database: Arc<Database>,
         state_change_delay: Option<Duration>,
         sample_rate_change_delay: Option<Duration>,

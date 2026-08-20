@@ -20,12 +20,26 @@ pub struct Downloader {
     client: Arc<StreamClient>,
 }
 
+fn expand_tilde(path: &Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+
+    if (path_str == "~" || path_str.starts_with("~/"))
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(path_str.trim_start_matches("~/"));
+    }
+
+    path.to_path_buf()
+}
+
 impl Downloader {
-    pub const fn new(
-        audio_cache_directory: PathBuf,
+    pub fn new(
+        audio_cache_directory: &Path,
         database: Arc<Database>,
         client: Arc<StreamClient>,
     ) -> Self {
+        let audio_cache_directory = expand_tilde(audio_cache_directory);
+
         Self {
             audio_cache_directory,
             database,
