@@ -42,3 +42,6 @@ clap.workspace = true
 
 [target.'cfg(any(windows, target_os = "linux", target_os = "macos"))'.dependencies]
 keepawake = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+macos-module = { version = "*", path = "../macos-module" }

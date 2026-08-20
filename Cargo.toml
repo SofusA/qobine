@@ -12,7 +12,8 @@ members = [
   "gtk-module",
   "disconnect-server-module",
   "disconnect-module",
-  "player-module"
+  "player-module",
+  "macos-module"
 ]
 resolver = "2"
 

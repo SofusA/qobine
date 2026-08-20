@@ -1,0 +1,22 @@
+[lints]
+workspace = true
+
+[package]
+name = "macos-module"
+
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+
+tokio.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+mediaplayer = "0.4.3"
+apple-cf = "=0.7.1"
+dispatch2 = "0.3"
+reqwest.workspace = true
