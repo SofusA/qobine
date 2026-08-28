@@ -102,6 +102,7 @@ pub async fn run() -> AppResult<()> {
                 args.connect.connect_name,
                 args.connect.connect_port,
                 controls,
+                client,
                 position_receiver,
                 tracklist_receiver,
                 status_receiver,
