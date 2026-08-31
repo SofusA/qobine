@@ -166,9 +166,17 @@ impl DisconnectClient {
         let mut stream = resp.bytes_stream().eventsource();
 
         let initial_state = self.get_state().await?;
-        _ = self
-            .active_sender
-            .send(initial_state.active_device == self.device_name);
+        let is_active = initial_state.active_device == self.device_name;
+
+        self.active_sender.send_if_modified(|current| {
+            if *current == is_active {
+                false
+            } else {
+                *current = is_active;
+                true
+            }
+        });
+
         _ = self.active_device_sender.send(initial_state.active_device);
         _ = self.tracklist_sender.send(initial_state.tracklist);
         _ = self.status_sender.send(initial_state.playback_status);
@@ -231,7 +239,14 @@ impl DisconnectClient {
                                         is_active
                                     );
 
-                                    _ = self.active_sender.send(is_active);
+                                    self.active_sender.send_if_modified(|current| {
+                                        if *current == is_active {
+                                            false
+                                        } else {
+                                            *current = is_active;
+                                            true
+                                        }
+                                    });
                                     _ = self.active_device_sender.send(device);
                                 }
 

@@ -1,7 +1,7 @@
 # Disconnect
 This release brings a self-hostable Connect feature called "Disconnect". 
 
-You can host the server yourself, or you can use my public at: https://qobine-disconnect.sofusconnect.addington.dk
+You can host the server yourself, or you can use my public at: https://qobine-disconnect.iot-lab.dk
 Please don't abuse it 😄 
 
 ## How to use:
@@ -15,7 +15,7 @@ When running the web or rfid project provide the following flags:
           Disconnect server url
 ```
 
-eg: `web-module --disconnect-device-name livingroom --disconnect-password very-secret --disconnect-server-url https://qobine-disconnect.sofusconnect.addington.dk`
+eg: `web-module --disconnect-device-name livingroom --disconnect-password very-secret --disconnect-server-url https://qobine-disconnect.iot-lab.dk`
 
 Now when you open the web ui, you will be able to see a music note icon, where you can select all running clients (web or rfid) with the same password.
 

@@ -183,13 +183,12 @@ impl SourceStream for FlacSourceStream {
         self.seek_range(current_position, None).await
     }
 
-    #[allow(clippy::unused_async_trait_impl)]
-    async fn on_finish(
+    fn on_finish(
         &mut self,
         result: io::Result<()>,
         _outcome: StreamOutcome,
-    ) -> io::Result<()> {
-        result
+    ) -> impl Future<Output = io::Result<()>> {
+        std::future::ready(result)
     }
 }
 
