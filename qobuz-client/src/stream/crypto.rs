@@ -114,7 +114,7 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, Error> {
     }
 
     hex.as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>().0.iter()
         .enumerate()
         .map(|(index, chunk)| {
             let pair = std::str::from_utf8(chunk).map_err(|e| Error::Stream {

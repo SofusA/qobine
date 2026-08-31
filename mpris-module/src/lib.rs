@@ -49,78 +49,97 @@ struct MprisPlayer {
 }
 
 impl RootInterface for MprisPlayer {
+    #[allow(clippy::unused_async_trait_impl)]
     async fn identity(&self) -> fdo::Result<String> {
         Ok(self.mpris_suffix.clone())
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn raise(&self) -> fdo::Result<()> {
         Err(fdo::Error::NotSupported("Not supported".into()))
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn quit(&self) -> fdo::Result<()> {
         match self.exit_sender.send(true) {
             Ok(_) => Ok(()),
             Err(_) => Err(fdo::Error::Failed("Unable to send exit signal".into())),
         }
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_quit(&self) -> fdo::Result<bool> {
         Ok(true)
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn fullscreen(&self) -> fdo::Result<bool> {
         Err(fdo::Error::NotSupported("Not supported".into()))
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_fullscreen(&self, _fullscreen: bool) -> zbus::Result<()> {
         Err(zbus::Error::Unsupported)
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_set_fullscreen(&self) -> fdo::Result<bool> {
         Ok(false)
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_raise(&self) -> fdo::Result<bool> {
         Ok(false)
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn has_track_list(&self) -> fdo::Result<bool> {
         Ok(false)
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn desktop_entry(&self) -> fdo::Result<String> {
         Ok(self.mpris_suffix.clone())
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
         Ok(vec![])
     }
+    #[allow(clippy::unused_async_trait_impl)]
     async fn supported_mime_types(&self) -> fdo::Result<Vec<String>> {
         Ok(vec![])
     }
 }
 
 impl PlayerInterface for MprisPlayer {
+    #[allow(clippy::unused_async_trait_impl)]
     async fn next(&self) -> fdo::Result<()> {
         self.controls.next();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn previous(&self) -> fdo::Result<()> {
         self.controls.previous();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn pause(&self) -> fdo::Result<()> {
         self.controls.pause();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn play_pause(&self) -> fdo::Result<()> {
         self.controls.play_pause();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn stop(&self) -> fdo::Result<()> {
         self.controls.pause();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn play(&self) -> fdo::Result<()> {
         self.controls.play();
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let current_position = *self.position_receiver.borrow();
         let offset_millis = offset.as_millis();
@@ -147,6 +166,7 @@ impl PlayerInterface for MprisPlayer {
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
         let millis: u64 = position
             .as_millis()
@@ -161,10 +181,12 @@ impl PlayerInterface for MprisPlayer {
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
         Err(fdo::Error::NotSupported("Not supported".into()))
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn playback_status(&self) -> fdo::Result<PlaybackStatus> {
         let status = match *self.status_receiver.borrow() {
             Status::Paused | Status::Buffering => PlaybackStatus::Paused,
@@ -174,30 +196,37 @@ impl PlayerInterface for MprisPlayer {
         Ok(status)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn loop_status(&self) -> fdo::Result<LoopStatus> {
         Err(fdo::Error::NotSupported("Not supported".into()))
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_loop_status(&self, _loop_status: LoopStatus) -> zbus::Result<()> {
         Err(zbus::Error::Unsupported)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn rate(&self) -> fdo::Result<PlaybackRate> {
         Ok(1.0)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_rate(&self, _rate: PlaybackRate) -> zbus::Result<()> {
         Err(zbus::Error::Unsupported)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn shuffle(&self) -> fdo::Result<bool> {
         Ok(false)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_shuffle(&self, _shuffle: bool) -> zbus::Result<()> {
         Err(zbus::Error::Unsupported)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn metadata(&self) -> fdo::Result<Metadata> {
         let tracklist = self.tracklist_receiver.borrow();
         let current_track = tracklist.current_track();
@@ -209,11 +238,13 @@ impl PlayerInterface for MprisPlayer {
         Ok(Metadata::new())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn volume(&self) -> fdo::Result<Volume> {
         let volume = self.volume_receiver.borrow();
         Ok(f64::from(*volume))
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn set_volume(&self, volume: Volume) -> zbus::Result<()> {
         let volume = volume.to_f32().ok_or(zbus::Error::ExcessData)?;
 
@@ -221,6 +252,7 @@ impl PlayerInterface for MprisPlayer {
         Ok(())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn position(&self) -> fdo::Result<Time> {
         let position_millis = self.position_receiver.borrow().as_millis();
         let position_millis = position_millis.to_i64().ok_or(zbus::Error::ExcessData)?;
@@ -228,14 +260,17 @@ impl PlayerInterface for MprisPlayer {
         Ok(time)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn minimum_rate(&self) -> fdo::Result<PlaybackRate> {
         Ok(1.0)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn maximum_rate(&self) -> fdo::Result<PlaybackRate> {
         Ok(1.0)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_go_next(&self) -> fdo::Result<bool> {
         let tracklist = self.tracklist_receiver.borrow();
         let queue_length = tracklist.queue().len();
@@ -244,22 +279,27 @@ impl PlayerInterface for MprisPlayer {
         Ok(current_position.saturating_add(1) < queue_length)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_go_previous(&self) -> fdo::Result<bool> {
         Ok(true)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_play(&self) -> fdo::Result<bool> {
         Ok(true)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_pause(&self) -> fdo::Result<bool> {
         Ok(true)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_seek(&self) -> fdo::Result<bool> {
         Ok(true)
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn can_control(&self) -> fdo::Result<bool> {
         Ok(true)
     }

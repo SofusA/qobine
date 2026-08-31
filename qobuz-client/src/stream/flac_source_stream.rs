@@ -69,6 +69,7 @@ impl SourceStream for FlacSourceStream {
     type Params = FlacSourceParams;
     type StreamCreationError = FlacStreamError;
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn create(params: Self::Params) -> Result<Self, Self::StreamCreationError> {
         let (tx, rx) = tokio::sync::mpsc::channel::<io::Result<Bytes>>(4);
 
@@ -121,6 +122,7 @@ impl SourceStream for FlacSourceStream {
         true
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn seek_range(&mut self, start: u64, _end: Option<u64>) -> io::Result<()> {
         let overflow = || io::Error::other("seek arithmetic overflow");
 
@@ -181,6 +183,7 @@ impl SourceStream for FlacSourceStream {
         self.seek_range(current_position, None).await
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn on_finish(
         &mut self,
         result: io::Result<()>,
