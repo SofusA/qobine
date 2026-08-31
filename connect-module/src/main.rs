@@ -11,7 +11,7 @@ use tokio::sync::broadcast;
 use clap::Parser;
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, about, long_about = None)]
 struct Arguments {
     #[clap(flatten)]
     shared: SharedArgs,

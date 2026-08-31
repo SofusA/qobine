@@ -10,7 +10,7 @@ use clap::Parser;
 use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, about, long_about = None)]
 struct Arguments {
     /// Device name
     #[clap(short, long)]
