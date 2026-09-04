@@ -17,6 +17,6 @@ tokio.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mediaplayer = "0.4.3"
-apple-cf = "=0.7.1"
+apple-cf = "=0.9.3"
 dispatch2 = "0.3"
 reqwest.workspace = true
