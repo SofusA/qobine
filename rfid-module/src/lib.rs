@@ -192,6 +192,13 @@ pub async fn handle_play_scan(
 
     match reference {
         ReferenceType::Album(id) => {
+            if let Some(connect_set_device) = connect_set_device
+                && let Some(connect_device_name) = connect_device_name
+            {
+                _ = connect_set_device.send(connect_device_name.to_string());
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+
             if let TracklistType::Album(now_playing_album) = &now_playing
                 && now_playing_album.id == id
             {
@@ -199,6 +206,10 @@ pub async fn handle_play_scan(
                 return;
             }
 
+            controls.play_album(&id, 0);
+        }
+
+        ReferenceType::Playlist(id) => {
             if let Some(connect_set_device) = connect_set_device
                 && let Some(connect_device_name) = connect_device_name
             {
@@ -206,22 +217,11 @@ pub async fn handle_play_scan(
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
 
-            controls.play_album(&id, 0);
-        }
-
-        ReferenceType::Playlist(id) => {
             if let TracklistType::Playlist(now_playing_playlist) = &now_playing
                 && now_playing_playlist.id == id
             {
                 controls.play();
                 return;
-            }
-
-            if let Some(connect_set_device) = connect_set_device
-                && let Some(connect_device_name) = connect_device_name
-            {
-                _ = connect_set_device.send(connect_device_name.to_string());
-                tokio::time::sleep(Duration::from_secs(1)).await;
             }
 
             controls.play_playlist(id, 0, false);
