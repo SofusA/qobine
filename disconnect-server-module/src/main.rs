@@ -707,6 +707,7 @@ async fn map_event(
 #[allow(clippy::unwrap_used)]
 #[allow(clippy::panic)]
 #[allow(clippy::never_loop)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -900,6 +901,91 @@ mod tests {
         drop(event_source);
     }
 
+    async fn wait_for_device_count(state: &AppState, secret: &str, expected: usize) {
+        timeout(TEST_TIMEOUT, async {
+            loop {
+                let count = state
+                    .groups
+                    .read()
+                    .await
+                    .get(secret)
+                    .map_or(0, |group| group.streams.len());
+
+                if count == expected {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!("timed out waiting for {expected} devices in group {secret}");
+        });
+    }
+
+    async fn wait_for_listener_count(state: &AppState, secret: &str, expected: usize) {
+        timeout(TEST_TIMEOUT, async {
+            loop {
+                let count = state
+                    .groups
+                    .read()
+                    .await
+                    .get(secret)
+                    .map_or(0, |group| group.listeners.len());
+
+                if count == expected {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!("timed out waiting for {expected} listeners in group {secret}");
+        });
+    }
+
+    async fn connect_device(
+        client: &Client,
+        server: &TestServer,
+        secret: &str,
+        device_id: &str,
+    ) -> EventSource {
+        let mut stream = connect_stream(client, server, secret, device_id, StreamType::Device);
+
+        wait_until_open(&mut stream).await;
+        stream
+    }
+
+    async fn connect_listener(
+        client: &Client,
+        server: &TestServer,
+        secret: &str,
+        listener_id: &str,
+    ) -> EventSource {
+        let mut stream = connect_stream(client, server, secret, listener_id, StreamType::Listener);
+
+        wait_until_open(&mut stream).await;
+        stream
+    }
+
+    async fn post_json(
+        client: &Client,
+        url: String,
+        query: &[(&str, &str)],
+        body: Value,
+    ) -> reqwest::Response {
+        client
+            .post(url)
+            .query(query)
+            .json(&body)
+            .send()
+            .await
+            .expect("request failed")
+    }
+
     #[tokio::test]
     async fn devices_can_change_disconnect_and_rejoin_while_listener_survives() {
         let server = spawn_server().await;
@@ -1078,5 +1164,645 @@ mod tests {
         disconnect(listener);
 
         wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn active_device_disconnect_causes_failover() {
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "failover-group";
+
+        let mut device_1 = connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let device_1_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_1, &device_1_active).await;
+
+        let mut device_2 = connect_device(&client, &server, secret, "device-2").await;
+
+        let mut device_3 = connect_device(&client, &server, secret, "device-3").await;
+
+        let mut listener = connect_listener(&client, &server, secret, "listener-1").await;
+
+        wait_for_device_count(&server.state, secret, 3).await;
+        wait_for_listener_count(&server.state, secret, 1).await;
+
+        let response = client
+            .post(format!("{}/active-device", server.base_url))
+            .query(&[("secret", secret)])
+            .json(&DeviceRequest {
+                device_id: "device-2".to_string(),
+            })
+            .send()
+            .await
+            .expect("active-device request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let device_2_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-2".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_1, &device_2_active).await;
+        wait_for_json_event(&mut device_2, &device_2_active).await;
+        wait_for_json_event(&mut device_3, &device_2_active).await;
+        wait_for_json_event(&mut listener, &device_2_active).await;
+
+        disconnect(device_2);
+
+        wait_for_device_count(&server.state, secret, 2).await;
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_ne!(state.active_device, "device-2");
+
+        assert!(
+            state.active_device == "device-1" || state.active_device == "device-3",
+            "unexpected active device: {}",
+            state.active_device
+        );
+
+        assert_eq!(state.available_devices.len(), 2);
+        assert!(state.available_devices.contains(&"device-1".to_string()));
+        assert!(state.available_devices.contains(&"device-3".to_string()));
+        assert!(!state.available_devices.contains(&"device-2".to_string()));
+
+        let expected_active_event = serde_json::to_value(DisconnectServerEvent::ActiveDevice(
+            state.active_device.clone(),
+        ))
+        .unwrap();
+
+        wait_for_json_event(&mut device_1, &expected_active_event).await;
+
+        wait_for_json_event(&mut device_3, &expected_active_event).await;
+
+        wait_for_json_event(&mut listener, &expected_active_event).await;
+
+        disconnect(device_1);
+        disconnect(device_3);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn only_active_device_can_update_playback_state() {
+        struct EndpointCase {
+            path: &'static str,
+            body: Value,
+        }
+
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "state-authorization";
+
+        let mut active_device =
+            connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let active_event =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut active_device, &active_event).await;
+
+        let inactive_device = connect_device(&client, &server, secret, "device-2").await;
+
+        let listener = connect_listener(&client, &server, secret, "listener-1").await;
+
+        let cases = vec![
+            EndpointCase {
+                path: "/tracklist",
+                body: serde_json::to_value(Tracklist::default()).unwrap(),
+            },
+            EndpointCase {
+                path: "/status",
+                body: serde_json::to_value(Status::default()).unwrap(),
+            },
+            EndpointCase {
+                path: "/position",
+                body: serde_json::to_value(Duration::from_secs(42)).unwrap(),
+            },
+            EndpointCase {
+                path: "/volume",
+                body: serde_json::json!(0.5),
+            },
+            EndpointCase {
+                path: "/autoplay",
+                body: serde_json::json!(true),
+            },
+        ];
+
+        for test_case in cases {
+            let url = format!("{}{}", server.base_url, test_case.path);
+
+            let response = post_json(
+                &client,
+                url.clone(),
+                &[("secret", secret), ("device_id", "device-1")],
+                test_case.body.clone(),
+            )
+            .await;
+
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "active device should be allowed to call {}",
+                test_case.path
+            );
+
+            let response = post_json(
+                &client,
+                url.clone(),
+                &[("secret", secret), ("device_id", "device-2")],
+                test_case.body.clone(),
+            )
+            .await;
+
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "inactive device should be rejected by {}",
+                test_case.path
+            );
+
+            let response = post_json(
+                &client,
+                url.clone(),
+                &[("secret", secret), ("device_id", "listener-1")],
+                test_case.body.clone(),
+            )
+            .await;
+
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "listener should be rejected by {}",
+                test_case.path
+            );
+
+            let response = post_json(
+                &client,
+                url,
+                &[("secret", secret), ("device_id", "unknown-client")],
+                test_case.body,
+            )
+            .await;
+
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "unknown client should be rejected by {}",
+                test_case.path
+            );
+        }
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(state.position, Duration::from_secs(42));
+        assert_eq!(state.volume, 0.5);
+        assert!(state.auto_play);
+
+        disconnect(active_device);
+        disconnect(inactive_device);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn control_commands_have_correct_sender_authorization() {
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "control-authorization";
+
+        let mut active_device =
+            connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let active_event =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut active_device, &active_event).await;
+
+        let mut inactive_device = connect_device(&client, &server, secret, "device-2").await;
+
+        let listener = connect_listener(&client, &server, secret, "listener-1").await;
+
+        let command = ControlCommand::Play;
+
+        let expected_event =
+            serde_json::to_value(DisconnectServerEvent::Control(command.clone())).unwrap();
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "listener-1")])
+            .json(&command)
+            .send()
+            .await
+            .expect("listener control request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        wait_for_json_event(&mut active_device, &expected_event).await;
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-2")])
+            .json(&command)
+            .send()
+            .await
+            .expect("inactive-device control request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        wait_for_json_event(&mut active_device, &expected_event).await;
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&command)
+            .send()
+            .await
+            .expect("active-device control request failed");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "unknown-client")])
+            .json(&command)
+            .send()
+            .await
+            .expect("unknown-client control request failed");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        assert_event_not_received(
+            &mut inactive_device,
+            &expected_event,
+            Duration::from_millis(300),
+        )
+        .await;
+
+        disconnect(active_device);
+        disconnect(inactive_device);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn duplicate_and_cross_type_client_ids_are_rejected() {
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "duplicate-group";
+
+        let mut device = connect_stream(
+            &client,
+            &server,
+            secret,
+            "shared-device",
+            StreamType::Device,
+        );
+
+        let active_event = serde_json::to_value(DisconnectServerEvent::ActiveDevice(
+            "shared-device".to_string(),
+        ))
+        .unwrap();
+
+        wait_for_json_event(&mut device, &active_event).await;
+
+        let listener = connect_listener(&client, &server, secret, "shared-listener").await;
+
+        let duplicate_device_response = client
+            .get(format!("{}/stream", server.base_url))
+            .query(&[
+                ("secret", secret),
+                ("device_id", "shared-device"),
+                ("stream_type", "device"),
+            ])
+            .send()
+            .await
+            .expect("duplicate-device request failed");
+
+        assert_eq!(duplicate_device_response.status(), StatusCode::CONFLICT);
+
+        let duplicate_listener_response = client
+            .get(format!("{}/stream", server.base_url))
+            .query(&[
+                ("secret", secret),
+                ("device_id", "shared-listener"),
+                ("stream_type", "listener"),
+            ])
+            .send()
+            .await
+            .expect("duplicate-listener request failed");
+
+        assert_eq!(duplicate_listener_response.status(), StatusCode::CONFLICT);
+
+        let device_as_listener_response = client
+            .get(format!("{}/stream", server.base_url))
+            .query(&[
+                ("secret", secret),
+                ("device_id", "shared-device"),
+                ("stream_type", "listener"),
+            ])
+            .send()
+            .await
+            .expect("device-as-listener request failed");
+
+        assert_eq!(device_as_listener_response.status(), StatusCode::CONFLICT);
+
+        let listener_as_device_response = client
+            .get(format!("{}/stream", server.base_url))
+            .query(&[
+                ("secret", secret),
+                ("device_id", "shared-listener"),
+                ("stream_type", "device"),
+            ])
+            .send()
+            .await
+            .expect("listener-as-device request failed");
+
+        assert_eq!(listener_as_device_response.status(), StatusCode::CONFLICT);
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(state.active_device, "shared-device");
+        assert_eq!(state.available_devices, vec!["shared-device".to_string()]);
+
+        {
+            let groups = server.state.groups.read().await;
+            let group = groups.get(secret).expect("group should exist");
+
+            assert_eq!(group.streams.len(), 1);
+            assert_eq!(group.listeners.len(), 1);
+            assert!(group.streams.contains("shared-device"));
+            assert!(group.listeners.contains("shared-listener"));
+        }
+
+        /*
+         * Verify that the original connection remains operational after all
+         * rejected duplicate attempts.
+         */
+        let command = ControlCommand::Play;
+
+        let expected_event =
+            serde_json::to_value(DisconnectServerEvent::Control(command.clone())).unwrap();
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "shared-listener")])
+            .json(&command)
+            .send()
+            .await
+            .expect("control request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        wait_for_json_event(&mut device, &expected_event).await;
+
+        disconnect(device);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn newly_connected_listener_can_fetch_complete_current_state() {
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "initial-state";
+
+        let mut device = connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let active_event =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device, &active_event).await;
+
+        let tracklist = Tracklist::default();
+        let status = Status::default();
+        let position = Duration::from_secs(123);
+        let volume = 0.35_f32;
+        let auto_play = true;
+
+        let response = client
+            .post(format!("{}/tracklist", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&tracklist)
+            .send()
+            .await
+            .expect("tracklist request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = client
+            .post(format!("{}/status", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&status)
+            .send()
+            .await
+            .expect("status request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = client
+            .post(format!("{}/position", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&position)
+            .send()
+            .await
+            .expect("position request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = client
+            .post(format!("{}/volume", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&volume)
+            .send()
+            .await
+            .expect("volume request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = client
+            .post(format!("{}/autoplay", server.base_url))
+            .query(&[("secret", secret), ("device_id", "device-1")])
+            .json(&auto_play)
+            .send()
+            .await
+            .expect("autoplay request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        /*
+         * The listener connects after all updates have already occurred.
+         */
+        let listener = connect_listener(&client, &server, secret, "listener-1").await;
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(state.active_device, "device-1");
+        assert_eq!(state.available_devices, vec!["device-1".to_string()]);
+        assert_eq!(state.position, position);
+        assert_eq!(state.volume, volume);
+        assert_eq!(state.auto_play, auto_play);
+
+        /*
+         * These JSON comparisons avoid requiring PartialEq on Status and
+         * Tracklist.
+         */
+        assert_eq!(
+            serde_json::to_value(state.playback_status).unwrap(),
+            serde_json::to_value(status).unwrap()
+        );
+
+        assert_eq!(
+            serde_json::to_value(&state.tracklist).unwrap(),
+            serde_json::to_value(&tracklist).unwrap()
+        );
+
+        disconnect(device);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
+    async fn groups_with_different_secrets_are_fully_isolated() {
+        let server = spawn_server().await;
+        let client = Client::new();
+
+        let secret_a = "group-a";
+        let secret_b = "group-b";
+
+        /*
+         * Deliberately use identical client IDs in both groups.
+         */
+        let mut device_a =
+            connect_stream(&client, &server, secret_a, "device-1", StreamType::Device);
+
+        let active_a =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_a, &active_a).await;
+
+        let listener_a = connect_listener(&client, &server, secret_a, "listener-1").await;
+
+        let mut device_b =
+            connect_stream(&client, &server, secret_b, "device-1", StreamType::Device);
+
+        let active_b =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_b, &active_b).await;
+
+        let listener_b = connect_listener(&client, &server, secret_b, "listener-1").await;
+
+        let response = client
+            .post(format!("{}/volume", server.base_url))
+            .query(&[("secret", secret_a), ("device_id", "device-1")])
+            .json(&0.25_f32)
+            .send()
+            .await
+            .expect("group A volume request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let volume_event = serde_json::to_value(DisconnectServerEvent::Volume(0.25)).unwrap();
+
+        /*
+         * The active device does not receive its own state update, but the
+         * listener in group A does. Group B must not receive it.
+         */
+        let mut listener_a = listener_a;
+        let mut listener_b = listener_b;
+
+        wait_for_json_event(&mut listener_a, &volume_event).await;
+
+        assert_event_not_received(&mut device_b, &volume_event, Duration::from_millis(300)).await;
+
+        assert_event_not_received(&mut listener_b, &volume_event, Duration::from_millis(300)).await;
+
+        let command = ControlCommand::Play;
+
+        let control_event =
+            serde_json::to_value(DisconnectServerEvent::Control(command.clone())).unwrap();
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret_a), ("device_id", "listener-1")])
+            .json(&command)
+            .send()
+            .await
+            .expect("group A control request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        wait_for_json_event(&mut device_a, &control_event).await;
+
+        assert_event_not_received(&mut device_b, &control_event, Duration::from_millis(300)).await;
+
+        let state_a = get_disconnect_state(&client, &server, secret_a).await;
+
+        let state_b = get_disconnect_state(&client, &server, secret_b).await;
+
+        assert_eq!(state_a.volume, 0.25);
+        assert_eq!(state_b.volume, 1.0);
+
+        /*
+         * Remove group A and verify group B remains alive and functional.
+         */
+        disconnect(device_a);
+        disconnect(listener_a);
+
+        wait_for_group_removal(&server.state, secret_a).await;
+
+        {
+            let groups = server.state.groups.read().await;
+
+            assert!(
+                !groups.contains_key(secret_a),
+                "group A should have been removed"
+            );
+
+            assert!(groups.contains_key(secret_b), "group B should remain");
+        }
+
+        let response = client
+            .get(format!("{}/state", server.base_url))
+            .query(&[("secret", secret_b)])
+            .send()
+            .await
+            .expect("group B state request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = client
+            .post(format!("{}/autoplay", server.base_url))
+            .query(&[("secret", secret_b), ("device_id", "device-1")])
+            .json(&true)
+            .send()
+            .await
+            .expect("group B autoplay request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let state_b = get_disconnect_state(&client, &server, secret_b).await;
+
+        assert!(state_b.auto_play);
+        assert_eq!(state_b.volume, 1.0);
+
+        disconnect(device_b);
+        disconnect(listener_b);
+
+        wait_for_group_removal(&server.state, secret_b).await;
     }
 }
