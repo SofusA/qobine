@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     app::FavoriteIds,
     image_cache::ImageManager,
-    ui::{SELECTED_STYLE, sidebar},
+    ui::{SELECTED_STYLE, leaves_content, sidebar},
     widgets::grid::Grid,
 };
 use crate::{
@@ -331,7 +331,7 @@ impl GenresState {
                 self.load_genre(client).await?;
                 self.mode = GenresMode::GenreDetail;
                 self.selected_sub_tab = 0;
-                self.focus = GenresFocus::Sidebar;
+                self.focus = GenresFocus::Content;
 
                 Ok(Output::Consumed)
             }
@@ -346,43 +346,48 @@ impl GenresState {
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
-        match code {
-            KeyCode::Esc | KeyCode::Char('q') => {
-                self.mode = GenresMode::GenreList;
-                self.focus = GenresFocus::Sidebar;
+        match self.focus {
+            GenresFocus::Sidebar => match code {
+                KeyCode::Esc => {
+                    self.mode = GenresMode::GenreList;
 
-                Ok(Output::Consumed)
-            }
-            _ => match self.focus {
-                GenresFocus::Sidebar => match code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.cycle_subtab_backwards();
+                    Ok(Output::Consumed)
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.cycle_subtab_backwards();
 
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.cycle_subtab();
+                    Ok(Output::Consumed)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.cycle_subtab();
 
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                        self.focus = GenresFocus::Content;
+                    Ok(Output::Consumed)
+                }
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                    self.focus = GenresFocus::Content;
 
-                        Ok(Output::Consumed)
-                    }
-                    _ => Ok(Output::NotConsumed),
-                },
-                GenresFocus::Content => match code {
-                    KeyCode::Esc => {
+                    Ok(Output::Consumed)
+                }
+                _ => Ok(Output::NotConsumed),
+            },
+            GenresFocus::Content => match code {
+                KeyCode::Esc => {
+                    self.focus = GenresFocus::Sidebar;
+
+                    Ok(Output::Consumed)
+                }
+                code => {
+                    let output = self
+                        .handle_selected_content_events(code, client, controls, notifications)
+                        .await?;
+
+                    if leaves_content(code, &output) {
                         self.focus = GenresFocus::Sidebar;
+                        return Ok(Output::Consumed);
+                    }
 
-                        Ok(Output::Consumed)
-                    }
-                    _ => {
-                        self.handle_selected_content_events(code, client, controls, notifications)
-                            .await
-                    }
-                },
+                    Ok(output)
+                }
             },
         }
     }

@@ -15,7 +15,7 @@ use super::{OverlayFocus, about_scroll_delta, header_blurb, render_about, scroll
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
-    ui::{block, mark_as_favorite, sidebar},
+    ui::{block, leaves_content, mark_as_favorite, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
@@ -113,8 +113,16 @@ impl ArtistOverlay {
             OverlayFocus::Sidebar => Ok(self.handle_sidebar_event(code)),
 
             OverlayFocus::Content => {
-                self.handle_content_event(code, client, controls, notifications)
-                    .await
+                let output = self
+                    .handle_content_event(code, client, controls, notifications)
+                    .await?;
+
+                if leaves_content(code, &output) {
+                    self.focus = OverlayFocus::Sidebar;
+                    return Ok(Output::Consumed);
+                }
+
+                Ok(output)
             }
         }
     }
@@ -282,7 +290,7 @@ impl ArtistOverlay {
 
             KeyCode::Esc => Output::PopOverlay,
 
-            _ => Output::Consumed,
+            _ => Output::NotConsumed,
         }
     }
 
@@ -299,10 +307,11 @@ impl ArtistOverlay {
         }
 
         if self.selected_tab_kind() == Some(ArtistTabKind::About) {
-            if let Some(delta) = about_scroll_delta(code) {
-                scroll_about(&mut self.about_scroll, delta);
-            }
+            let Some(delta) = about_scroll_delta(code) else {
+                return Ok(Output::NotConsumed);
+            };
 
+            scroll_about(&mut self.about_scroll, delta);
             return Ok(Output::Consumed);
         }
 

@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::app::FavoriteIds;
 use crate::image_cache::ImageManager;
-use crate::ui::sidebar;
+use crate::ui::{leaves_content, sidebar};
 use crate::widgets::grid::Grid;
 use crate::{
     app::{NotificationList, Output},
@@ -164,9 +164,17 @@ impl DiscoverState {
                         self.focus = DiscoverFocus::Sidebar;
                         Ok(Output::Consumed)
                     }
-                    _ => {
-                        self.handle_content_events(key_event.code, client, controls, notifications)
-                            .await
+                    code => {
+                        let output = self
+                            .handle_content_events(code, client, controls, notifications)
+                            .await?;
+
+                        if leaves_content(code, &output) {
+                            self.focus = DiscoverFocus::Sidebar;
+                            return Ok(Output::Consumed);
+                        }
+
+                        Ok(output)
                     }
                 },
             },

@@ -83,7 +83,7 @@ impl TrackInfoOverlay {
 
             KeyCode::Esc => Ok(Output::PopOverlay),
 
-            _ => Ok(Output::Consumed),
+            _ => Ok(Output::NotConsumed),
         }
     }
 

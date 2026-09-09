@@ -20,7 +20,7 @@ use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds,
-        mark_as_favorite, sidebar,
+        leaves_content, mark_as_favorite, sidebar,
     },
     widgets::{
         grid::Grid,
@@ -119,12 +119,24 @@ impl AlbumOverlay {
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
+        if code == KeyCode::Char('G') {
+            return self.open_artist(client).await;
+        }
+
         match self.focus {
             OverlayFocus::Sidebar => self.handle_sidebar_event(code, client).await,
 
             OverlayFocus::Content => {
-                self.handle_content_event(code, client, controls, notifications)
-                    .await
+                let output = self
+                    .handle_content_event(code, client, controls, notifications)
+                    .await?;
+
+                if leaves_content(code, &output) {
+                    self.focus = OverlayFocus::Sidebar;
+                    return Ok(Output::Consumed);
+                }
+
+                Ok(output)
             }
         }
     }
@@ -303,7 +315,7 @@ impl AlbumOverlay {
 
             KeyCode::Esc => Ok(Output::PopOverlay),
 
-            _ => Ok(Output::Consumed),
+            _ => Ok(Output::NotConsumed),
         }
     }
 
@@ -314,25 +326,18 @@ impl AlbumOverlay {
         controls: &Controls,
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
-        match code {
-            KeyCode::Esc => {
-                self.focus = OverlayFocus::Sidebar;
-                return Ok(Output::Consumed);
-            }
-
-            KeyCode::Char('G') => {
-                return self.open_artist(client).await;
-            }
-
-            _ => {}
+        if code == KeyCode::Esc {
+            self.focus = OverlayFocus::Sidebar;
+            return Ok(Output::Consumed);
         }
 
         match self.selected_tab_kind() {
             Some(AlbumTabKind::About) => {
-                if let Some(delta) = about_scroll_delta(code) {
-                    scroll_about(&mut self.about_scroll, delta);
-                }
+                let Some(delta) = about_scroll_delta(code) else {
+                    return Ok(Output::NotConsumed);
+                };
 
+                scroll_about(&mut self.about_scroll, delta);
                 Ok(Output::Consumed)
             }
 
@@ -340,7 +345,7 @@ impl AlbumOverlay {
                 if code == KeyCode::Enter {
                     self.open_artist(client).await
                 } else {
-                    Ok(Output::Consumed)
+                    Ok(Output::NotConsumed)
                 }
             }
 
