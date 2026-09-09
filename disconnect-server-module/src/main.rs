@@ -43,6 +43,7 @@ struct AppState {
 
 struct Group {
     streams: HashSet<String>,
+    listeners: HashSet<String>,
     tx: broadcast::Sender<DisconnectServerEvent>,
     active_device: String,
     tracklist: Tracklist,
@@ -50,6 +51,14 @@ struct Group {
     position: Duration,
     volume: f32,
     auto_play: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+enum StreamType {
+    #[default]
+    Device,
+    Listener,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +70,9 @@ struct AuthQuery {
 struct StreamQuery {
     secret: String,
     device_id: String,
+
+    #[serde(default)]
+    stream_type: StreamType,
 }
 
 #[derive(Deserialize)]
@@ -92,6 +104,7 @@ async fn main() {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+
     tracing::info!("listening on {}", addr);
 
     let Ok(listener) = tokio::net::TcpListener::bind(addr).await else {
@@ -99,9 +112,9 @@ async fn main() {
         return;
     };
 
-    let Ok(()) = axum::serve(listener, app).await else {
-        return;
-    };
+    if let Err(error) = axum::serve(listener, app).await {
+        tracing::error!(?error, "server stopped");
+    }
 }
 
 fn sanitize_id(value: &str) -> String {
@@ -134,19 +147,21 @@ fn sanitize_auth_query(auth: &AuthQuery) -> Result<String, StatusCode> {
     Ok(secret)
 }
 
-fn sanitize_stream_query(query: &StreamQuery) -> Result<(String, String), StatusCode> {
+fn sanitize_stream_query(query: &StreamQuery) -> Result<(String, String, StreamType), StatusCode> {
     let secret = sanitize_secret(&query.secret);
-    let device_id = sanitize_device_id(&query.device_id);
+    let client_id = sanitize_device_id(&query.device_id);
 
     validate_non_empty(&secret)?;
-    validate_non_empty(&device_id)?;
+    validate_non_empty(&client_id)?;
 
-    Ok((secret, device_id))
+    Ok((secret, client_id, query.stream_type))
 }
 
-fn sanitize_device_request(req: &DeviceRequest) -> Result<String, StatusCode> {
-    let device_id = sanitize_device_id(&req.device_id);
+fn sanitize_device_request(request: &DeviceRequest) -> Result<String, StatusCode> {
+    let device_id = sanitize_device_id(&request.device_id);
+
     validate_non_empty(&device_id)?;
+
     Ok(device_id)
 }
 
@@ -164,30 +179,32 @@ fn rate_limit_key_from_uri(uri: &Uri) -> String {
 
 async fn rate_limit_middleware(
     State(state): State<AppState>,
-    req: Request<Body>,
+    request: Request<Body>,
     next: Next,
 ) -> impl IntoResponse {
-    let key = rate_limit_key_from_uri(req.uri());
+    let key = rate_limit_key_from_uri(request.uri());
     let now = Instant::now();
 
-    let mut rate_limits = state.rate_limits.write().await;
-    let timestamps = rate_limits.entry(key).or_default();
+    {
+        let mut rate_limits = state.rate_limits.write().await;
+        let timestamps = rate_limits.entry(key).or_default();
 
-    while let Some(oldest) = timestamps.front() {
-        if now.duration_since(*oldest) > RATE_LIMIT_WINDOW {
-            timestamps.pop_front();
-        } else {
-            break;
+        while let Some(oldest) = timestamps.front() {
+            if now.duration_since(*oldest) > RATE_LIMIT_WINDOW {
+                timestamps.pop_front();
+            } else {
+                break;
+            }
         }
+
+        if timestamps.len() >= RATE_LIMIT_MAX_REQUESTS {
+            return StatusCode::TOO_MANY_REQUESTS.into_response();
+        }
+
+        timestamps.push_back(now);
     }
 
-    if timestamps.len() >= RATE_LIMIT_MAX_REQUESTS {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
-
-    timestamps.push_back(now);
-
-    next.run(req).await
+    next.run(request).await
 }
 
 async fn is_active_device(state: &AppState, secret: &str, device_id: &str) -> bool {
@@ -195,7 +212,7 @@ async fn is_active_device(state: &AppState, secret: &str, device_id: &str) -> bo
 
     groups
         .get(secret)
-        .is_some_and(|g| g.active_device == device_id)
+        .is_some_and(|group| group.active_device == device_id)
 }
 
 async fn get_state(
@@ -205,7 +222,6 @@ async fn get_state(
     let secret = sanitize_auth_query(&auth)?;
 
     let groups = state.groups.read().await;
-
     let group = groups.get(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
     let state = DisconnectState {
@@ -224,24 +240,34 @@ async fn get_state(
 async fn control(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
-    Query(device): Query<DeviceRequest>,
-    Json(req): Json<ControlCommand>,
+    Query(client): Query<DeviceRequest>,
+    Json(command): Json<ControlCommand>,
 ) -> Result<StatusCode, StatusCode> {
     let secret = sanitize_auth_query(&auth)?;
-    let device_id = sanitize_device_request(&device)?;
+    let client_id = sanitize_device_request(&client)?;
 
-    if is_active_device(&state, &secret, &device_id).await {
-        tracing::info!("control blocked. Active device cannot control over Disconnect");
+    let groups = state.groups.read().await;
+    let group = groups.get(&secret).ok_or(StatusCode::NOT_FOUND)?;
+
+    let is_listener = group.listeners.contains(&client_id);
+    let is_inactive_device = group.streams.contains(&client_id) && group.active_device != client_id;
+
+    if !is_listener && !is_inactive_device {
+        tracing::info!(
+            client_id = %client_id,
+            "control request rejected"
+        );
+
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let groups = state.groups.read().await;
+    tracing::info!(
+        client_id = %client_id,
+        "control: {:?}",
+        command
+    );
 
-    let group = groups.get(&secret).ok_or(StatusCode::NOT_FOUND)?;
-
-    tracing::info!("control: {:?}", req);
-
-    let _ = group.tx.send(DisconnectServerEvent::Control(req));
+    let _ = group.tx.send(DisconnectServerEvent::Control(command));
 
     Ok(StatusCode::OK)
 }
@@ -249,13 +275,12 @@ async fn control(
 async fn set_active_device(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
-    Json(req): Json<DeviceRequest>,
+    Json(request): Json<DeviceRequest>,
 ) -> Result<StatusCode, StatusCode> {
     let secret = sanitize_auth_query(&auth)?;
-    let device_id = sanitize_device_request(&req)?;
+    let device_id = sanitize_device_request(&request)?;
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
     if !group.streams.contains(&device_id) {
@@ -266,7 +291,7 @@ async fn set_active_device(
         return Ok(StatusCode::OK);
     }
 
-    tracing::info!("new active device {}", device_id);
+    tracing::info!("new active device: {}", device_id);
 
     group.active_device.clone_from(&device_id);
 
@@ -281,10 +306,8 @@ async fn set_tracklist(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
     Query(device): Query<DeviceRequest>,
-    Json(req): Json<Tracklist>,
+    Json(tracklist): Json<Tracklist>,
 ) -> Result<StatusCode, StatusCode> {
-    tracing::info!("New set tracklist request");
-
     let secret = sanitize_auth_query(&auth)?;
     let device_id = sanitize_device_request(&device)?;
 
@@ -293,14 +316,17 @@ async fn set_tracklist(
     }
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    group.tracklist = req.clone();
+    group.tracklist = tracklist.clone();
 
-    tracing::info!("tracklist {:?}", req);
+    tracing::info!(
+        device_id = %device_id,
+        "tracklist updated: {:?}",
+        tracklist
+    );
 
-    let _ = group.tx.send(DisconnectServerEvent::Tracklist(req));
+    let _ = group.tx.send(DisconnectServerEvent::Tracklist(tracklist));
 
     Ok(StatusCode::OK)
 }
@@ -309,10 +335,8 @@ async fn set_status(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
     Query(device): Query<DeviceRequest>,
-    Json(req): Json<Status>,
+    Json(status): Json<Status>,
 ) -> Result<StatusCode, StatusCode> {
-    tracing::info!("New set status request");
-
     let secret = sanitize_auth_query(&auth)?;
     let device_id = sanitize_device_request(&device)?;
 
@@ -321,14 +345,17 @@ async fn set_status(
     }
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    group.playback_status = req;
+    group.playback_status = status;
 
-    let _ = group.tx.send(DisconnectServerEvent::Status(req));
+    let _ = group.tx.send(DisconnectServerEvent::Status(status));
 
-    tracing::info!("Status updated {:?}", req);
+    tracing::info!(
+        device_id = %device_id,
+        "status updated: {:?}",
+        status
+    );
 
     Ok(StatusCode::OK)
 }
@@ -337,7 +364,7 @@ async fn set_position(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
     Query(device): Query<DeviceRequest>,
-    Json(req): Json<Duration>,
+    Json(position): Json<Duration>,
 ) -> Result<StatusCode, StatusCode> {
     let secret = sanitize_auth_query(&auth)?;
     let device_id = sanitize_device_request(&device)?;
@@ -347,14 +374,17 @@ async fn set_position(
     }
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    group.position = req;
+    group.position = position;
 
-    let _ = group.tx.send(DisconnectServerEvent::Position(req));
+    let _ = group.tx.send(DisconnectServerEvent::Position(position));
 
-    tracing::info!("Position updated {:?}", req);
+    tracing::info!(
+        device_id = %device_id,
+        "position updated: {:?}",
+        position
+    );
 
     Ok(StatusCode::OK)
 }
@@ -363,14 +393,12 @@ async fn set_volume(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
     Query(device): Query<DeviceRequest>,
-    Json(req): Json<f32>,
+    Json(volume): Json<f32>,
 ) -> Result<StatusCode, StatusCode> {
-    tracing::info!("New set volume request");
-
     let secret = sanitize_auth_query(&auth)?;
     let device_id = sanitize_device_request(&device)?;
 
-    if !req.is_finite() || !(0.0..=1.0).contains(&req) {
+    if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -379,14 +407,17 @@ async fn set_volume(
     }
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    group.volume = req;
+    group.volume = volume;
 
-    let _ = group.tx.send(DisconnectServerEvent::Volume(req));
+    let _ = group.tx.send(DisconnectServerEvent::Volume(volume));
 
-    tracing::info!("Volume updated {:?}", req);
+    tracing::info!(
+        device_id = %device_id,
+        "volume updated: {}",
+        volume
+    );
 
     Ok(StatusCode::OK)
 }
@@ -395,10 +426,8 @@ async fn set_auto_play(
     State(state): State<AppState>,
     Query(auth): Query<AuthQuery>,
     Query(device): Query<DeviceRequest>,
-    Json(req): Json<bool>,
+    Json(auto_play): Json<bool>,
 ) -> Result<StatusCode, StatusCode> {
-    tracing::info!("New set autoplay request");
-
     let secret = sanitize_auth_query(&auth)?;
     let device_id = sanitize_device_request(&device)?;
 
@@ -407,14 +436,17 @@ async fn set_auto_play(
     }
 
     let mut groups = state.groups.write().await;
-
     let group = groups.get_mut(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    group.auto_play = req;
+    group.auto_play = auto_play;
 
-    let _ = group.tx.send(DisconnectServerEvent::AutoPlay(req));
+    let _ = group.tx.send(DisconnectServerEvent::AutoPlay(auto_play));
 
-    tracing::info!("auto_play updated {:?}", req);
+    tracing::info!(
+        device_id = %device_id,
+        "autoplay updated: {}",
+        auto_play
+    );
 
     Ok(StatusCode::OK)
 }
@@ -422,45 +454,75 @@ async fn set_auto_play(
 struct Guard {
     secret: String,
     groups: Arc<RwLock<HashMap<String, Group>>>,
-    device: String,
+    client_id: String,
+    stream_type: StreamType,
 }
 
 impl Drop for Guard {
     fn drop(&mut self) {
         let groups = self.groups.clone();
         let secret = self.secret.clone();
-        let device = self.device.clone();
+        let client_id = self.client_id.clone();
+        let stream_type = self.stream_type;
 
         tokio::spawn(async move {
             let mut groups = groups.write().await;
 
-            if let Some(group) = groups.get_mut(&secret) {
-                group.streams.remove(&device);
+            let should_remove_group = {
+                let Some(group) = groups.get_mut(&secret) else {
+                    return;
+                };
 
-                tracing::info!("stream disconnected {}", device);
+                match stream_type {
+                    StreamType::Device => {
+                        group.streams.remove(&client_id);
 
-                if group.streams.is_empty() {
-                    groups.remove(&secret);
-                } else {
-                    if group.active_device == device
-                        && let Some(new_active) = group.streams.iter().next()
-                    {
-                        group.active_device.clone_from(new_active);
+                        tracing::info!(
+                            device_id = %client_id,
+                            "device stream disconnected"
+                        );
+
+                        if group.active_device == client_id {
+                            if let Some(new_active) = group.streams.iter().next().cloned() {
+                                group.active_device.clone_from(&new_active);
+
+                                let _ = group
+                                    .tx
+                                    .send(DisconnectServerEvent::ActiveDevice(new_active));
+                            } else {
+                                group.active_device.clear();
+                            }
+                        }
+
+                        let available_devices: Vec<String> =
+                            group.streams.iter().cloned().collect();
 
                         let _ = group
                             .tx
-                            .send(DisconnectServerEvent::ActiveDevice(new_active.clone()));
+                            .send(DisconnectServerEvent::AvailableDevices(available_devices));
                     }
 
-                    let devices: Vec<String> = group.streams.iter().cloned().collect();
+                    StreamType::Listener => {
+                        group.listeners.remove(&client_id);
 
-                    let _ = group
-                        .tx
-                        .send(DisconnectServerEvent::AvailableDevices(devices));
+                        tracing::info!(
+                            listener_id = %client_id,
+                            "listener disconnected"
+                        );
+                    }
                 }
-            }
 
-            tracing::info!("stream disconnected {}", device);
+                group.streams.is_empty() && group.listeners.is_empty()
+            };
+
+            if should_remove_group {
+                groups.remove(&secret);
+
+                tracing::info!(
+                    secret = %secret,
+                    "removed empty group"
+                );
+            }
         });
     }
 }
@@ -469,7 +531,7 @@ async fn stream_handler(
     State(state): State<AppState>,
     Query(query): Query<StreamQuery>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    let (secret, device_id) = sanitize_stream_query(&query)?;
+    let (secret, client_id, stream_type) = sanitize_stream_query(&query)?;
 
     let rx = {
         let mut groups = state.groups.write().await;
@@ -481,12 +543,11 @@ async fn stream_handler(
         let group = groups.entry(secret.clone()).or_insert_with(|| {
             let (tx, _) = broadcast::channel(128);
 
-            let streams = HashSet::new();
-
             Group {
-                streams,
+                streams: HashSet::new(),
+                listeners: HashSet::new(),
                 tx,
-                active_device: device_id.clone(),
+                active_device: String::new(),
                 tracklist: Tracklist::default(),
                 playback_status: Status::default(),
                 position: Duration::default(),
@@ -495,23 +556,45 @@ async fn stream_handler(
             }
         });
 
-        if group.streams.contains(&device_id) {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-
-        group.streams.insert(device_id.clone());
-
-        if group.active_device.is_empty() {
-            group.active_device.clone_from(&device_id);
+        if group.streams.contains(&client_id) || group.listeners.contains(&client_id) {
+            return Err(StatusCode::CONFLICT);
         }
 
         let rx = group.tx.subscribe();
 
-        let devices: Vec<String> = group.streams.iter().cloned().collect();
+        match stream_type {
+            StreamType::Device => {
+                group.streams.insert(client_id.clone());
 
-        let _ = group
-            .tx
-            .send(DisconnectServerEvent::AvailableDevices(devices));
+                if group.active_device.is_empty() {
+                    group.active_device.clone_from(&client_id);
+
+                    let _ = group
+                        .tx
+                        .send(DisconnectServerEvent::ActiveDevice(client_id.clone()));
+                }
+
+                let available_devices: Vec<String> = group.streams.iter().cloned().collect();
+
+                let _ = group
+                    .tx
+                    .send(DisconnectServerEvent::AvailableDevices(available_devices));
+
+                tracing::info!(
+                    device_id = %client_id,
+                    "device stream connected"
+                );
+            }
+
+            StreamType::Listener => {
+                group.listeners.insert(client_id.clone());
+
+                tracing::info!(
+                    listener_id = %client_id,
+                    "listener connected"
+                );
+            }
+        }
 
         rx
     };
@@ -519,23 +602,40 @@ async fn stream_handler(
     let guard = Guard {
         secret: secret.clone(),
         groups: state.groups.clone(),
-        device: device_id.clone(),
+        client_id: client_id.clone(),
+        stream_type,
     };
 
-    let s = stream! {
+    let event_stream = stream! {
         let _guard = guard;
         let mut rx = BroadcastStream::new(rx);
 
-        while let Some(msg) = rx.next().await {
-            if let Some(event) =
-                map_event(&state, &secret, &device_id, msg).await
-            {
-                yield event;
+        while let Some(message) = rx.next().await {
+            match message {
+                Ok(change) => {
+                    if let Some(event) = map_event(
+                        &state,
+                        &secret,
+                        &client_id,
+                        stream_type,
+                        change,
+                    ).await {
+                        yield Ok(event);
+                    }
+                }
+
+                Err(BroadcastStreamRecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        client_id = %client_id,
+                        skipped,
+                        "SSE client lagged behind"
+                    );
+                }
             }
         }
     };
 
-    Ok(Sse::new(s).keep_alive(
+    Ok(Sse::new(event_stream).keep_alive(
         KeepAlive::new()
             .interval(SSE_KEEPALIVE_INTERVAL)
             .text("keepalive"),
@@ -545,38 +645,48 @@ async fn stream_handler(
 async fn map_event(
     state: &AppState,
     secret: &str,
-    device: &str,
-    msg: Result<DisconnectServerEvent, BroadcastStreamRecvError>,
-) -> Option<Result<Event, Infallible>> {
-    let Ok(change) = msg else { return None };
+    client_id: &str,
+    stream_type: StreamType,
+    change: DisconnectServerEvent,
+) -> Option<Event> {
+    let should_send = match stream_type {
+        StreamType::Listener => !matches!(&change, DisconnectServerEvent::Control(_)),
 
-    let is_active_device = {
-        let groups = state.groups.read().await;
+        StreamType::Device => {
+            let is_active_device = {
+                let groups = state.groups.read().await;
 
-        groups
-            .get(secret)
-            .is_some_and(|g| g.active_device == device)
-    };
+                groups
+                    .get(secret)
+                    .is_some_and(|group| group.active_device == client_id)
+            };
 
-    let should_send = match &change {
-        DisconnectServerEvent::Control(_) => is_active_device,
+            match &change {
+                DisconnectServerEvent::Control(_) => is_active_device,
 
-        DisconnectServerEvent::Tracklist(_)
-        | DisconnectServerEvent::Status(_)
-        | DisconnectServerEvent::Position(_)
-        | DisconnectServerEvent::AutoPlay(_)
-        | DisconnectServerEvent::Volume(_) => !is_active_device,
+                DisconnectServerEvent::Tracklist(_)
+                | DisconnectServerEvent::Status(_)
+                | DisconnectServerEvent::Position(_)
+                | DisconnectServerEvent::AutoPlay(_)
+                | DisconnectServerEvent::Volume(_) => !is_active_device,
 
-        DisconnectServerEvent::ActiveDevice(_) | DisconnectServerEvent::AvailableDevices(_) => true,
+                DisconnectServerEvent::ActiveDevice(_)
+                | DisconnectServerEvent::AvailableDevices(_) => true,
+            }
+        }
     };
 
     if !should_send {
         return None;
     }
 
-    let Ok(json) = serde_json::to_string(&change) else {
-        return None;
-    };
+    match serde_json::to_string(&change) {
+        Ok(json) => Some(Event::default().data(json)),
 
-    Some(Ok(Event::default().data(json)))
+        Err(error) => {
+            tracing::error!(?error, "failed to serialize SSE event");
+
+            None
+        }
+    }
 }
