@@ -14,7 +14,7 @@ use axum::{
 use controls_module::{Status, controls::ControlCommand, tracklist::Tracklist};
 use disconnect_server_module::{DisconnectServerEvent, DisconnectState};
 use futures::{Stream, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     convert::Infallible,
@@ -75,21 +75,20 @@ struct StreamQuery {
     stream_type: StreamType,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct DeviceRequest {
     device_id: String,
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt().init();
-
-    let state = AppState {
+fn create_state() -> AppState {
+    AppState {
         groups: Arc::new(RwLock::new(HashMap::new())),
         rate_limits: Arc::new(RwLock::new(HashMap::new())),
-    };
+    }
+}
 
-    let app = Router::new()
+fn create_app(state: AppState) -> Router {
+    Router::new()
         .route("/stream", get(stream_handler))
         .route("/state", get(get_state))
         .route("/active-device", post(set_active_device))
@@ -101,15 +100,27 @@ async fn main() {
         .route("/control", post(control))
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE_BYTES))
         .layer(from_fn_with_state(state.clone(), rate_limit_middleware))
-        .with_state(state);
+        .with_state(state)
+}
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt().init();
 
-    tracing::info!("listening on {}", addr);
+    let app = create_app(create_state());
 
-    let Ok(listener) = tokio::net::TcpListener::bind(addr).await else {
-        tracing::error!("Unable to bind to address: {addr}");
-        return;
+    let address = SocketAddr::from(([0, 0, 0, 0], 3000));
+
+    tracing::info!("listening on {}", address);
+
+    let listener = match tokio::net::TcpListener::bind(address).await {
+        Ok(listener) => listener,
+
+        Err(error) => {
+            tracing::error!(?error, "unable to bind to address: {address}");
+
+            return;
+        }
     };
 
     if let Err(error) = axum::serve(listener, app).await {
@@ -688,5 +699,384 @@ async fn map_event(
 
             None
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::panic)]
+#[allow(clippy::never_loop)]
+mod tests {
+    use super::*;
+
+    use reqwest::Client;
+    use reqwest_eventsource::{Event as EventSourceEvent, EventSource, RequestBuilderExt};
+    use serde_json::Value;
+    use tokio::{
+        net::TcpListener,
+        task::JoinHandle,
+        time::{sleep, timeout},
+    };
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(2);
+
+    struct TestServer {
+        base_url: String,
+        state: AppState,
+        task: JoinHandle<()>,
+    }
+
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn spawn_server() -> TestServer {
+        let state = create_state();
+        let app = create_app(state.clone());
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind test server");
+
+        let address = listener
+            .local_addr()
+            .expect("failed to get test server address");
+
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("test server stopped unexpectedly");
+        });
+
+        TestServer {
+            base_url: format!("http://{address}"),
+            state,
+            task,
+        }
+    }
+
+    fn connect_stream(
+        client: &Client,
+        server: &TestServer,
+        secret: &str,
+        client_id: &str,
+        stream_type: StreamType,
+    ) -> EventSource {
+        let stream_type = match stream_type {
+            StreamType::Device => "device",
+            StreamType::Listener => "listener",
+        };
+
+        client
+            .get(format!("{}/stream", server.base_url))
+            .query(&[
+                ("secret", secret),
+                ("device_id", client_id),
+                ("stream_type", stream_type),
+            ])
+            .eventsource()
+            .expect("failed to create event source")
+    }
+
+    async fn wait_until_open(event_source: &mut EventSource) {
+        timeout(TEST_TIMEOUT, async {
+            while let Some(event) = event_source.next().await {
+                match event {
+                    Ok(EventSourceEvent::Open) => return,
+                    Ok(EventSourceEvent::Message(_)) => {
+                        // A message also proves that the stream is connected.
+                        return;
+                    }
+                    Err(error) => panic!("SSE connection failed: {error:?}"),
+                }
+            }
+
+            panic!("SSE stream ended before opening");
+        })
+        .await
+        .expect("timed out waiting for SSE stream to open");
+    }
+
+    async fn wait_for_json_event(event_source: &mut EventSource, expected: &Value) {
+        timeout(TEST_TIMEOUT, async {
+            while let Some(event) = event_source.next().await {
+                match event {
+                    Ok(EventSourceEvent::Open) => {}
+
+                    Ok(EventSourceEvent::Message(message)) => {
+                        let value: Value = serde_json::from_str(&message.data)
+                            .expect("SSE message was not valid JSON");
+
+                        if &value == expected {
+                            return;
+                        }
+                    }
+
+                    Err(error) => {
+                        panic!("error while waiting for SSE event: {error:?}");
+                    }
+                }
+            }
+
+            panic!("SSE stream ended before expected event arrived");
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!("timed out waiting for SSE event: {expected}");
+        });
+    }
+
+    async fn assert_event_not_received(
+        event_source: &mut EventSource,
+        unexpected: &Value,
+        duration: Duration,
+    ) {
+        let result = timeout(duration, async {
+            while let Some(event) = event_source.next().await {
+                match event {
+                    Ok(EventSourceEvent::Open) => {}
+
+                    Ok(EventSourceEvent::Message(message)) => {
+                        let value: Value = serde_json::from_str(&message.data)
+                            .expect("SSE message was not valid JSON");
+
+                        assert!(
+                            &value != unexpected,
+                            "unexpected SSE event received: {unexpected}"
+                        );
+                    }
+
+                    Err(error) => {
+                        panic!("SSE stream failed unexpectedly: {error:?}");
+                    }
+                }
+            }
+
+            panic!("SSE stream ended unexpectedly");
+        })
+        .await;
+
+        // A timeout is the expected result because no matching event arrived.
+        assert!(result.is_err(), "event absence check finished unexpectedly");
+    }
+
+    async fn wait_for_group_removal(state: &AppState, secret: &str) {
+        timeout(TEST_TIMEOUT, async {
+            loop {
+                if !state.groups.read().await.contains_key(secret) {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("group was not removed");
+    }
+
+    async fn get_disconnect_state(
+        client: &Client,
+        server: &TestServer,
+        secret: &str,
+    ) -> DisconnectState {
+        client
+            .get(format!("{}/state", server.base_url))
+            .query(&[("secret", secret)])
+            .send()
+            .await
+            .expect("state request failed")
+            .error_for_status()
+            .expect("state request returned an error")
+            .json()
+            .await
+            .expect("failed to deserialize state")
+    }
+
+    fn disconnect(mut event_source: EventSource) {
+        event_source.close();
+        drop(event_source);
+    }
+
+    #[tokio::test]
+    async fn devices_can_change_disconnect_and_rejoin_while_listener_survives() {
+        let server = spawn_server().await;
+        let client = Client::new();
+
+        let secret = "happy-path-group";
+
+        /*
+         * Connect the first device.
+         *
+         * Waiting for ActiveDevice also ensures the server has fully processed
+         * this connection before the second device connects.
+         */
+        let mut device_1 = connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let device_1_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_1, &device_1_active).await;
+
+        let mut device_2 = connect_stream(&client, &server, secret, "device-2", StreamType::Device);
+
+        wait_until_open(&mut device_2).await;
+
+        let mut listener =
+            connect_stream(&client, &server, secret, "listener-1", StreamType::Listener);
+
+        wait_until_open(&mut listener).await;
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(state.active_device, "device-1");
+        assert_eq!(state.available_devices.len(), 2);
+        assert!(state.available_devices.contains(&"device-1".to_string()));
+        assert!(state.available_devices.contains(&"device-2".to_string()));
+
+        /*
+         * Change the active device and assert that both devices and the
+         * listener receive the ActiveDevice event.
+         */
+        let response = client
+            .post(format!("{}/active-device", server.base_url))
+            .query(&[("secret", secret)])
+            .json(&DeviceRequest {
+                device_id: "device-2".to_string(),
+            })
+            .send()
+            .await
+            .expect("active-device request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let device_2_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-2".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_1, &device_2_active).await;
+        wait_for_json_event(&mut device_2, &device_2_active).await;
+        wait_for_json_event(&mut listener, &device_2_active).await;
+
+        /*
+         * Disconnect both devices. The group must remain because the listener
+         * is still connected.
+         */
+        disconnect(device_1);
+        disconnect(device_2);
+
+        timeout(TEST_TIMEOUT, async {
+            loop {
+                let groups = server.state.groups.read().await;
+
+                let devices_are_gone = groups.get(secret).is_some_and(|group| {
+                    group.streams.is_empty() && group.listeners.contains("listener-1")
+                });
+
+                drop(groups);
+
+                if devices_are_gone {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("devices did not disconnect correctly");
+
+        /*
+         * Connecting device-3 proves that the listener stream remained active.
+         * Device-3 becomes active because no active device remains.
+         */
+        let mut device_3 = connect_stream(&client, &server, secret, "device-3", StreamType::Device);
+
+        let device_3_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-3".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_3, &device_3_active).await;
+        wait_for_json_event(&mut listener, &device_3_active).await;
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(state.active_device, "device-3");
+        assert_eq!(state.available_devices, vec!["device-3".to_string()]);
+
+        disconnect(device_3);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
+
+        let response = client
+            .get(format!("{}/state", server.base_url))
+            .query(&[("secret", secret)])
+            .send()
+            .await
+            .expect("state request failed");
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn listener_control_command_is_delivered_only_to_active_device() {
+        let server = spawn_server().await;
+        let client = Client::new();
+
+        let secret = "control-group";
+
+        let mut active_device =
+            connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let initial_active_event =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut active_device, &initial_active_event).await;
+
+        let mut inactive_device =
+            connect_stream(&client, &server, secret, "device-2", StreamType::Device);
+
+        wait_until_open(&mut inactive_device).await;
+
+        let mut listener =
+            connect_stream(&client, &server, secret, "listener-1", StreamType::Listener);
+
+        wait_until_open(&mut listener).await;
+
+        let command = ControlCommand::Play;
+
+        let expected_event = serde_json::to_value(DisconnectServerEvent::Control(command.clone()))
+            .expect("failed to serialize expected control event");
+
+        let response = client
+            .post(format!("{}/control", server.base_url))
+            .query(&[("secret", secret), ("device_id", "listener-1")])
+            .json(&command)
+            .send()
+            .await
+            .expect("control request failed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        wait_for_json_event(&mut active_device, &expected_event).await;
+
+        assert_event_not_received(
+            &mut inactive_device,
+            &expected_event,
+            Duration::from_millis(300),
+        )
+        .await;
+
+        assert_event_not_received(&mut listener, &expected_event, Duration::from_millis(300)).await;
+
+        disconnect(active_device);
+        disconnect(inactive_device);
+        disconnect(listener);
+
+        wait_for_group_removal(&server.state, secret).await;
     }
 }
