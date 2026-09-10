@@ -141,11 +141,11 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "apple-cf"
-version = "0.7.1"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67ba5e8f49a0239ddb14da08ad41bb28b46880252bf4831380de20709c996574"
+checksum = "e7fd680cd0f3f02ee717b2014b26d18985c57b784384ba47213fcf8791e8c250"
 dependencies = [
- "doom-fish-utils 0.2.1",
+ "doom-fish-utils",
 ]
 
 [[package]]
@@ -1539,12 +1539,6 @@ checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
 ]
-
-[[package]]
-name = "doom-fish-utils"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "075caf2993a45abe1c2e60d8d1514ce43f947fcbcd31de19db0075e80e20c6a7"
 
 [[package]]
 name = "doom-fish-utils"
@@ -3437,7 +3431,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "707f1ad053bddf7646f6a525a0b2c74cff23676a792e050b2d58e38c733467fb"
 dependencies = [
  "apple-cf",
- "doom-fish-utils 0.3.3",
+ "doom-fish-utils",
  "libc",
 ]
 
