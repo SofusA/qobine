@@ -46,7 +46,7 @@ pub struct Playlist {
     pub description: String,
     pub images300: Option<Vec<String>>,
     pub duration: u32,
-    pub tracks_count: i64,
+    pub tracks_count: usize,
     pub name: String,
     pub id: u32,
     pub is_featured: Option<bool>,
