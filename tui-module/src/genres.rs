@@ -17,7 +17,7 @@ use ratatui::{
 use crate::{
     app::FavoriteIds,
     image_cache::ImageManager,
-    ui::{SELECTED_STYLE, leaves_content, sidebar},
+    ui::{Pane, SELECTED_STYLE, leaves_content, sidebar},
     widgets::grid::Grid,
 };
 use crate::{
@@ -30,7 +30,7 @@ pub struct GenresState {
     selected_genre: usize,
     selected_sub_tab: usize,
     mode: GenresMode,
-    focus: GenresFocus,
+    focus: Pane,
 }
 
 struct GenreItem {
@@ -44,13 +44,6 @@ struct GenreItem {
 enum GenresMode {
     GenreList,
     GenreDetail,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum GenresFocus {
-    #[default]
-    Sidebar,
-    Content,
 }
 
 impl GenresState {
@@ -72,7 +65,7 @@ impl GenresState {
             selected_genre: 0,
             selected_sub_tab: 0,
             mode: GenresMode::GenreList,
-            focus: GenresFocus::default(),
+            focus: Pane::default(),
         })
     }
 
@@ -240,7 +233,7 @@ impl GenresState {
             .chain(genre.playlists.iter().map(|(label, _)| label.as_str()))
             .collect::<Vec<_>>();
 
-        let (sidebar, sidebar_width) = sidebar(labels, self.focus == GenresFocus::Sidebar);
+        let (sidebar, sidebar_width) = sidebar(labels, self.focus == Pane::Sidebar);
 
         let [sidebar_area, content_area] =
             Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)])
@@ -251,7 +244,7 @@ impl GenresState {
 
         frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
-        let content_focused = self.focus == GenresFocus::Content;
+        let content_focused = self.focus == Pane::Content;
 
         match self.selected_mut() {
             Some(Selected::Album(list)) => list.render(
@@ -331,7 +324,7 @@ impl GenresState {
                 self.load_genre(client).await?;
                 self.mode = GenresMode::GenreDetail;
                 self.selected_sub_tab = 0;
-                self.focus = GenresFocus::Content;
+                self.focus = Pane::Content;
 
                 Ok(Output::Consumed)
             }
@@ -347,7 +340,7 @@ impl GenresState {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match self.focus {
-            GenresFocus::Sidebar => match code {
+            Pane::Sidebar => match code {
                 KeyCode::Esc => {
                     self.mode = GenresMode::GenreList;
 
@@ -364,15 +357,15 @@ impl GenresState {
                     Ok(Output::Consumed)
                 }
                 KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                    self.focus = GenresFocus::Content;
+                    self.focus = Pane::Content;
 
                     Ok(Output::Consumed)
                 }
                 _ => Ok(Output::NotConsumed),
             },
-            GenresFocus::Content => match code {
+            Pane::Content => match code {
                 KeyCode::Esc => {
-                    self.focus = GenresFocus::Sidebar;
+                    self.focus = Pane::Sidebar;
 
                     Ok(Output::Consumed)
                 }
@@ -382,7 +375,7 @@ impl GenresState {
                         .await?;
 
                     if leaves_content(code, &output) {
-                        self.focus = GenresFocus::Sidebar;
+                        self.focus = Pane::Sidebar;
                         return Ok(Output::Consumed);
                     }
 

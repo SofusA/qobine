@@ -27,13 +27,6 @@ pub use new_playlist::NewPlaylistOverlay;
 pub use playlist::PlaylistOverlay;
 pub use track_info::TrackInfoOverlay;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OverlayFocus {
-    Sidebar,
-    #[default]
-    Content,
-}
-
 #[allow(clippy::large_enum_variant)]
 pub enum Overlay {
     Artist(ArtistOverlay),

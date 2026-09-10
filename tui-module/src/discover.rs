@@ -12,25 +12,18 @@ use ratatui::{
 
 use crate::app::FavoriteIds;
 use crate::image_cache::ImageManager;
-use crate::ui::{leaves_content, sidebar};
+use crate::ui::{Pane, leaves_content, sidebar};
 use crate::widgets::grid::Grid;
 use crate::{
     app::{NotificationList, Output},
     ui::block,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum DiscoverFocus {
-    #[default]
-    Sidebar,
-    Content,
-}
-
 pub struct DiscoverState {
     featured_albums: Vec<(String, Grid<AlbumSimple>)>,
     featured_playlists: Vec<(String, Grid<PlaylistSimple>)>,
     selected_sub_tab: usize,
-    focus: DiscoverFocus,
+    focus: Pane,
 }
 
 impl DiscoverState {
@@ -75,7 +68,7 @@ impl DiscoverState {
             featured_albums,
             featured_playlists,
             selected_sub_tab: 0,
-            focus: DiscoverFocus::default(),
+            focus: Pane::default(),
         })
     }
 
@@ -102,7 +95,7 @@ impl DiscoverState {
             )
             .collect::<Vec<_>>();
 
-        let (sidebar, sidebar_width) = sidebar(labels, self.focus == DiscoverFocus::Sidebar);
+        let (sidebar, sidebar_width) = sidebar(labels, self.focus == Pane::Sidebar);
 
         let [sidebar_area, content_area] = Layout::default()
             .direction(Direction::Horizontal)
@@ -114,7 +107,7 @@ impl DiscoverState {
 
         frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
-        let content_focused = self.focus == DiscoverFocus::Content;
+        let content_focused = self.focus == Pane::Content;
 
         if let Some((_, list)) = self.selected_album_mut() {
             list.render(
@@ -144,7 +137,7 @@ impl DiscoverState {
     ) -> AppResult<Output> {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self.focus {
-                DiscoverFocus::Sidebar => match key_event.code {
+                Pane::Sidebar => match key_event.code {
                     KeyCode::Up | KeyCode::Char('k') => {
                         self.cycle_subtab_backwards();
                         Ok(Output::Consumed)
@@ -154,14 +147,14 @@ impl DiscoverState {
                         Ok(Output::Consumed)
                     }
                     KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                        self.focus = DiscoverFocus::Content;
+                        self.focus = Pane::Content;
                         Ok(Output::Consumed)
                     }
                     _ => Ok(Output::NotConsumed),
                 },
-                DiscoverFocus::Content => match key_event.code {
+                Pane::Content => match key_event.code {
                     KeyCode::Esc => {
-                        self.focus = DiscoverFocus::Sidebar;
+                        self.focus = Pane::Sidebar;
                         Ok(Output::Consumed)
                     }
                     code => {
@@ -170,7 +163,7 @@ impl DiscoverState {
                             .await?;
 
                         if leaves_content(code, &output) {
-                            self.focus = DiscoverFocus::Sidebar;
+                            self.focus = Pane::Sidebar;
                             return Ok(Output::Consumed);
                         }
 

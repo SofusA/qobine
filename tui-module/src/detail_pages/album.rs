@@ -11,15 +11,12 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use super::{
-    ArtistOverlay, Overlay, OverlayFocus, about_scroll_delta, header_blurb, render_about,
-    scroll_about,
-};
+use super::{ArtistOverlay, Overlay, about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, Pane, block, format_seconds,
         leaves_content, mark_as_favorite, sidebar,
     },
     widgets::{
@@ -29,7 +26,7 @@ use crate::{
 };
 
 pub struct AlbumOverlay {
-    focus: OverlayFocus,
+    focus: Pane,
     title: String,
     artist: Artist,
     tracks: TrackList,
@@ -67,7 +64,7 @@ impl AlbumOverlay {
         let similar = client.suggested_albums(&album.id).await.unwrap_or_default();
 
         Self {
-            focus: OverlayFocus::default(),
+            focus: Pane::Content,
             title: album.title,
             artist: album.artist,
             tracks: TrackList::new(album.tracks),
@@ -124,15 +121,15 @@ impl AlbumOverlay {
         }
 
         match self.focus {
-            OverlayFocus::Sidebar => self.handle_sidebar_event(code, client).await,
+            Pane::Sidebar => self.handle_sidebar_event(code, client).await,
 
-            OverlayFocus::Content => {
+            Pane::Content => {
                 let output = self
                     .handle_content_event(code, client, controls, notifications)
                     .await?;
 
                 if leaves_content(code, &output) {
-                    self.focus = OverlayFocus::Sidebar;
+                    self.focus = Pane::Sidebar;
                     return Ok(Output::Consumed);
                 }
 
@@ -230,8 +227,7 @@ impl AlbumOverlay {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
-        let (sidebar_widget, sidebar_width) =
-            sidebar(self.tabs(), self.focus == OverlayFocus::Sidebar);
+        let (sidebar_widget, sidebar_width) = sidebar(self.tabs(), self.focus == Pane::Sidebar);
 
         let [sidebar_area, content_area] =
             Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)]).areas(area);
@@ -309,7 +305,7 @@ impl AlbumOverlay {
                     return self.open_artist(client).await;
                 }
 
-                self.focus = OverlayFocus::Content;
+                self.focus = Pane::Content;
                 Ok(Output::Consumed)
             }
 
@@ -327,7 +323,7 @@ impl AlbumOverlay {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         if code == KeyCode::Esc {
-            self.focus = OverlayFocus::Sidebar;
+            self.focus = Pane::Sidebar;
             return Ok(Output::Consumed);
         }
 
