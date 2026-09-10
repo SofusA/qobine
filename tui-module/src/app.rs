@@ -644,7 +644,7 @@ impl App {
     }
 
     const fn navigate_to_search(&mut self) {
-        self.search.focus_editing();
+        self.search.start_editing();
         self.current_screen = Tab::Search;
     }
 

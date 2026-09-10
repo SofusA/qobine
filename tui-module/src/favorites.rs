@@ -16,19 +16,12 @@ use crate::{
     app::{NotificationList, Output},
     image_cache::ImageManager,
     sub_tab::SubTab,
-    ui::{block, leaves_content, render_input, sidebar},
+    ui::{Pane, block, leaves_content, render_input, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
     },
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum FavoritesFocus {
-    #[default]
-    Sidebar,
-    Content,
-}
 
 pub struct FavoritesState {
     filter: Input,
@@ -38,7 +31,7 @@ pub struct FavoritesState {
     pub tracks: TrackList,
     editing: bool,
     sub_tab: SubTab,
-    focus: FavoritesFocus,
+    focus: Pane,
 }
 
 impl FavoritesState {
@@ -59,7 +52,7 @@ impl FavoritesState {
             ),
             tracks: TrackList::new(favorites.tracks),
             sub_tab: SubTab::default(),
-            focus: FavoritesFocus::default(),
+            focus: Pane::default(),
         })
     }
 
@@ -73,10 +66,8 @@ impl FavoritesState {
         let block = block(None);
         frame.render_widget(block, content_area);
 
-        let (sidebar, sidebar_width) = sidebar(
-            SubTab::labels().to_vec(),
-            self.focus == FavoritesFocus::Sidebar,
-        );
+        let (sidebar, sidebar_width) =
+            sidebar(SubTab::labels().to_vec(), self.focus == Pane::Sidebar);
 
         let content_area = content_area.inner(Margin::new(1, 1));
         let [sidebar_area, content_area] = Layout::default()
@@ -89,7 +80,7 @@ impl FavoritesState {
 
         frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
-        let content_focused = self.focus == FavoritesFocus::Content;
+        let content_focused = self.focus == Pane::Content;
         match self.sub_tab {
             SubTab::Albums => self.albums.render(
                 content_area,
@@ -203,7 +194,7 @@ impl FavoritesState {
                             Ok(Output::Consumed)
                         }
                         _ => match self.focus {
-                            FavoritesFocus::Sidebar => match key_event.code {
+                            Pane::Sidebar => match key_event.code {
                                 KeyCode::Up | KeyCode::Char('k') => {
                                     self.cycle_subtab_backwards();
                                     Ok(Output::Consumed)
@@ -213,14 +204,14 @@ impl FavoritesState {
                                     Ok(Output::Consumed)
                                 }
                                 KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                                    self.focus = FavoritesFocus::Content;
+                                    self.focus = Pane::Content;
                                     Ok(Output::Consumed)
                                 }
                                 _ => Ok(Output::NotConsumed),
                             },
-                            FavoritesFocus::Content => match key_event.code {
+                            Pane::Content => match key_event.code {
                                 KeyCode::Esc => {
-                                    self.focus = FavoritesFocus::Sidebar;
+                                    self.focus = Pane::Sidebar;
                                     Ok(Output::Consumed)
                                 }
                                 code => {
@@ -234,7 +225,7 @@ impl FavoritesState {
                                         .await?;
 
                                     if leaves_content(code, &output) {
-                                        self.focus = FavoritesFocus::Sidebar;
+                                        self.focus = Pane::Sidebar;
                                         return Ok(Output::Consumed);
                                     }
 

@@ -14,20 +14,12 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::ImageManager,
     sub_tab::SubTab,
-    ui::{block, leaves_content, render_input, sidebar},
+    ui::{Pane, block, leaves_content, render_input, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
     },
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SearchFocus {
-    #[default]
-    Sidebar,
-    Content,
-    Editing,
-}
 
 #[derive(Default)]
 pub struct SearchState {
@@ -36,8 +28,9 @@ pub struct SearchState {
     artists: Grid<Artist>,
     playlists: Grid<PlaylistSimple>,
     tracks: TrackList,
+    editing: bool,
     sub_tab: SubTab,
-    focus: SearchFocus,
+    focus: Pane,
 }
 
 impl SearchState {
@@ -52,23 +45,15 @@ impl SearchState {
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .areas(area);
 
-        render_input(
-            &self.filter,
-            self.focus == SearchFocus::Editing,
-            input_area,
-            frame,
-            "Search",
-        );
+        render_input(&self.filter, self.editing, input_area, frame, "Search");
 
         let block = block(None);
         frame.render_widget(block, content_area);
 
         let tab_content_area = content_area.inner(Margin::new(1, 1));
 
-        let (sidebar, sidebar_width) = sidebar(
-            SubTab::labels().to_vec(),
-            self.focus == SearchFocus::Sidebar,
-        );
+        let (sidebar, sidebar_width) =
+            sidebar(SubTab::labels().to_vec(), self.focus == Pane::Sidebar);
 
         let [sidebar_area, content_area] = Layout::default()
             .direction(Direction::Horizontal)
@@ -80,7 +65,7 @@ impl SearchState {
 
         frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
-        let content_focused = self.focus == SearchFocus::Content;
+        let content_focused = self.focus == Pane::Content;
 
         match self.sub_tab {
             SubTab::Albums => self.albums.render(
@@ -114,8 +99,8 @@ impl SearchState {
         }
     }
 
-    pub const fn focus_editing(&mut self) {
-        self.focus = SearchFocus::Editing;
+    pub const fn start_editing(&mut self) {
+        self.editing = true;
     }
 
     pub async fn handle_events(
@@ -126,60 +111,64 @@ impl SearchState {
         notifications: &mut NotificationList,
     ) -> AppResult<Output> {
         match event {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self.focus {
-                SearchFocus::Editing => match key_event.code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        self.focus = SearchFocus::Content;
-                        self.update_search(client).await?;
-                        Ok(Output::Consumed)
-                    }
-                    _ => {
-                        self.filter.handle_event(&event);
-                        Ok(Output::Consumed)
-                    }
-                },
-                SearchFocus::Sidebar => match key_event.code {
-                    KeyCode::Char('e') => {
-                        self.focus_editing();
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.cycle_subtab_backwards();
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.cycle_subtab();
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                        self.focus = SearchFocus::Content;
-                        Ok(Output::Consumed)
-                    }
-                    _ => Ok(Output::NotConsumed),
-                },
-                SearchFocus::Content => match key_event.code {
-                    KeyCode::Char('e') => {
-                        self.focus_editing();
-                        Ok(Output::Consumed)
-                    }
-                    KeyCode::Esc => {
-                        self.focus = SearchFocus::Sidebar;
-                        Ok(Output::Consumed)
-                    }
-                    code => {
-                        let output = self
-                            .handle_content_events(code, client, controls, notifications)
-                            .await?;
-
-                        if leaves_content(code, &output) {
-                            self.focus = SearchFocus::Sidebar;
-                            return Ok(Output::Consumed);
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                if self.editing {
+                    return match key_event.code {
+                        KeyCode::Esc | KeyCode::Enter => {
+                            self.editing = false;
+                            self.focus = Pane::Content;
+                            self.update_search(client).await?;
+                            Ok(Output::Consumed)
                         }
+                        _ => {
+                            self.filter.handle_event(&event);
+                            Ok(Output::Consumed)
+                        }
+                    };
+                }
 
-                        Ok(output)
+                match key_event.code {
+                    KeyCode::Char('e') => {
+                        self.start_editing();
+                        Ok(Output::Consumed)
                     }
-                },
-            },
+                    _ => match self.focus {
+                        Pane::Sidebar => match key_event.code {
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                self.cycle_subtab_backwards();
+                                Ok(Output::Consumed)
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                self.cycle_subtab();
+                                Ok(Output::Consumed)
+                            }
+                            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                                self.focus = Pane::Content;
+                                Ok(Output::Consumed)
+                            }
+                            _ => Ok(Output::NotConsumed),
+                        },
+                        Pane::Content => match key_event.code {
+                            KeyCode::Esc => {
+                                self.focus = Pane::Sidebar;
+                                Ok(Output::Consumed)
+                            }
+                            code => {
+                                let output = self
+                                    .handle_content_events(code, client, controls, notifications)
+                                    .await?;
+
+                                if leaves_content(code, &output) {
+                                    self.focus = Pane::Sidebar;
+                                    return Ok(Output::Consumed);
+                                }
+
+                                Ok(output)
+                            }
+                        },
+                    },
+                }
+            }
             _ => Ok(Output::NotConsumed),
         }
     }

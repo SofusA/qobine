@@ -401,6 +401,13 @@ pub fn tab_bar(tabs: Vec<&str>, selected: usize) -> Tabs<'_> {
         .select(selected)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Pane {
+    #[default]
+    Sidebar,
+    Content,
+}
+
 pub fn sidebar(tabs: Vec<&str>, focused: bool) -> (List<'_>, u16) {
     let width = tabs
         .iter()
