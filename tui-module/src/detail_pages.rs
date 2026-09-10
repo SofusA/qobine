@@ -29,8 +29,8 @@ pub use track_info::TrackInfoOverlay;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OverlayFocus {
-    #[default]
     Sidebar,
+    #[default]
     Content,
 }
 

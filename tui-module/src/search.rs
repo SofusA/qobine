@@ -14,7 +14,7 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::ImageManager,
     sub_tab::SubTab,
-    ui::{block, render_input, sidebar},
+    ui::{block, leaves_content, render_input, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
@@ -129,7 +129,7 @@ impl SearchState {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => match self.focus {
                 SearchFocus::Editing => match key_event.code {
                     KeyCode::Esc | KeyCode::Enter => {
-                        self.focus = SearchFocus::Sidebar;
+                        self.focus = SearchFocus::Content;
                         self.update_search(client).await?;
                         Ok(Output::Consumed)
                     }
@@ -166,9 +166,17 @@ impl SearchState {
                         self.focus = SearchFocus::Sidebar;
                         Ok(Output::Consumed)
                     }
-                    _ => {
-                        self.handle_content_events(key_event.code, client, controls, notifications)
-                            .await
+                    code => {
+                        let output = self
+                            .handle_content_events(code, client, controls, notifications)
+                            .await?;
+
+                        if leaves_content(code, &output) {
+                            self.focus = SearchFocus::Sidebar;
+                            return Ok(Output::Consumed);
+                        }
+
+                        Ok(output)
                     }
                 },
             },

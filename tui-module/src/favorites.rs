@@ -16,7 +16,7 @@ use crate::{
     app::{NotificationList, Output},
     image_cache::ImageManager,
     sub_tab::SubTab,
-    ui::{block, render_input, sidebar},
+    ui::{block, leaves_content, render_input, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
@@ -223,14 +223,22 @@ impl FavoritesState {
                                     self.focus = FavoritesFocus::Sidebar;
                                     Ok(Output::Consumed)
                                 }
-                                _ => {
-                                    self.handle_content_events(
-                                        key_event.code,
-                                        client,
-                                        controls,
-                                        notifications,
-                                    )
-                                    .await
+                                code => {
+                                    let output = self
+                                        .handle_content_events(
+                                            code,
+                                            client,
+                                            controls,
+                                            notifications,
+                                        )
+                                        .await?;
+
+                                    if leaves_content(code, &output) {
+                                        self.focus = FavoritesFocus::Sidebar;
+                                        return Ok(Output::Consumed);
+                                    }
+
+                                    Ok(output)
                                 }
                             },
                         },

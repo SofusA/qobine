@@ -216,6 +216,10 @@ where
             }
 
             KeyCode::Left | KeyCode::Char('h') => {
+                if self.at_row_start() {
+                    return Ok(Output::NotConsumed);
+                }
+
                 self.move_selection(-1);
                 Ok(Output::Consumed)
             }
@@ -277,6 +281,13 @@ where
     pub fn set_all_items(&mut self, items: Vec<T>) {
         self.items.set_all_items(items);
         self.reset_view();
+    }
+
+    fn at_row_start(&self) -> bool {
+        self.items
+            .state
+            .selected()
+            .is_none_or(|selected| selected.checked_rem(self.columns).unwrap_or_default() == 0)
     }
 
     fn move_selection(&mut self, delta: isize) {

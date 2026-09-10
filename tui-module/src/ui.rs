@@ -1,6 +1,7 @@
 use num_traits::ToPrimitive;
 use player_module::notification::Notification;
 use ratatui::{
+    crossterm::event::KeyCode,
     layout::Flex,
     prelude::*,
     widgets::{
@@ -11,7 +12,7 @@ use ratatui::{
 use tui_input::Input;
 
 use crate::{
-    app::{App, AppState, Tab},
+    app::{App, AppState, Output, Tab},
     image_cache::ImageManager,
     now_playing::{self, NowPlayingState},
     widgets::focus,
@@ -302,7 +303,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ["Stop edit filter", "escape"],
         ["Select in list", "Up/Down"],
         ["Select selected item", "Enter"],
-        ["Cycle subgroup", "Left/right"],
+        ["Switch sidebar / content", "Left/Right"],
         ["Shuffle tracks", "S"],
         ["Add to queue", "B"],
         ["Play next", "N"],
@@ -432,6 +433,10 @@ pub fn sidebar(tabs: Vec<&str>, focused: bool) -> (List<'_>, u16) {
         .highlight_style(highlight_style);
 
     (list, width)
+}
+
+pub const fn leaves_content(code: KeyCode, output: &Output) -> bool {
+    matches!(output, Output::NotConsumed) && matches!(code, KeyCode::Left | KeyCode::Char('h'))
 }
 
 pub fn mark_explicit_and_hifi(
