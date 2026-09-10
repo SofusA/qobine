@@ -300,6 +300,7 @@ pub fn parse_playlist(
         is_owned: user_id == playlist.owner.id,
         title: playlist.name,
         duration_seconds: playlist.duration,
+        tracks_count: playlist.tracks_count,
         image,
         tracks,
         owner: playlist.owner,
