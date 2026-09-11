@@ -51,6 +51,10 @@ pub enum ControlCommand {
     AddTracksToQueue {
         tracks: Vec<Track>,
     },
+    InsertTracksToQueue {
+        tracks: Vec<Track>,
+        after: usize,
+    },
     RemoveIndexFromQueue {
         index: usize,
     },
@@ -150,6 +154,10 @@ impl Controls {
 
     pub fn add_tracks_to_queue(&self, tracks: Vec<Track>) {
         self.send(ControlCommand::AddTracksToQueue { tracks });
+    }
+
+    pub fn insert_tracks_to_queue(&self, tracks: Vec<Track>, after: usize) {
+        self.send(ControlCommand::InsertTracksToQueue { tracks, after })
     }
 
     pub fn play_tracks_next(&self, tracks: Vec<Track>) {
