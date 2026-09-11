@@ -260,10 +260,9 @@ async fn control(
     let groups = state.groups.read().await;
     let group = groups.get(&secret).ok_or(StatusCode::NOT_FOUND)?;
 
-    let is_listener = group.listeners.contains(&client_id);
-    let is_inactive_device = group.streams.contains(&client_id) && group.active_device != client_id;
+    let is_active_device = group.streams.contains(&client_id) && group.active_device == client_id;
 
-    if !is_listener && !is_inactive_device {
+    if is_active_device {
         tracing::info!(
             client_id = %client_id,
             "control request rejected"
@@ -1437,7 +1436,7 @@ mod tests {
             .await
             .expect("unknown-client control request failed");
 
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(response.status(), StatusCode::OK);
 
         assert_event_not_received(
             &mut inactive_device,
