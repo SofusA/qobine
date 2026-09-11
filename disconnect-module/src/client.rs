@@ -44,12 +44,10 @@ impl DisconnectClient {
         available_devices_sender: watch::Sender<Vec<String>>,
         active_device_sender: watch::Sender<String>,
     ) -> Self {
-        let secret = format!("{:x}", md5::compute(password));
-
         Self {
             client: Client::new(),
             base_url: base_url.to_string(),
-            secret,
+            secret: password.to_string(),
             controls,
             device_name: device_name.to_string(),
             tracklist_sender,
