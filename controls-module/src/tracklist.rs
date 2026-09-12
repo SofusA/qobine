@@ -127,7 +127,9 @@ impl Tracklist {
     }
 
     pub fn remove_track(&mut self, index: usize) {
-        self.queue.remove(index);
+        if index < self.queue.len() {
+            self.queue.remove(index);
+        }
     }
 
     pub fn push_track(&mut self, track: Track) {
@@ -151,11 +153,12 @@ impl Tracklist {
             queue_id,
             index,
         };
-        self.queue.insert(insert_index, item);
+        self.queue.insert(insert_index.min(self.queue.len()), item);
     }
 
     pub fn reorder_queue(&mut self, new_order: &[usize]) {
-        if new_order.iter().enumerate().all(|(i, &v)| i == v) {
+        if new_order.len() != self.queue.len() || new_order.iter().enumerate().all(|(i, &v)| i == v)
+        {
             return;
         }
 
@@ -263,5 +266,35 @@ impl Tracklist {
         }
 
         new_track
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tracklist(len: usize) -> Tracklist {
+        Tracklist::new(TracklistType::Tracks, vec![QueueItem::default(); len])
+    }
+
+    #[test]
+    fn remove_track_ignores_out_of_range_index() {
+        let mut tracklist = tracklist(7);
+        tracklist.remove_track(7);
+        assert_eq!(tracklist.total(), 7);
+    }
+
+    #[test]
+    fn insert_track_beyond_end_appends() {
+        let mut tracklist = tracklist(0);
+        tracklist.insert_track(1, Track::default());
+        assert_eq!(tracklist.total(), 1);
+    }
+
+    #[test]
+    fn reorder_queue_ignores_order_of_wrong_length() {
+        let mut tracklist = tracklist(3);
+        tracklist.reorder_queue(&[1, 0]);
+        assert_eq!(tracklist.total(), 3);
     }
 }
