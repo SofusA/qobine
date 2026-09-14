@@ -140,15 +140,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
-name = "apple-cf"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67ba5e8f49a0239ddb14da08ad41bb28b46880252bf4831380de20709c996574"
-dependencies = [
- "doom-fish-utils 0.2.1",
-]
-
-[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1516,7 +1507,6 @@ checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.0",
  "block2",
- "libc",
  "objc2",
 ]
 
@@ -1538,22 +1528,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
-]
-
-[[package]]
-name = "doom-fish-utils"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "075caf2993a45abe1c2e60d8d1514ce43f947fcbcd31de19db0075e80e20c6a7"
-
-[[package]]
-name = "doom-fish-utils"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c801f6c2a0db1a1909d89fc395b9dccc594de9ef599659fbde9bb3b55ef67f9f"
-dependencies = [
- "crossbeam-queue",
- "futures-util",
 ]
 
 [[package]]
@@ -3365,13 +3339,20 @@ dependencies = [
 name = "macos-module"
 version = "1.0.0"
 dependencies = [
- "apple-cf",
  "controls-module",
- "dispatch2",
- "mediaplayer",
+ "macos-now-playing",
  "player-module",
  "reqwest 0.12.28",
  "tokio",
+]
+
+[[package]]
+name = "macos-now-playing"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f211f6127a2fc58afc43504ab6c8e8d7054d97e66a5f0f3305ef2602cf00f29b"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -3428,17 +3409,6 @@ dependencies = [
  "mio",
  "socket-pktinfo",
  "socket2",
-]
-
-[[package]]
-name = "mediaplayer"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "707f1ad053bddf7646f6a525a0b2c74cff23676a792e050b2d58e38c733467fb"
-dependencies = [
- "apple-cf",
- "doom-fish-utils 0.3.3",
- "libc",
 ]
 
 [[package]]

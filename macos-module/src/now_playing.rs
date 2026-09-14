@@ -7,16 +7,15 @@ use std::{
     time::Duration,
 };
 
-use apple_cf::cf::CFRunLoop;
 use controls_module::{
     ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, controls::Controls,
     models::Track, tracklist::Tracklist,
 };
-use dispatch2::DispatchQueue;
-use mediaplayer::{
-    Artwork,
-    now_playing::{NowPlayingInfo, NowPlayingInfoCenter, NowPlayingMediaType, PlaybackState},
-    remote_commands::{CommandEvent, CommandToken, HandlerStatus, RemoteCommandCenter},
+use macos_now_playing::{
+    Artwork, Command, HandlerStatus, HandlerToken, NowPlayingInfo, PlaybackState,
+    add_command_handler, add_playback_position_handler, clear_now_playing_info,
+    run_current_run_loop, run_on_main, set_now_playing_info, set_playback_state,
+    stop_main_run_loop,
 };
 use player_module::player::Player;
 
@@ -35,11 +34,11 @@ where
         }
 
         thread_exited.store(true, Ordering::Release);
-        CFRunLoop::main().stop();
+        stop_main_run_loop();
     });
 
     while !exited.load(Ordering::Acquire) {
-        let _ = CFRunLoop::current().run_in_default_mode(Duration::from_secs(1), false);
+        run_current_run_loop(Duration::from_secs(1));
     }
 }
 
@@ -80,12 +79,10 @@ async fn init(
     let mut exit_receiver = exit_sender.subscribe();
     let mut position_change_receiver = position_receiver.clone();
 
-    let center = NowPlayingInfoCenter::default_center();
-
     let (token_sender, token_receiver) = tokio::sync::oneshot::channel();
     {
         let controls = controls.clone();
-        DispatchQueue::main().exec_async(move || {
+        run_on_main(move || {
             let _ = token_sender.send(register_commands(&controls));
         });
     }
@@ -103,7 +100,7 @@ async fn init(
             .map(|track| build_now_playing(track, &tracklist, &position_receiver, &status_receiver))
     };
     if let Some(now_playing) = now_playing {
-        push(&center, Some(&now_playing), &mut artwork_cache).await;
+        push(Some(&now_playing), &mut artwork_cache).await;
         current = Some(now_playing);
     }
 
@@ -117,14 +114,14 @@ async fn init(
                         .cloned()
                         .map(|track| build_now_playing(track, &tracklist, &position_receiver, &status_receiver))
                 };
-                push(&center, current.as_ref(), &mut artwork_cache).await;
+                push(current.as_ref(), &mut artwork_cache).await;
             },
             Ok(()) = status_receiver.changed() => {
                 let status = *status_receiver.borrow_and_update();
                 if let Some(now_playing) = current.as_mut() {
                     now_playing.status = status;
                     now_playing.elapsed_seconds = position_receiver.borrow().as_secs_f64();
-                    push(&center, Some(now_playing), &mut artwork_cache).await;
+                    push(Some(now_playing), &mut artwork_cache).await;
                 }
             },
             Ok(()) = position_change_receiver.changed() => {
@@ -134,7 +131,7 @@ async fn init(
 
                 if jumped && let Some(now_playing) = current.as_mut() {
                     now_playing.elapsed_seconds = position.as_secs_f64();
-                    push(&center, Some(now_playing), &mut artwork_cache).await;
+                    push(Some(now_playing), &mut artwork_cache).await;
                 }
             },
             Ok(exit) = exit_receiver.recv() => {
@@ -165,14 +162,10 @@ fn build_now_playing(
     }
 }
 
-async fn push(
-    center: &NowPlayingInfoCenter,
-    now_playing: Option<&NowPlaying>,
-    artwork_cache: &mut Option<(String, Artwork)>,
-) {
+async fn push(now_playing: Option<&NowPlaying>, artwork_cache: &mut Option<(String, Artwork)>) {
     let Some(now_playing) = now_playing else {
-        center.clear();
-        center.set_playback_state(PlaybackState::Stopped);
+        clear_now_playing_info();
+        set_playback_state(PlaybackState::Stopped);
         return;
     };
 
@@ -183,29 +176,23 @@ async fn push(
         Status::Buffering | Status::Paused => 0.0,
     };
 
-    let mut info = NowPlayingInfo::new()
-        .title(&now_playing.title)
-        .playback_duration(now_playing.duration_seconds)
-        .elapsed_playback_time(now_playing.elapsed_seconds)
-        .playback_rate(rate)
-        .playback_queue_index(now_playing.queue_index)
-        .playback_queue_count(now_playing.queue_count)
-        .media_type(NowPlayingMediaType::Audio);
-
-    if let Some(artist) = &now_playing.artist {
-        info = info.artist(artist);
-    }
-    if let Some(album) = &now_playing.album {
-        info = info.album_title(album);
-    }
-
-    center.set_now_playing_info_with_artwork(&info, artwork);
+    set_now_playing_info(&NowPlayingInfo {
+        title: &now_playing.title,
+        artist: now_playing.artist.as_deref(),
+        album_title: now_playing.album.as_deref(),
+        playback_duration: now_playing.duration_seconds,
+        elapsed_playback_time: now_playing.elapsed_seconds,
+        playback_rate: rate,
+        playback_queue_index: now_playing.queue_index,
+        playback_queue_count: now_playing.queue_count,
+        artwork,
+    });
 
     let state = match now_playing.status {
         Status::Playing | Status::Buffering => PlaybackState::Playing,
         Status::Paused => PlaybackState::Paused,
     };
-    center.set_playback_state(state);
+    set_playback_state(state);
 }
 
 async fn fetch_artwork<'a>(
@@ -228,42 +215,41 @@ async fn fetch_artwork<'a>(
 async fn download_artwork(url: &str) -> Option<Artwork> {
     let response = reqwest::get(url).await.ok()?;
     let bytes = response.bytes().await.ok()?;
-
-    let path = std::env::temp_dir().join(format!("qobine-artwork-{}.jpg", std::process::id()));
-    tokio::fs::write(&path, &bytes).await.ok()?;
-
-    let artwork = Artwork::from_path(path.to_str()?).ok();
-    let _ = tokio::fs::remove_file(&path).await;
-    artwork
+    Artwork::from_image_data(&bytes)
 }
 
 fn command_handler(
     controls: &Controls,
     action: fn(&Controls),
-) -> impl FnMut(CommandEvent) -> HandlerStatus + Send + 'static {
+) -> impl FnMut() -> HandlerStatus + Send + 'static {
     let controls = controls.clone();
-    move |_event| {
+    move || {
         action(&controls);
         HandlerStatus::Success
     }
 }
 
-fn register_commands(controls: &Controls) -> Vec<CommandToken> {
-    let center = RemoteCommandCenter::shared();
-
+fn register_commands(controls: &Controls) -> Vec<HandlerToken> {
     let seek_controls = controls.clone();
 
     vec![
-        center.on_play(command_handler(controls, Controls::play)),
-        center.on_pause(command_handler(controls, Controls::pause)),
-        center.on_toggle_play_pause(command_handler(controls, Controls::play_pause)),
-        center.on_stop(command_handler(controls, Controls::pause)),
-        center.on_next_track(command_handler(controls, Controls::next)),
-        center.on_previous_track(command_handler(controls, Controls::previous)),
-        center.on_change_playback_position(move |event| {
-            if let Some(position) = event.position {
-                seek_controls.seek(Duration::from_secs_f64(position.max(0.0)));
-            }
+        add_command_handler(Command::Play, command_handler(controls, Controls::play)),
+        add_command_handler(Command::Pause, command_handler(controls, Controls::pause)),
+        add_command_handler(
+            Command::TogglePlayPause,
+            command_handler(controls, Controls::play_pause),
+        ),
+        add_command_handler(Command::Stop, command_handler(controls, Controls::pause)),
+        add_command_handler(
+            Command::NextTrack,
+            command_handler(controls, Controls::next),
+        ),
+        add_command_handler(
+            Command::PreviousTrack,
+            command_handler(controls, Controls::previous),
+        ),
+        add_playback_position_handler(move |position| {
+            seek_controls.seek(Duration::from_secs_f64(position.max(0.0)));
             HandlerStatus::Success
         }),
     ]
