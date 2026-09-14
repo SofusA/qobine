@@ -31,7 +31,7 @@ time = "0.3"
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 rust-embed = { version = "8", features = ["axum", "tokio", "mime_guess"] }
-dirs = "6"
+dirs = "7"
 futures = "0.3"
 hostname = "0.4"
 md5 = "0.8"
