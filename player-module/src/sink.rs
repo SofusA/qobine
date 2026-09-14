@@ -122,7 +122,6 @@ impl Sink {
 
     pub fn clear_queue(&mut self) {
         tracing::info!("Clearing sink queue");
-        *self.duration_played.lock() = Duration::default();
 
         if let Some(playback) = self.playback.as_ref() {
             playback.sender.clear();
