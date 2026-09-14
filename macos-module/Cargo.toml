@@ -16,7 +16,5 @@ player-module = { version = "*", path = "../player-module" }
 tokio.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-mediaplayer = "0.4.3"
-apple-cf = "=0.7.1"
-dispatch2 = "0.3"
+macos-now-playing = "0.1"
 reqwest.workspace = true
