@@ -353,10 +353,7 @@ impl Player {
             self.new_queue(tracklist, false).await?;
         } else {
             tracklist.reset();
-            self.sink.clear();
-            self.next_track_is_queried = false;
-            self.set_target_status(Status::Paused);
-            self.broadcast_tracklist(tracklist).await?;
+            self.stop(tracklist).await?;
         }
 
         Ok(())
@@ -442,51 +439,75 @@ impl Player {
         Ok(())
     }
 
-    async fn replace_queue(&mut self, items: Vec<NewQueueItem>) -> AppResult<()> {
+    async fn replace_queue(
+        &mut self,
+        items: Vec<NewQueueItem>,
+        keep_unknown: bool,
+    ) -> AppResult<()> {
         let mut tracklist = self.tracklist_rx.borrow().clone();
-        let known: Vec<Option<QueueItem>> = items
-            .iter()
-            .map(|item| known_item(&tracklist, *item))
+        let mut unknown: Vec<QueueItem> = tracklist
+            .queue()
+            .into_iter()
+            .filter(|item| item.connect_id.is_none())
+            .cloned()
             .collect();
-        let missing = items
-            .iter()
-            .zip(&known)
-            .filter(|(_, known)| known.is_none())
-            .map(|(item, _)| item.track_id)
-            .collect();
-        let tracks = self.fetch_tracks(missing).await?;
-
-        let mut queue = Vec::with_capacity(items.len());
-        for (item, known) in items.iter().zip(known) {
-            let queue_item = if let Some(known) = known {
-                known
-            } else {
-                let Some(track) = tracks.get(&item.track_id) else {
-                    continue;
-                };
-                tracklist.queue_item(track.clone(), Some(item.connect_id))
-            };
-            queue.push(queue_item);
+        let mut matched = Vec::with_capacity(items.len());
+        let mut missing = Vec::new();
+        for item in &items {
+            let known = known_item(&tracklist, *item).or_else(|| {
+                let index = unknown
+                    .iter()
+                    .position(|local| local.track.id == item.track_id)?;
+                let mut local = unknown.remove(index);
+                local.connect_id = Some(item.connect_id);
+                Some(local)
+            });
+            if known.is_none() {
+                missing.push(item.track_id);
+            }
+            matched.push(known);
         }
-        let same_items = queue
+        let tracks = self.fetch_tracks(missing).await?;
+        let queue: Vec<QueueItem> = items
+            .iter()
+            .zip(matched)
+            .filter_map(|(item, known)| {
+                known.or_else(|| {
+                    let track = tracks.get(&item.track_id)?;
+                    Some(tracklist.queue_item(track.clone(), Some(item.connect_id)))
+                })
+            })
+            .collect();
+
+        let before = fingerprint(&tracklist);
+        let mut adopted = tracklist.clone();
+        let current_survives = adopted.replace(queue, keep_unknown);
+        if fingerprint(&adopted) == before {
+            return Ok(());
+        }
+        let same_items = adopted
+            .queue()
             .iter()
             .map(|item| item.queue_id)
             .eq(tracklist.queue().iter().map(|item| item.queue_id));
         if !same_items {
-            tracklist.set_list_type(TracklistType::Tracks);
+            adopted.set_list_type(TracklistType::Tracks);
         }
-
-        if tracklist.replace(queue) {
-            self.update_queue(tracklist).await
+        if current_survives {
+            self.update_queue(adopted).await
         } else {
-            self.set_target_status(Status::Paused);
-            self.sink.pause();
-            self.sink.clear();
-            self.next_track_is_queried = false;
-            self.next_track_in_sink_queue = false;
-            self.position.send(Duration::default())?;
-            self.broadcast_tracklist(tracklist).await
+            self.stop(adopted).await
         }
+    }
+
+    async fn stop(&mut self, tracklist: Tracklist) -> AppResult<()> {
+        self.set_target_status(Status::Paused);
+        self.sink.pause();
+        self.sink.clear();
+        self.next_track_is_queried = false;
+        self.next_track_in_sink_queue = false;
+        self.position.send(Duration::default())?;
+        self.broadcast_tracklist(tracklist).await
     }
 
     /// The tracks of a Qobuz Connect queue by id; tracks the catalog no longer serves are left out and logged.
@@ -504,12 +525,6 @@ impl Player {
             );
         }
         Ok(tracks)
-    }
-
-    async fn set_connect_ids(&mut self, ids: &[(u64, i32)]) -> AppResult<()> {
-        let mut tracklist = self.tracklist_rx.borrow().clone();
-        tracklist.set_connect_ids(ids);
-        self.broadcast_tracklist(tracklist).await
     }
 
     async fn clear_queue(&mut self) -> AppResult<()> {
@@ -815,8 +830,10 @@ impl Player {
                 play,
                 start_index,
             } => self.new_track_queue(items, play, start_index).await?,
-            ControlCommand::ReplaceQueue { items } => self.replace_queue(items).await?,
-            ControlCommand::SetConnectIds { ids } => self.set_connect_ids(&ids).await?,
+            ControlCommand::ReplaceQueue {
+                items,
+                keep_unknown,
+            } => self.replace_queue(items, keep_unknown).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
@@ -931,6 +948,14 @@ impl Player {
             }
         }
     }
+}
+
+fn fingerprint(tracklist: &Tracklist) -> Vec<(u64, Option<i32>, TrackStatus)> {
+    tracklist
+        .queue()
+        .iter()
+        .map(|item| (item.queue_id, item.connect_id, item.track.status.clone()))
+        .collect()
 }
 
 fn known_item(tracklist: &Tracklist, item: NewQueueItem) -> Option<QueueItem> {

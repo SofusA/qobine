@@ -167,19 +167,22 @@ impl Tracklist {
         }
     }
 
-    /// Adopts the queue of the Qobuz Connect session, keeping the current track and the items the session does not know yet in place. Returns whether the current track is still queued.
-    pub fn replace(&mut self, items: Vec<QueueItem>) -> bool {
+    /// Adopts the queue of the Qobuz Connect session, keeping the current track; with `keep_unknown` the items the session does not know yet stay after their nearest surviving predecessor. Returns whether the current track is still queued.
+    pub fn replace(&mut self, items: Vec<QueueItem>, keep_unknown: bool) -> bool {
         let current = self.current_queue_id();
         let mut queue = items;
         let mut previous = None;
         for item in self.queue.drain(..) {
-            if item.connect_id.is_none() {
+            let present = queue.iter().any(|known| known.queue_id == item.queue_id);
+            if !present && keep_unknown && item.connect_id.is_none() {
                 let at = previous
                     .and_then(|id| queue.iter().position(|known| known.queue_id == id))
                     .map_or(0, |position| position.saturating_add(1));
                 queue.insert(at.min(queue.len()), item.clone());
             }
-            previous = Some(item.queue_id);
+            if present || (keep_unknown && item.connect_id.is_none()) {
+                previous = Some(item.queue_id);
+            }
         }
         self.queue = queue;
         let position =
@@ -190,16 +193,6 @@ impl Tracklist {
         }
         self.reset();
         false
-    }
-
-    pub fn set_connect_ids(&mut self, ids: &[(u64, i32)]) {
-        for item in &mut self.queue {
-            if let Some((_, connect_id)) =
-                ids.iter().find(|(queue_id, _)| *queue_id == item.queue_id)
-            {
-                item.connect_id = Some(*connect_id);
-            }
-        }
     }
 
     #[must_use]
@@ -429,7 +422,7 @@ mod tests {
         assert_eq!(ids(&tracklist), vec![0, 1, 3, 2]);
 
         let from_session = connect_queue(&[(1, 11), (2, 12), (4, 13)]);
-        assert!(tracklist.replace(from_session.queue().into_iter().cloned().collect()));
+        assert!(tracklist.replace(from_session.queue().into_iter().cloned().collect(), true));
         assert_eq!(ids(&tracklist), vec![1, 3, 2, 4]);
         assert_eq!(tracklist.current_position(), 0);
         assert_eq!(tracklist.current_connect_id(), Some(11));
@@ -437,21 +430,33 @@ mod tests {
     }
 
     #[test]
+    fn replace_places_an_unknown_item_after_its_nearest_surviving_predecessor() {
+        let mut tracklist = connect_queue(&[(0, 10), (1, 11), (2, 12)]);
+        tracklist.skip_to_track(0);
+        tracklist.insert_track(2, Track::default());
+        assert_eq!(ids(&tracklist), vec![0, 1, 3, 2]);
+
+        let from_session = connect_queue(&[(0, 10), (2, 12)]);
+        assert!(tracklist.replace(from_session.queue().into_iter().cloned().collect(), true));
+        assert_eq!(ids(&tracklist), vec![0, 3, 2]);
+    }
+
+    #[test]
+    fn replace_can_drop_the_items_the_session_does_not_know() {
+        let mut tracklist = connect_queue(&[(0, 10)]);
+        tracklist.push_track(Track::default());
+        let from_session = connect_queue(&[(0, 10), (2, 11)]);
+        assert!(!tracklist.replace(from_session.queue().into_iter().cloned().collect(), false));
+        assert_eq!(ids(&tracklist), vec![0, 2]);
+        assert_eq!(tracklist.position_of_connect_id(11), Some(1));
+    }
+
+    #[test]
     fn replace_reports_a_current_track_that_the_session_dropped() {
         let mut tracklist = connect_queue(&[(0, 10), (1, 11)]);
         tracklist.skip_to_track(0);
         let from_session = connect_queue(&[(1, 11)]);
-        assert!(!tracklist.replace(from_session.queue().into_iter().cloned().collect()));
-        assert_eq!(tracklist.current_position(), 0);
-        assert_eq!(tracklist.current_connect_id(), Some(11));
-    }
-
-    #[test]
-    fn connect_ids_are_set_by_queue_id() {
-        let mut tracklist = queue_with_ids(&[0, 1, 2]);
-        tracklist.set_connect_ids(&[(1, 7), (2, 8)]);
-        assert_eq!(tracklist.position_of_connect_id(8), Some(2));
-        assert_eq!(tracklist.position_of_connect_id(7), Some(1));
-        assert_eq!(tracklist.position_of_connect_id(9), None);
+        assert!(!tracklist.replace(from_session.queue().into_iter().cloned().collect(), true));
+        assert_eq!(ids(&tracklist), vec![1]);
     }
 }

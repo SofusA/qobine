@@ -26,27 +26,26 @@ struct Connect {
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
     max_audio_quality: ConnectQuality,
+    connected: bool,
     muted: bool,
     volume_before_mute: f32,
     reported_volume: Option<u32>,
     reported_state_at: Instant,
-    adopted: bool,
-    session_queue: Vec<(i32, u32)>,
-    seen: Vec<u64>,
+    session_queue: Option<Vec<(i32, u32)>>,
     pending: Option<Pending>,
+    refused: bool,
     deferred: Option<Deferred>,
+}
+
+struct Pending {
+    action: Vec<u8>,
+    since: Instant,
 }
 
 struct Deferred {
     playing: Option<PlayingState>,
     position: Option<Duration>,
     current: QueueTrackRef,
-}
-
-struct Pending {
-    action: Vec<u8>,
-    queue_ids: Vec<u64>,
-    since: Instant,
 }
 
 type LocalItem = (u64, Option<i32>, u32);
@@ -79,14 +78,14 @@ pub async fn init(
         status_receiver,
         volume_receiver,
         max_audio_quality: connect_quality(max_audio_quality),
+        connected: true,
         muted: false,
         volume_before_mute: 1.0,
         reported_volume: None,
         reported_state_at: Instant::now(),
-        adopted: false,
-        session_queue: Vec::new(),
-        seen: Vec::new(),
+        session_queue: None,
         pending: None,
+        refused: false,
         deferred: None,
     };
     connect.run(session).await.map_err(|err| map_err(&err))
@@ -129,14 +128,13 @@ const fn connect_quality(quality: AudioQuality) -> ConnectQuality {
     }
 }
 
-const fn audio_quality(quality: ConnectQuality) -> AudioQuality {
+const fn audio_quality(quality: ConnectQuality) -> Option<AudioQuality> {
     match quality {
-        ConnectQuality::Mp3 => AudioQuality::Mp3,
-        ConnectQuality::Cd => AudioQuality::CD,
-        ConnectQuality::HiresLevel1 => AudioQuality::HIFI96,
-        ConnectQuality::HiresLevel2 | ConnectQuality::HiresLevel3 | ConnectQuality::Unknown => {
-            AudioQuality::HIFI192
-        }
+        ConnectQuality::Mp3 => Some(AudioQuality::Mp3),
+        ConnectQuality::Cd => Some(AudioQuality::CD),
+        ConnectQuality::HiresLevel1 => Some(AudioQuality::HIFI96),
+        ConnectQuality::HiresLevel2 | ConnectQuality::HiresLevel3 => Some(AudioQuality::HIFI192),
+        ConnectQuality::Unknown => None,
     }
 }
 
@@ -194,7 +192,12 @@ impl Connect {
                 tracing::info!("Registered as Qobuz Connect renderer {renderer_id}");
                 Ok(())
             }
+            Event::Disconnected => {
+                self.connected = false;
+                Ok(())
+            }
             Event::Reconnected => {
+                self.connected = true;
                 self.pending = None;
                 Ok(())
             }
@@ -258,8 +261,11 @@ impl Connect {
                 Ok(())
             }
             RendererCommand::SetMaxAudioQuality(quality) => {
+                let Some(new_quality) = audio_quality(quality) else {
+                    return Ok(());
+                };
                 self.max_audio_quality = quality;
-                self.controls.set_audio_max_quality(audio_quality(quality));
+                self.controls.set_audio_max_quality(new_quality);
                 session
                     .report(RendererReport::MaxAudioQuality {
                         quality,
@@ -328,8 +334,8 @@ impl Connect {
     ) -> Result<(), Error> {
         let expected = self
             .session_queue
-            .iter()
-            .any(|(connect_id, _)| *connect_id == current.queue_item_id);
+            .as_ref()
+            .is_some_and(|queue| queue.iter().any(|(id, _)| *id == current.queue_item_id));
         self.deferred = Some(Deferred {
             playing,
             position,
@@ -380,26 +386,12 @@ impl Connect {
                     "Qobuz Connect queue state with {} tracks",
                     state.tracks.len()
                 );
-                self.session_queue = state
+                let tracks: Vec<(i32, u32)> = state
                     .tracks
                     .iter()
                     .map(|track| (track.queue_item_id, track.track_id))
                     .collect();
-                self.pending = None;
-                self.seen.clear();
-                let items = items(&state.tracks);
-                let local_is_foreign = self
-                    .tracklist_receiver
-                    .borrow()
-                    .queue()
-                    .iter()
-                    .all(|item| item.connect_id.is_none());
-                if !self.adopted && !items.is_empty() && local_is_foreign {
-                    self.controls.new_queue(items, false, None);
-                } else {
-                    self.controls.replace_queue(items);
-                }
-                self.adopted = true;
+                self.adopt(tracks, items(&state.tracks));
                 Ok(())
             }
             QueueEvent::Loaded(loaded) if !own => {
@@ -408,11 +400,13 @@ impl Connect {
                     loaded.tracks.len(),
                     loaded.queue_position
                 );
-                self.session_queue = loaded
-                    .tracks
-                    .iter()
-                    .map(|track| (track.queue_item_id, track.track_id))
-                    .collect();
+                self.session_queue = Some(
+                    loaded
+                        .tracks
+                        .iter()
+                        .map(|track| (track.queue_item_id, track.track_id))
+                        .collect(),
+                );
                 let items = loaded
                     .tracks
                     .iter()
@@ -425,21 +419,13 @@ impl Connect {
                 self.controls.new_queue(items, session.is_active(), start);
                 Ok(())
             }
-            QueueEvent::Loaded(loaded) if own => {
-                self.adopt_ids(loaded.tracks.iter().map(|track| track.queue_item_id));
-                session.ask_queue_state().await
-            }
-            QueueEvent::Added(added) if own => {
-                self.adopt_ids(added.tracks.iter().map(|track| track.queue_item_id));
-                session.ask_queue_state().await
-            }
-            QueueEvent::Inserted(inserted) if own => {
-                self.adopt_ids(inserted.tracks.iter().map(|track| track.queue_item_id));
-                session.ask_queue_state().await
-            }
             QueueEvent::Cleared(_) => {
-                self.session_queue.clear();
-                self.controls.replace_queue(Vec::new());
+                self.adopt(Vec::new(), Vec::new());
+                Ok(())
+            }
+            QueueEvent::Error(error) if own => {
+                tracing::warn!("Qobuz Connect refused a queue change: {error:?}");
+                self.refused = true;
                 Ok(())
             }
             QueueEvent::LoopModeSet(_) | QueueEvent::Error(_) => Ok(()),
@@ -447,10 +433,13 @@ impl Connect {
         }
     }
 
-    fn adopt_ids(&mut self, connect_ids: impl Iterator<Item = i32>) {
-        let Some(pending) = &self.pending else { return };
-        let ids: Vec<(u64, i32)> = pending.queue_ids.iter().copied().zip(connect_ids).collect();
-        self.controls.set_connect_ids(ids);
+    /// Takes the session's queue; the local tracks it does not know yet survive only once the session is known and no change of ours was refused.
+    fn adopt(&mut self, tracks: Vec<(i32, u32)>, items: Vec<NewQueueItem>) {
+        let keep_unknown = self.session_queue.is_some() && !self.refused;
+        self.session_queue = Some(tracks);
+        self.pending = None;
+        self.refused = false;
+        self.controls.replace_queue(items, keep_unknown);
     }
 
     async fn report_state(&mut self, session: &Session) -> Result<(), Error> {
@@ -462,6 +451,9 @@ impl Connect {
     }
 
     fn player_state(&self) -> Option<PlayerState> {
+        if !self.connected {
+            return None;
+        }
         let tracklist = self.tracklist_receiver.borrow();
         let current = tracklist.current_track();
         if current.is_some() && tracklist.current_connect_id().is_none() {
@@ -492,7 +484,7 @@ impl Connect {
 
     async fn report_volume(&mut self, session: &Session) -> Result<(), Error> {
         let volume = convert_volume(*self.volume_receiver.borrow());
-        if self.muted || self.reported_volume == Some(volume) {
+        if !self.connected || self.muted || self.reported_volume == Some(volume) {
             return Ok(());
         }
         self.reported_volume = Some(volume);
@@ -500,6 +492,21 @@ impl Connect {
     }
 
     async fn mirror(&mut self, session: &mut Session) -> Result<(), Error> {
+        let Some(session_queue) = &self.session_queue else {
+            return Ok(());
+        };
+        if !self.connected {
+            return Ok(());
+        }
+        if let Some(pending) = &self.pending {
+            if pending.since.elapsed() < ANSWER_TIMEOUT {
+                return Ok(());
+            }
+            tracing::warn!("Qobuz Connect did not answer a queue change, resynchronizing");
+            self.pending = None;
+            self.refused = true;
+            return session.ask_queue_state().await;
+        }
         let (local, current): (Vec<LocalItem>, usize) = {
             let tracklist = self.tracklist_receiver.borrow();
             let local = tracklist
@@ -509,20 +516,7 @@ impl Connect {
                 .collect();
             (local, tracklist.current_position())
         };
-        let queue_ids: Vec<u64> = local.iter().map(|item| item.0).collect();
-        if queue_ids == self.seen {
-            return Ok(());
-        }
-        if let Some(pending) = &self.pending {
-            if pending.since.elapsed() < ANSWER_TIMEOUT {
-                return Ok(());
-            }
-            tracing::warn!("Qobuz Connect did not answer a queue change, resynchronizing");
-            self.pending = None;
-            return session.ask_queue_state().await;
-        }
-        self.seen = queue_ids;
-        let Some((command, queue_ids)) = delta(&self.session_queue, &local, current) else {
+        let Some(command) = delta(session_queue, &local, current) else {
             return Ok(());
         };
         tracing::info!("Mirroring queue change to Qobuz Connect: {command:?}");
@@ -534,7 +528,6 @@ impl Connect {
         if let Some(action) = session.control(command).await? {
             self.pending = Some(Pending {
                 action,
-                queue_ids,
                 since: Instant::now(),
             });
         }
@@ -542,56 +535,64 @@ impl Connect {
     }
 }
 
+/// The controller command that brings the session's queue to the local one, or `None` when they agree or the local queue lags behind an adoption.
 fn delta(
     session_queue: &[(i32, u32)],
     local: &[LocalItem],
     current: usize,
-) -> Option<(ControllerCommand, Vec<u64>)> {
+) -> Option<ControllerCommand> {
     let session_ids: Vec<i32> = session_queue.iter().map(|item| item.0).collect();
     let known: Vec<i32> = local.iter().filter_map(|item| item.1).collect();
     if local.is_empty() {
-        return (!session_queue.is_empty()).then_some((ControllerCommand::ClearQueue, Vec::new()));
+        return (!session_queue.is_empty()).then_some(ControllerCommand::ClearQueue);
     }
-    if known == session_ids && !known.is_empty() {
+    if known.iter().any(|id| !session_ids.contains(id)) {
+        return None;
+    }
+    if known.is_empty() {
+        return Some(load_tracks(local, current));
+    }
+    if known == session_ids {
         return first_new_run(local);
     }
-    let fresh = local.iter().any(|item| item.1.is_none());
-    if !fresh && known.len() < session_ids.len() {
-        let remaining: Vec<i32> = session_ids
+    if local.iter().any(|item| item.1.is_none()) {
+        return Some(load_tracks(local, current));
+    }
+    let remaining: Vec<i32> = session_ids
+        .iter()
+        .copied()
+        .filter(|id| known.contains(id))
+        .collect();
+    if remaining == known {
+        let queue_item_ids = session_ids
             .iter()
             .copied()
-            .filter(|id| known.contains(id))
+            .filter(|id| !known.contains(id))
             .collect();
-        if remaining == known {
-            let queue_item_ids = session_ids
-                .iter()
-                .copied()
-                .filter(|id| !known.contains(id))
-                .collect();
-            let command = ControllerCommand::RemoveTracks {
-                queue_item_ids,
-                autoplay: Autoplay::default(),
-            };
-            return Some((command, Vec::new()));
-        }
+        return Some(ControllerCommand::RemoveTracks {
+            queue_item_ids,
+            autoplay: Autoplay::default(),
+        });
     }
-    if !fresh
-        && known.len() == session_ids.len()
+    if known.len() == session_ids.len()
         && let Some(command) = single_move(&session_ids, &known)
     {
-        return Some((command, Vec::new()));
+        return Some(command);
     }
-    let command = ControllerCommand::LoadTracks {
+    Some(load_tracks(local, current))
+}
+
+fn load_tracks(local: &[LocalItem], current: usize) -> ControllerCommand {
+    ControllerCommand::LoadTracks {
         track_ids: local.iter().map(|item| item.2).collect(),
         position: u32::try_from(current).unwrap_or_default(),
         shuffle_seed: None,
         shuffle_pivot_index: None,
         autoplay: Autoplay::default(),
-    };
-    Some((command, local.iter().map(|item| item.0).collect()))
+    }
 }
 
-fn first_new_run(local: &[LocalItem]) -> Option<(ControllerCommand, Vec<u64>)> {
+fn first_new_run(local: &[LocalItem]) -> Option<ControllerCommand> {
     let start = local.iter().position(|item| item.1.is_none())?;
     let run: Vec<&LocalItem> = local
         .get(start..)?
@@ -599,9 +600,8 @@ fn first_new_run(local: &[LocalItem]) -> Option<(ControllerCommand, Vec<u64>)> {
         .take_while(|item| item.1.is_none())
         .collect();
     let track_ids = run.iter().map(|item| item.2).collect();
-    let queue_ids = run.iter().map(|item| item.0).collect();
     let at_end = start.saturating_add(run.len()) == local.len();
-    let command = if at_end {
+    Some(if at_end {
         ControllerCommand::AddTracks {
             track_ids,
             shuffle_seed: None,
@@ -617,8 +617,7 @@ fn first_new_run(local: &[LocalItem]) -> Option<(ControllerCommand, Vec<u64>)> {
             shuffle_seed: None,
             autoplay: Autoplay::default(),
         }
-    };
-    Some((command, queue_ids))
+    })
 }
 
 fn single_move(session_ids: &[i32], known: &[i32]) -> Option<ControllerCommand> {
@@ -658,8 +657,8 @@ mod tests {
         let local = [(0, None, 1), (1, None, 2)];
         assert!(matches!(
             delta(&[], &local, 1),
-            Some((ControllerCommand::LoadTracks { track_ids, position: 1, .. }, ids))
-                if track_ids == vec![1, 2] && ids == vec![0, 1]
+            Some(ControllerCommand::LoadTracks { track_ids, position: 1, .. })
+                if track_ids == vec![1, 2]
         ));
     }
 
@@ -669,8 +668,7 @@ mod tests {
         let local = [(0, Some(10), 1), (1, None, 2), (2, None, 3)];
         assert!(matches!(
             delta(&session, &local, 0),
-            Some((ControllerCommand::AddTracks { track_ids, .. }, ids))
-                if track_ids == vec![2, 3] && ids == vec![1, 2]
+            Some(ControllerCommand::AddTracks { track_ids, .. }) if track_ids == vec![2, 3]
         ));
     }
 
@@ -680,8 +678,18 @@ mod tests {
         let local = [(0, Some(10), 1), (2, None, 3), (1, Some(11), 2)];
         assert!(matches!(
             delta(&session, &local, 0),
-            Some((ControllerCommand::InsertTracks { track_ids, after: Some(10), .. }, ids))
-                if track_ids == vec![3] && ids == vec![2]
+            Some(ControllerCommand::InsertTracks { track_ids, after: Some(10), .. })
+                if track_ids == vec![3]
+        ));
+    }
+
+    #[test]
+    fn tracks_inserted_at_the_front_have_no_predecessor() {
+        let session = [(10, 1)];
+        let local = [(2, None, 3), (0, Some(10), 1)];
+        assert!(matches!(
+            delta(&session, &local, 0),
+            Some(ControllerCommand::InsertTracks { after: None, .. })
         ));
     }
 
@@ -691,8 +699,7 @@ mod tests {
         let local = [(0, Some(10), 1), (2, Some(12), 3)];
         assert!(matches!(
             delta(&session, &local, 0),
-            Some((ControllerCommand::RemoveTracks { queue_item_ids, .. }, ids))
-                if queue_item_ids == vec![11] && ids.is_empty()
+            Some(ControllerCommand::RemoveTracks { queue_item_ids, .. }) if queue_item_ids == vec![11]
         ));
     }
 
@@ -702,16 +709,33 @@ mod tests {
         let local = [(0, Some(10), 1), (2, Some(12), 3), (1, Some(11), 2)];
         assert!(matches!(
             delta(&session, &local, 0),
-            Some((ControllerCommand::ReorderTracks { queue_item_ids, after: Some(10), .. }, _))
+            Some(ControllerCommand::ReorderTracks { queue_item_ids, after: Some(10), .. })
                 if queue_item_ids == vec![12]
         ));
+    }
+
+    #[test]
+    fn an_addition_and_a_removal_together_reload_the_queue() {
+        let session = [(10, 1), (11, 2)];
+        let local = [(0, Some(10), 1), (2, None, 3)];
+        assert!(matches!(
+            delta(&session, &local, 1),
+            Some(ControllerCommand::LoadTracks { position: 1, .. })
+        ));
+    }
+
+    #[test]
+    fn a_queue_behind_an_adoption_waits() {
+        let session = [(10, 1)];
+        let local = [(0, Some(10), 1), (1, Some(11), 2), (2, None, 3)];
+        assert!(delta(&session, &local, 0).is_none());
     }
 
     #[test]
     fn an_emptied_queue_is_cleared() {
         assert!(matches!(
             delta(&[(10, 1)], &[], 0),
-            Some((ControllerCommand::ClearQueue, _))
+            Some(ControllerCommand::ClearQueue)
         ));
     }
 }

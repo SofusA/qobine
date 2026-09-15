@@ -67,9 +67,7 @@ pub enum ControlCommand {
     },
     ReplaceQueue {
         items: Vec<NewQueueItem>,
-    },
-    SetConnectIds {
-        ids: Vec<(u64, i32)>,
+        keep_unknown: bool,
     },
     ClearQueue,
     StreamingConfiguration {
@@ -210,14 +208,12 @@ impl Controls {
         });
     }
 
-    /// Adopts the queue of the Qobuz Connect session without interrupting the current track.
-    pub fn replace_queue(&self, items: Vec<NewQueueItem>) {
-        self.send(ControlCommand::ReplaceQueue { items });
-    }
-
-    /// Records the ids the Qobuz Connect session gave to tracks queued here, by queue id.
-    pub fn set_connect_ids(&self, ids: Vec<(u64, i32)>) {
-        self.send(ControlCommand::SetConnectIds { ids });
+    /// Adopts the queue of the Qobuz Connect session without interrupting the current track; with `keep_unknown` the tracks queued here that the session does not know yet stay in place.
+    pub fn replace_queue(&self, items: Vec<NewQueueItem>, keep_unknown: bool) {
+        self.send(ControlCommand::ReplaceQueue {
+            items,
+            keep_unknown,
+        });
     }
 
     pub fn clear_queue(&self) {
