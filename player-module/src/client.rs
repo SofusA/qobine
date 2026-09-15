@@ -59,6 +59,12 @@ impl StreamClient {
         Ok(client.app_id().to_string())
     }
 
+    /// The response of `qws/createToken`, which carries the token and endpoint of the Qobuz Connect cloud socket.
+    pub async fn connect_token(&self) -> AppResult<String> {
+        let client = self.get_client().await?;
+        Ok(client.connect_token().await?)
+    }
+
     pub async fn new_with_oauth_login(
         max_audio_quality: AudioQuality,
         file_based_streaming: bool,
@@ -379,6 +385,16 @@ impl StreamClient {
         let track = client.track(id).await?;
         let track = parse_track(track, &*self.max_audio_quality.read().await);
         Ok(track)
+    }
+
+    pub async fn tracks(&self, ids: &[u32]) -> AppResult<Vec<Track>> {
+        let client = self.get_client().await?;
+        let tracks = client.tracks(ids).await?;
+        let max_audio_quality = self.max_audio_quality.read().await;
+        Ok(tracks
+            .into_iter()
+            .map(|track| parse_track(track, &max_audio_quality))
+            .collect())
     }
 
     pub async fn suggested_albums(&self, id: &str) -> AppResult<Vec<AlbumSimple>> {

@@ -11,7 +11,10 @@ use crate::{
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
         search_results::SearchAllResults,
-        track::{SuggestTrackInput, SuggestTrackRequest, Track, TrackSuggestionResponse},
+        track::{
+            SuggestTrackInput, SuggestTrackRequest, Track, TrackListRequest, TrackListResponse,
+            TrackSuggestionResponse,
+        },
     },
     stream::{
         cmaf, crypto, fetch_segment, file_based,
@@ -146,6 +149,7 @@ enum Endpoint {
     ArtistReleases,
     UserPlaylist,
     Track,
+    TrackList,
     File,
     TrackURL,
     Playlist,
@@ -184,6 +188,7 @@ impl Display for Endpoint {
             Self::Search => "catalog/search",
             Self::SessionStart => "session/start",
             Self::Track => "track/get",
+            Self::TrackList => "track/getList",
             Self::File => "file/url",
             Self::TrackURL => "track/getFileUrl",
             Self::UserPlaylist => "playlist/getUserPlaylists",
@@ -358,6 +363,13 @@ impl QobuzClient {
     #[must_use]
     pub fn app_id(&self) -> &str {
         &self.app_id
+    }
+
+    /// The response of `qws/createToken`, which carries the token and endpoint of the Qobuz Connect cloud socket.
+    pub async fn connect_token(&self) -> Result<String> {
+        let endpoint = format!("{}qws/createToken", self.base_url);
+        self.make_post_call(&endpoint, HashMap::from([("jwt", "jwt_qws")]))
+            .await
     }
 
     #[must_use]
@@ -855,6 +867,18 @@ impl QobuzClient {
         let params = vec![("track_id", track_id_string.as_str())];
 
         self.get(&endpoint, Some(&params)).await
+    }
+
+    /// The tracks behind the given ids, 50 per request like the web player; ids the catalog no longer serves are left out.
+    pub async fn tracks(&self, track_ids: &[u32]) -> Result<Vec<Track>> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::TrackList);
+        let mut tracks = Vec::with_capacity(track_ids.len());
+        for chunk in track_ids.chunks(50) {
+            let body = TrackListRequest { tracks_id: chunk };
+            let response: TrackListResponse = self.post_json(&endpoint, &body).await?;
+            tracks.extend(response.tracks.items);
+        }
+        Ok(tracks)
     }
 
     pub async fn suggested_albums(&self, album_id: &str) -> Result<AlbumSuggestionResponse> {

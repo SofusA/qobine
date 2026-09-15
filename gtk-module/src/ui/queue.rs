@@ -109,6 +109,7 @@ impl QueuePage {
                 track: x.track.clone(),
                 queue_id: x.queue_id,
                 index: x.index,
+                connect_id: x.connect_id,
             })
             .collect();
 

@@ -89,7 +89,7 @@ pub async fn run() -> AppResult<()> {
     }
 
     {
-        let app_id = client.app_id().await?;
+        let client = client.clone();
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
         let volume_receiver = player.volume();
@@ -98,9 +98,8 @@ pub async fn run() -> AppResult<()> {
 
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
-                &app_id,
+                client,
                 args.connect.connect_name,
-                args.connect.connect_port,
                 controls,
                 position_receiver,
                 tracklist_receiver,

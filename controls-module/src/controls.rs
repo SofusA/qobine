@@ -65,6 +65,12 @@ pub enum ControlCommand {
         play: bool,
         start_index: Option<usize>,
     },
+    ReplaceQueue {
+        items: Vec<NewQueueItem>,
+    },
+    SetConnectIds {
+        ids: Vec<(u64, i32)>,
+    },
     ClearQueue,
     StreamingConfiguration {
         configuration: StreamingConfiguration,
@@ -204,6 +210,16 @@ impl Controls {
         });
     }
 
+    /// Adopts the queue of the Qobuz Connect session without interrupting the current track.
+    pub fn replace_queue(&self, items: Vec<NewQueueItem>) {
+        self.send(ControlCommand::ReplaceQueue { items });
+    }
+
+    /// Records the ids the Qobuz Connect session gave to tracks queued here, by queue id.
+    pub fn set_connect_ids(&self, ids: Vec<(u64, i32)>) {
+        self.send(ControlCommand::SetConnectIds { ids });
+    }
+
     pub fn clear_queue(&self) {
         self.send(ControlCommand::ClearQueue);
     }
@@ -230,7 +246,8 @@ impl Controls {
 }
 
 #[derive(Debug, Copy, Clone, serde::Deserialize, serde::Serialize)]
+/// A track as the Qobuz Connect session lists it, by its id in that session.
 pub struct NewQueueItem {
     pub track_id: u32,
-    pub queue_id: u64,
+    pub connect_id: i32,
 }

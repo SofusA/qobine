@@ -67,3 +67,18 @@ pub struct SuggestTrackInput {
     pub label_id: Option<u32>,
     pub track_id: u32,
 }
+
+#[derive(Debug, Serialize)]
+pub struct TrackListRequest<'a> {
+    pub tracks_id: &'a [u32],
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackListResponse {
+    pub tracks: TrackList,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrackList {
+    pub items: Vec<Track>,
+}

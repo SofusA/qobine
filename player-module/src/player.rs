@@ -17,7 +17,7 @@ use tokio::{
     time::sleep,
 };
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 use crate::{
     AppResult,
@@ -406,25 +406,31 @@ impl Player {
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
 
-        let mut queue_items = vec![];
-        for (index, item) in items.iter().enumerate() {
-            let track = self.client.track(item.track_id).await?;
-            let queue_item = QueueItem {
-                track,
-                queue_id: item.queue_id,
-                index,
+        let start = start_index
+            .and_then(|index| items.get(index))
+            .map(|item| item.connect_id);
+        let tracks = self
+            .fetch_tracks(items.iter().map(|item| item.track_id).collect())
+            .await?;
+        let mut queue_items = Vec::with_capacity(items.len());
+        for item in &items {
+            let Some(track) = tracks.get(&item.track_id) else {
+                continue;
             };
-            queue_items.push(queue_item);
-        }
-
-        if let Some(item) = queue_items.first_mut() {
-            item.track.status = TrackStatus::Playing;
+            let index = queue_items.len();
+            queue_items.push(QueueItem {
+                track: track.clone(),
+                queue_id: u64::try_from(index).unwrap_or_default(),
+                index,
+                connect_id: Some(item.connect_id),
+            });
         }
 
         let mut tracklist = Tracklist::new_with_id(TracklistType::Tracks, queue_items);
-        if let Some(start_index) = start_index {
-            tracklist.skip_to_track(start_index);
-        }
+        let start = start
+            .and_then(|connect_id| tracklist.position_of_connect_id(connect_id))
+            .unwrap_or(0);
+        tracklist.skip_to_track(start);
 
         if play && let Some(first_track) = tracklist.current_track() {
             tracing::info!("New queue starting with: {}", first_track.title);
@@ -434,6 +440,76 @@ impl Player {
         self.broadcast_tracklist(tracklist).await?;
 
         Ok(())
+    }
+
+    async fn replace_queue(&mut self, items: Vec<NewQueueItem>) -> AppResult<()> {
+        let mut tracklist = self.tracklist_rx.borrow().clone();
+        let known: Vec<Option<QueueItem>> = items
+            .iter()
+            .map(|item| known_item(&tracklist, *item))
+            .collect();
+        let missing = items
+            .iter()
+            .zip(&known)
+            .filter(|(_, known)| known.is_none())
+            .map(|(item, _)| item.track_id)
+            .collect();
+        let tracks = self.fetch_tracks(missing).await?;
+
+        let mut queue = Vec::with_capacity(items.len());
+        for (item, known) in items.iter().zip(known) {
+            let queue_item = if let Some(known) = known {
+                known
+            } else {
+                let Some(track) = tracks.get(&item.track_id) else {
+                    continue;
+                };
+                tracklist.queue_item(track.clone(), Some(item.connect_id))
+            };
+            queue.push(queue_item);
+        }
+        let same_items = queue
+            .iter()
+            .map(|item| item.queue_id)
+            .eq(tracklist.queue().iter().map(|item| item.queue_id));
+        if !same_items {
+            tracklist.set_list_type(TracklistType::Tracks);
+        }
+
+        if tracklist.replace(queue) {
+            self.update_queue(tracklist).await
+        } else {
+            self.set_target_status(Status::Paused);
+            self.sink.pause();
+            self.sink.clear();
+            self.next_track_is_queried = false;
+            self.next_track_in_sink_queue = false;
+            self.position.send(Duration::default())?;
+            self.broadcast_tracklist(tracklist).await
+        }
+    }
+
+    /// The tracks of a Qobuz Connect queue by id; tracks the catalog no longer serves are left out and logged.
+    async fn fetch_tracks(&self, track_ids: Vec<u32>) -> AppResult<HashMap<u32, Track>> {
+        let tracks: HashMap<u32, Track> = self
+            .client
+            .tracks(&track_ids)
+            .await?
+            .into_iter()
+            .map(|track| (track.id, track))
+            .collect();
+        for track_id in track_ids.iter().filter(|id| !tracks.contains_key(id)) {
+            tracing::warn!(
+                "Skipping track {track_id} of the Qobuz Connect queue, the catalog does not serve it"
+            );
+        }
+        Ok(tracks)
+    }
+
+    async fn set_connect_ids(&mut self, ids: &[(u64, i32)]) -> AppResult<()> {
+        let mut tracklist = self.tracklist_rx.borrow().clone();
+        tracklist.set_connect_ids(ids);
+        self.broadcast_tracklist(tracklist).await
     }
 
     async fn clear_queue(&mut self) -> AppResult<()> {
@@ -739,6 +815,8 @@ impl Player {
                 play,
                 start_index,
             } => self.new_track_queue(items, play, start_index).await?,
+            ControlCommand::ReplaceQueue { items } => self.replace_queue(items).await?,
+            ControlCommand::SetConnectIds { ids } => self.set_connect_ids(&ids).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
@@ -855,6 +933,16 @@ impl Player {
     }
 }
 
+fn known_item(tracklist: &Tracklist, item: NewQueueItem) -> Option<QueueItem> {
+    tracklist
+        .queue()
+        .into_iter()
+        .find(|queued| {
+            queued.connect_id == Some(item.connect_id) && queued.track.id == item.track_id
+        })
+        .cloned()
+}
+
 fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
     tracks
         .into_iter()
@@ -864,6 +952,7 @@ fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
             track,
             queue_id,
             index,
+            connect_id: None,
         })
         .collect()
 }

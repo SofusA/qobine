@@ -78,6 +78,7 @@ tower-http = { version = "0.7", features = ["limit"] }
 futures-util = "0.3"
 html-escape = "0.2"
 num-traits = "0.2"
+uuid = { version = "1", features = ["v5"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

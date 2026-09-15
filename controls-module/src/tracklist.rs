@@ -60,6 +60,8 @@ pub struct QueueItem {
     pub track: Track,
     pub queue_id: u64,
     pub index: usize,
+    #[serde(skip)]
+    pub connect_id: Option<i32>,
 }
 
 impl Tracklist {
@@ -140,16 +142,17 @@ impl Tracklist {
     }
 
     pub fn push_track(&mut self, track: Track) {
-        let item = self.queue_item(track);
+        let item = self.queue_item(track, None);
         self.queue.push(item);
     }
 
     pub fn insert_track(&mut self, insert_index: usize, track: Track) {
-        let item = self.queue_item(track);
+        let item = self.queue_item(track, None);
         self.queue.insert(insert_index.min(self.queue.len()), item);
     }
 
-    fn queue_item(&mut self, track: Track) -> QueueItem {
+    /// A new item with the next free queue id, not yet in the queue.
+    pub fn queue_item(&mut self, track: Track, connect_id: Option<i32>) -> QueueItem {
         let index = self.total().checked_add(1).unwrap_or_default();
         let highest = self.queue.iter().map(|item| item.queue_id).max();
         let queue_id = highest
@@ -160,7 +163,64 @@ impl Tracklist {
             track,
             queue_id,
             index,
+            connect_id,
         }
+    }
+
+    /// Adopts the queue of the Qobuz Connect session, keeping the current track and the items the session does not know yet in place. Returns whether the current track is still queued.
+    pub fn replace(&mut self, items: Vec<QueueItem>) -> bool {
+        let current = self.current_queue_id();
+        let mut queue = items;
+        let mut previous = None;
+        for item in self.queue.drain(..) {
+            if item.connect_id.is_none() {
+                let at = previous
+                    .and_then(|id| queue.iter().position(|known| known.queue_id == id))
+                    .map_or(0, |position| position.saturating_add(1));
+                queue.insert(at.min(queue.len()), item.clone());
+            }
+            previous = Some(item.queue_id);
+        }
+        self.queue = queue;
+        let position =
+            current.and_then(|id| self.queue.iter().position(|item| item.queue_id == id));
+        if let Some(position) = position {
+            self.skip_to_track(position);
+            return true;
+        }
+        self.reset();
+        false
+    }
+
+    pub fn set_connect_ids(&mut self, ids: &[(u64, i32)]) {
+        for item in &mut self.queue {
+            if let Some((_, connect_id)) =
+                ids.iter().find(|(queue_id, _)| *queue_id == item.queue_id)
+            {
+                item.connect_id = Some(*connect_id);
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn position_of_connect_id(&self, connect_id: i32) -> Option<usize> {
+        self.queue
+            .iter()
+            .position(|item| item.connect_id == Some(connect_id))
+    }
+
+    #[must_use]
+    pub fn current_connect_id(&self) -> Option<i32> {
+        self.queue
+            .iter()
+            .find(|item| item.track.status == TrackStatus::Playing)
+            .and_then(|item| item.connect_id)
+    }
+
+    #[must_use]
+    pub fn next_connect_id(&self) -> Option<i32> {
+        let next = self.current_position().checked_add(1)?;
+        self.queue.get(next).and_then(|item| item.connect_id)
     }
 
     pub fn reorder_queue(&mut self, new_order: &[usize]) {
@@ -343,5 +403,55 @@ mod tests {
     fn a_stored_tracklist_without_a_counter_still_loads() {
         let stored = r#"{"queue":[],"list_type":"Tracks"}"#;
         assert!(serde_json::from_str::<Tracklist>(stored).is_ok());
+    }
+
+    fn connect_queue(ids: &[(u64, i32)]) -> Tracklist {
+        let items = ids
+            .iter()
+            .map(|&(queue_id, connect_id)| QueueItem {
+                queue_id,
+                connect_id: Some(connect_id),
+                ..QueueItem::default()
+            })
+            .collect();
+        Tracklist::new(TracklistType::Tracks, items)
+    }
+
+    fn ids(tracklist: &Tracklist) -> Vec<u64> {
+        tracklist.queue().iter().map(|item| item.queue_id).collect()
+    }
+
+    #[test]
+    fn replace_keeps_the_current_track_and_the_items_the_session_does_not_know() {
+        let mut tracklist = connect_queue(&[(0, 10), (1, 11), (2, 12)]);
+        tracklist.skip_to_track(1);
+        tracklist.insert_track(2, Track::default());
+        assert_eq!(ids(&tracklist), vec![0, 1, 3, 2]);
+
+        let from_session = connect_queue(&[(1, 11), (2, 12), (4, 13)]);
+        assert!(tracklist.replace(from_session.queue().into_iter().cloned().collect()));
+        assert_eq!(ids(&tracklist), vec![1, 3, 2, 4]);
+        assert_eq!(tracklist.current_position(), 0);
+        assert_eq!(tracklist.current_connect_id(), Some(11));
+        assert_eq!(tracklist.next_connect_id(), None);
+    }
+
+    #[test]
+    fn replace_reports_a_current_track_that_the_session_dropped() {
+        let mut tracklist = connect_queue(&[(0, 10), (1, 11)]);
+        tracklist.skip_to_track(0);
+        let from_session = connect_queue(&[(1, 11)]);
+        assert!(!tracklist.replace(from_session.queue().into_iter().cloned().collect()));
+        assert_eq!(tracklist.current_position(), 0);
+        assert_eq!(tracklist.current_connect_id(), Some(11));
+    }
+
+    #[test]
+    fn connect_ids_are_set_by_queue_id() {
+        let mut tracklist = queue_with_ids(&[0, 1, 2]);
+        tracklist.set_connect_ids(&[(1, 7), (2, 8)]);
+        assert_eq!(tracklist.position_of_connect_id(8), Some(2));
+        assert_eq!(tracklist.position_of_connect_id(7), Some(1));
+        assert_eq!(tracklist.position_of_connect_id(9), None);
     }
 }
