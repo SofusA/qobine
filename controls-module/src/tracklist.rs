@@ -36,6 +36,8 @@ pub enum TracklistType {
 pub struct Tracklist {
     queue: Vec<QueueItem>,
     list_type: TracklistType,
+    #[serde(default)]
+    next_queue_id: u64,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -63,7 +65,11 @@ pub struct QueueItem {
 impl Tracklist {
     #[must_use]
     pub const fn new(list_type: TracklistType, queue: Vec<QueueItem>) -> Self {
-        Self { queue, list_type }
+        Self {
+            queue,
+            list_type,
+            next_queue_id: 0,
+        }
     }
 
     pub fn set_list_type(&mut self, list_type: TracklistType) {
@@ -75,6 +81,7 @@ impl Tracklist {
         Self {
             queue: items,
             list_type,
+            next_queue_id: 0,
         }
     }
 
@@ -133,27 +140,27 @@ impl Tracklist {
     }
 
     pub fn push_track(&mut self, track: Track) {
-        let index = self.total().checked_add(1).unwrap_or_default();
-        let queue_id = u64::try_from(index).unwrap_or_default();
-
-        let item = QueueItem {
-            track,
-            queue_id,
-            index,
-        };
+        let item = self.queue_item(track);
         self.queue.push(item);
     }
 
     pub fn insert_track(&mut self, insert_index: usize, track: Track) {
-        let index = self.total().checked_add(1).unwrap_or_default();
-        let queue_id = u64::try_from(index).unwrap_or_default();
+        let item = self.queue_item(track);
+        self.queue.insert(insert_index.min(self.queue.len()), item);
+    }
 
-        let item = QueueItem {
+    fn queue_item(&mut self, track: Track) -> QueueItem {
+        let index = self.total().checked_add(1).unwrap_or_default();
+        let highest = self.queue.iter().map(|item| item.queue_id).max();
+        let queue_id = highest
+            .map_or(0, |id| id.saturating_add(1))
+            .max(self.next_queue_id);
+        self.next_queue_id = queue_id.saturating_add(1);
+        QueueItem {
             track,
             queue_id,
             index,
-        };
-        self.queue.insert(insert_index.min(self.queue.len()), item);
+        }
     }
 
     pub fn reorder_queue(&mut self, new_order: &[usize]) {
@@ -296,5 +303,45 @@ mod tests {
         let mut tracklist = tracklist(3);
         tracklist.reorder_queue(&[1, 0]);
         assert_eq!(tracklist.total(), 3);
+    }
+
+    fn queue_with_ids(ids: &[u64]) -> Tracklist {
+        let items = ids
+            .iter()
+            .map(|&queue_id| QueueItem {
+                queue_id,
+                ..QueueItem::default()
+            })
+            .collect();
+        Tracklist::new(TracklistType::Tracks, items)
+    }
+
+    fn queue_id_at(tracklist: &Tracklist, index: usize) -> Option<u64> {
+        tracklist.queue().get(index).map(|item| item.queue_id)
+    }
+
+    #[test]
+    fn queue_ids_are_never_reused() {
+        let mut tracklist = queue_with_ids(&[0, 1, 2, 3, 4, 5, 6, 7]);
+        tracklist.insert_track(1, Track::default());
+        assert_eq!(queue_id_at(&tracklist, 1), Some(8));
+        tracklist.remove_track(1);
+        tracklist.insert_track(1, Track::default());
+        assert_eq!(queue_id_at(&tracklist, 1), Some(9));
+        tracklist.push_track(Track::default());
+        assert_eq!(queue_id_at(&tracklist, 9), Some(10));
+    }
+
+    #[test]
+    fn queue_ids_continue_after_the_highest_id_of_a_received_queue() {
+        let mut tracklist = queue_with_ids(&[0, 5, 1, 2, 3, 4]);
+        tracklist.push_track(Track::default());
+        assert_eq!(queue_id_at(&tracklist, 6), Some(6));
+    }
+
+    #[test]
+    fn a_stored_tracklist_without_a_counter_still_loads() {
+        let stored = r#"{"queue":[],"list_type":"Tracks"}"#;
+        assert!(serde_json::from_str::<Tracklist>(stored).is_ok());
     }
 }

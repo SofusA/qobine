@@ -970,6 +970,7 @@ dependencies = [
  "html-escape",
  "qobuz-client",
  "serde",
+ "serde_json",
  "time",
  "tokio",
 ]
