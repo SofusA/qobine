@@ -17,4 +17,6 @@ cargo run -p tui-module --features connect -- --connect --connect-name qobine
 
 ## Limitations
 
-Loop and shuffle modes are not supported. qobine does not control other renderers yet.
+Loop, shuffle and autoplay modes are not supported: qobine plays the queue as listed and stops at its end. Tracks the catalog no longer serves are skipped with a warning and stay only in the apps' queue. qobine does not control other renderers yet.
+
+Choosing another device in an app pauses qobine, clearing the queue from an app stops the playing track, and a queue loaded from an app starts playing only when qobine is the selected device.

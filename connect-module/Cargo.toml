@@ -22,7 +22,7 @@ player-module = { version = "*", path = "../player-module" }
 gpio-module = { version = "*", path = "../gpio-module", optional = true }
 cli-module = { version = "*", path = "../cli-module" }
 
-qobuz-connect = { path = "../../qobuz-connect" }
+qobuz-connect = "0.1"
 hostname.workspace = true
 num-traits.workspace = true
 tokio.workspace = true
