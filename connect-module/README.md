@@ -9,6 +9,11 @@ cargo run -p connect-module -- --connect-name qobine
 cargo run -p tui-module --features connect -- --connect --connect-name qobine
 ```
 
+How to build "release" (how I build at least):
+```
+RUSTFLAGS="-C target-cpu=native" cargo build --release -p tui-module --features connect
+```
+
 ## What works
 
 - Playback control from the apps: play, pause, seek, skip to a track, volume, mute, maximum audio quality.
