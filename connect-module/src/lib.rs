@@ -162,32 +162,32 @@ impl Connect {
             tokio::select! {
                 event = session.recv() => {
                     let Some(event) = event else { return Err(Error::Closed) };
-                    self.handle_event(&mut session, event).await?;
+                    self.handle_event(&mut session, event)?;
                 }
                 Ok(()) = self.position_receiver.changed() => {
                     if self.reported_state_at.elapsed() >= REPORT_INTERVAL {
-                        self.report_state(&session).await?;
+                        self.report_state(&session)?;
                     }
                 }
                 Ok(()) = self.status_receiver.changed() => {
-                    self.report_state(&session).await?;
+                    self.report_state(&session)?;
                 }
                 Ok(()) = self.tracklist_receiver.changed() => {
-                    self.report_state(&session).await?;
-                    self.mirror(&mut session).await?;
-                    self.apply_deferred(&session).await?;
+                    self.report_state(&session)?;
+                    self.mirror(&mut session)?;
+                    self.apply_deferred(&session)?;
                 }
                 Ok(()) = self.volume_receiver.changed() => {
-                    self.report_volume(&session).await?;
+                    self.report_volume(&session)?;
                 }
             }
         }
     }
 
-    async fn handle_event(&mut self, session: &mut Session, event: Event) -> Result<(), Error> {
+    fn handle_event(&mut self, session: &mut Session, event: Event) -> Result<(), Error> {
         match event {
-            Event::Command(command) => self.handle_command(session, command).await,
-            Event::Queue(queue) => self.handle_queue(session, queue).await,
+            Event::Command(command) => self.handle_command(session, command),
+            Event::Queue(queue) => self.handle_queue(session, queue),
             Event::Registered { renderer_id } => {
                 tracing::info!("Registered as Qobuz Connect renderer {renderer_id}");
                 Ok(())
@@ -208,11 +208,7 @@ impl Connect {
         }
     }
 
-    async fn handle_command(
-        &mut self,
-        session: &Session,
-        command: RendererCommand,
-    ) -> Result<(), Error> {
+    fn handle_command(&mut self, session: &Session, command: RendererCommand) -> Result<(), Error> {
         tracing::info!("Qobuz Connect command: {command:?}");
         match command {
             RendererCommand::SetState {
@@ -220,7 +216,7 @@ impl Connect {
                 position,
                 current,
                 next: _,
-            } => self.set_state(session, playing, position, current).await,
+            } => self.set_state(session, playing, position, current),
             RendererCommand::SetVolume(volume) => {
                 self.controls
                     .set_volume(volume.to_f32().unwrap_or(0.0) / 100.0);
@@ -241,20 +237,18 @@ impl Connect {
                     }
                     self.muted = muted;
                 }
-                session.report(RendererReport::Muted(muted)).await
+                session.report(RendererReport::Muted(muted))
             }
             RendererCommand::SetActive(true) => {
                 let volume = convert_volume(*self.volume_receiver.borrow());
                 self.reported_volume = Some(volume);
-                session.report(RendererReport::Volume(volume)).await?;
-                session.report(RendererReport::Muted(self.muted)).await?;
-                session
-                    .report(RendererReport::MaxAudioQuality {
-                        quality: self.max_audio_quality,
-                        network: NetworkType::Wifi,
-                    })
-                    .await?;
-                self.report_state(session).await
+                session.report(RendererReport::Volume(volume))?;
+                session.report(RendererReport::Muted(self.muted))?;
+                session.report(RendererReport::MaxAudioQuality {
+                    quality: self.max_audio_quality,
+                    network: NetworkType::Wifi,
+                })?;
+                self.report_state(session)
             }
             RendererCommand::SetActive(false) => {
                 self.controls.pause();
@@ -266,21 +260,19 @@ impl Connect {
                 };
                 self.max_audio_quality = quality;
                 self.controls.set_audio_max_quality(new_quality);
-                session
-                    .report(RendererReport::MaxAudioQuality {
-                        quality,
-                        network: NetworkType::Wifi,
-                    })
-                    .await
+                session.report(RendererReport::MaxAudioQuality {
+                    quality,
+                    network: NetworkType::Wifi,
+                })
             }
-            RendererCommand::SetLoopMode(_) | RendererCommand::SetShuffleMode(_) => {
-                tracing::info!("Loop and shuffle modes are not supported");
+            other => {
+                tracing::info!("Unsupported Qobuz Connect command: {other:?}");
                 Ok(())
             }
         }
     }
 
-    async fn set_state(
+    fn set_state(
         &mut self,
         session: &Session,
         playing: Option<PlayingState>,
@@ -298,7 +290,7 @@ impl Connect {
                     false
                 } else {
                     let Some(index) = tracklist.position_of_connect_id(track.queue_item_id) else {
-                        return self.defer(session, playing, position, track).await;
+                        return self.defer(session, playing, position, track);
                     };
                     self.controls.skip_to_position(index, true);
                     true
@@ -325,7 +317,7 @@ impl Connect {
     }
 
     /// Keeps a jump to an item the queue does not hold yet until the queue has caught up.
-    async fn defer(
+    fn defer(
         &mut self,
         session: &Session,
         playing: Option<PlayingState>,
@@ -344,11 +336,11 @@ impl Connect {
         if expected {
             Ok(())
         } else {
-            session.ask_queue_state().await
+            session.ask_queue_state()
         }
     }
 
-    async fn apply_deferred(&mut self, session: &Session) -> Result<(), Error> {
+    fn apply_deferred(&mut self, session: &Session) -> Result<(), Error> {
         let Some(deferred) = self.deferred.take() else {
             return Ok(());
         };
@@ -364,18 +356,13 @@ impl Connect {
                 deferred.position,
                 Some(deferred.current),
             )
-            .await
         } else {
             self.deferred = Some(deferred);
             Ok(())
         }
     }
 
-    async fn handle_queue(
-        &mut self,
-        session: &mut Session,
-        queue: QueueEvent,
-    ) -> Result<(), Error> {
+    fn handle_queue(&mut self, session: &mut Session, queue: QueueEvent) -> Result<(), Error> {
         let own = self
             .pending
             .as_ref()
@@ -429,7 +416,7 @@ impl Connect {
                 Ok(())
             }
             QueueEvent::LoopModeSet(_) | QueueEvent::Error(_) => Ok(()),
-            _ => session.ask_queue_state().await,
+            _ => session.ask_queue_state(),
         }
     }
 
@@ -442,12 +429,12 @@ impl Connect {
         self.controls.replace_queue(items, keep_unknown);
     }
 
-    async fn report_state(&mut self, session: &Session) -> Result<(), Error> {
+    fn report_state(&mut self, session: &Session) -> Result<(), Error> {
         let Some(state) = self.player_state() else {
             return Ok(());
         };
         self.reported_state_at = Instant::now();
-        session.report(RendererReport::State(state)).await
+        session.report(RendererReport::State(state))
     }
 
     fn player_state(&self) -> Option<PlayerState> {
@@ -482,16 +469,16 @@ impl Connect {
         })
     }
 
-    async fn report_volume(&mut self, session: &Session) -> Result<(), Error> {
+    fn report_volume(&mut self, session: &Session) -> Result<(), Error> {
         let volume = convert_volume(*self.volume_receiver.borrow());
         if !self.connected || self.muted || self.reported_volume == Some(volume) {
             return Ok(());
         }
         self.reported_volume = Some(volume);
-        session.report(RendererReport::Volume(volume)).await
+        session.report(RendererReport::Volume(volume))
     }
 
-    async fn mirror(&mut self, session: &mut Session) -> Result<(), Error> {
+    fn mirror(&mut self, session: &mut Session) -> Result<(), Error> {
         let Some(session_queue) = &self.session_queue else {
             return Ok(());
         };
@@ -505,7 +492,7 @@ impl Connect {
             tracing::warn!("Qobuz Connect did not answer a queue change, resynchronizing");
             self.pending = None;
             self.refused = true;
-            return session.ask_queue_state().await;
+            return session.ask_queue_state();
         }
         let (local, current): (Vec<LocalItem>, usize) = {
             let tracklist = self.tracklist_receiver.borrow();
@@ -523,9 +510,9 @@ impl Connect {
         let fresh_queue = local.iter().all(|item| item.1.is_none());
         if fresh_queue && !session.is_active() && session.renderer_id().is_some() {
             tracing::info!("Taking over as the active Qobuz Connect renderer");
-            session.activate().await?;
+            session.activate()?;
         }
-        if let Some(action) = session.control(command).await? {
+        if let Some(action) = session.control(command)? {
             self.pending = Some(Pending {
                 action,
                 since: Instant::now(),
