@@ -45,6 +45,7 @@ pub struct Player {
     controls: Controls,
     database: Arc<Database>,
     next_track_is_queried: bool,
+    pending_seek: Option<(u32, Duration)>,
     next_track_in_sink_queue: bool,
     downloader: Downloader,
     state_change_delay: Option<Duration>,
@@ -101,6 +102,7 @@ impl Player {
             database,
             next_track_in_sink_queue: false,
             next_track_is_queried: false,
+            pending_seek: None,
             downloader,
             state_change_delay,
             sample_rate_change_delay,
@@ -245,8 +247,24 @@ impl Player {
         }
         self.sink.play();
         self.set_target_status(Status::Playing);
+        if !next_track
+            && let Some((id, position)) = self.pending_seek.take()
+            && id == track.id
+        {
+            self.seek_once_started(position).await?;
+        }
 
         Ok(())
+    }
+
+    async fn seek_once_started(&mut self, position: Duration) -> AppResult<()> {
+        for _ in 0..20 {
+            if !self.sink.position().is_zero() {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        self.seek(position)
     }
 
     async fn set_volume(&self, volume: f32) -> AppResult<()> {
@@ -285,7 +303,17 @@ impl Player {
         Ok(())
     }
 
-    fn seek(&self, duration: Duration) -> AppResult<()> {
+    fn seek(&mut self, duration: Duration) -> AppResult<()> {
+        if self.sink.is_empty() {
+            let current = self
+                .tracklist_rx
+                .borrow()
+                .current_track()
+                .map(|track| track.id);
+            self.pending_seek = current.map(|id| (id, duration));
+            self.position.send(duration)?;
+            return Ok(());
+        }
         match self.sink.seek(duration) {
             Ok(()) => {
                 self.position.send(self.sink.position())?;
@@ -297,7 +325,7 @@ impl Player {
         Ok(())
     }
 
-    fn jump_forward(&self) -> AppResult<()> {
+    fn jump_forward(&mut self) -> AppResult<()> {
         let duration = self
             .tracklist_rx
             .borrow()
@@ -318,7 +346,7 @@ impl Player {
         Ok(())
     }
 
-    fn jump_backward(&self) -> AppResult<()> {
+    fn jump_backward(&mut self) -> AppResult<()> {
         let current_position = self.sink.position();
 
         if current_position.as_millis() < 10000 {

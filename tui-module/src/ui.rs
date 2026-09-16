@@ -57,16 +57,20 @@ impl App {
             AppState::ConnectOverlay(selected) => {
                 let tab_area =
                     render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
-                let available_devices: Vec<String> =
-                    self.connect_available_devices.borrow().to_vec();
-                let active_device: String = self.connect_active_device.borrow().to_string();
-                render_connect(
-                    frame,
-                    tab_area,
-                    &available_devices,
-                    &active_device,
-                    *selected,
+                let active_device = self.connect_active_device.borrow().to_string();
+                let mut devices: Vec<(String, bool)> = self
+                    .connect_available_devices
+                    .borrow()
+                    .iter()
+                    .map(|device| (device.clone(), *device == active_device))
+                    .collect();
+                devices.extend(
+                    self.connect_devices
+                        .borrow()
+                        .iter()
+                        .map(|device| (device.name.clone(), device.active)),
                 );
+                render_connect(frame, tab_area, &devices, *selected);
             }
             AppState::Focus => {
                 focus::render(frame, &self.now_playing, &mut self.image_cache);
@@ -232,35 +236,31 @@ fn render_now_playing_bar(
 fn render_connect(
     frame: &mut Frame,
     area: Rect,
-    available_devices: &[String],
-    active_device: &str,
+    devices: &[(String, bool)],
     selected_device: usize,
 ) {
-    const TITLE: &str = "Select output Connect device";
+    const TITLE: &str = "Select playback device";
     const ACTIVE_SUFFIX: &str = " (active)";
 
-    let items: Vec<ListItem> = available_devices
+    let items: Vec<ListItem> = devices
         .iter()
-        .map(|device| {
-            if device == active_device {
+        .map(|(name, active)| {
+            if *active {
                 ListItem::new(Line::from(vec![
-                    Span::raw(device),
+                    Span::raw(name),
                     Span::styled(ACTIVE_SUFFIX, Style::new().dim()),
                 ]))
             } else {
-                ListItem::new(device.as_str())
+                ListItem::new(name.as_str())
             }
         })
         .collect();
 
-    let content_width = available_devices
+    let content_width = devices
         .iter()
-        .map(|device| {
-            device.len().saturating_add(if device == active_device {
-                ACTIVE_SUFFIX.len()
-            } else {
-                0
-            })
+        .map(|(name, active)| {
+            name.len()
+                .saturating_add(if *active { ACTIVE_SUFFIX.len() } else { 0 })
         })
         .max()
         .unwrap_or_default();
@@ -284,7 +284,7 @@ fn render_connect(
 
     let mut state = ListState::default();
 
-    if selected_device < available_devices.len() {
+    if selected_device < devices.len() {
         state.select(Some(selected_device));
     }
 
@@ -323,7 +323,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ["Currently playing artist page", "G"],
         ["Go to artist (album page)", "G"],
         ["Go to album / artist (track info)", "I / G"],
-        ["Select Connect device (if configured)", "c"],
+        ["Select playback device", "c"],
         ["Exit", "q"],
     ];
 

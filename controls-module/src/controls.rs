@@ -247,3 +247,11 @@ pub struct NewQueueItem {
     pub track_id: u32,
     pub connect_id: i32,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A device of the Qobuz Connect session, by its renderer id in that session.
+pub struct ConnectDevice {
+    pub id: i32,
+    pub name: String,
+    pub active: bool,
+}

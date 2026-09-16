@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
-    controls::{Controls, NewQueueItem},
+    controls::{ConnectDevice, Controls, NewQueueItem},
 };
 use num_traits::ToPrimitive;
 use player_module::{AppResult, AudioQuality, client::StreamClient, error::PlayerError};
@@ -13,8 +13,9 @@ use qobuz_connect::proto::qconnect::{
 };
 use qobuz_connect::{
     Autoplay, ControllerCommand, Credentials, Device, Error, Event, PlayerState, QueueEvent,
-    RendererCommand, RendererReport, Session,
+    RendererCommand, RendererEvent, RendererReport, Session,
 };
+use tokio::sync::{mpsc, watch};
 
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(10);
@@ -35,6 +36,12 @@ struct Connect {
     pending: Option<Pending>,
     refused: bool,
     deferred: Option<Deferred>,
+    devices: watch::Sender<Vec<ConnectDevice>>,
+    activations: mpsc::UnboundedReceiver<i32>,
+    renderers: Vec<ConnectDevice>,
+    taking_over: bool,
+    remote: Option<Remote>,
+    played: Option<u64>,
 }
 
 struct Pending {
@@ -48,6 +55,11 @@ struct Deferred {
     current: QueueTrackRef,
 }
 
+struct Remote {
+    state: PlayerState,
+    at: Instant,
+}
+
 type LocalItem = (u64, Option<i32>, u32);
 
 pub async fn init(
@@ -59,6 +71,8 @@ pub async fn init(
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
     max_audio_quality: AudioQuality,
+    devices: watch::Sender<Vec<ConnectDevice>>,
+    activations: mpsc::UnboundedReceiver<i32>,
 ) -> AppResult<()> {
     let device = device(connect_name, max_audio_quality);
     let session = Session::join_with(
@@ -87,6 +101,12 @@ pub async fn init(
         pending: None,
         refused: false,
         deferred: None,
+        devices,
+        activations,
+        renderers: Vec::new(),
+        taking_over: false,
+        remote: None,
+        played: None,
     };
     connect.run(session).await.map_err(|err| map_err(&err))
 }
@@ -146,6 +166,47 @@ fn convert_volume(volume: f32) -> u32 {
         .unwrap_or(0)
 }
 
+fn ask_remote_state(session: &Session, active: Option<i32>) -> Result<(), Error> {
+    match active {
+        Some(id) if Some(id) != session.renderer_id() => session.ask_renderer_state(id),
+        _ => Ok(()),
+    }
+}
+
+fn activate(session: &mut Session, id: i32) -> Result<(), Error> {
+    tracing::info!("Making Qobuz Connect renderer {id} active");
+    if session.renderer_id() == Some(id) {
+        return session.activate();
+    }
+    session.control(ControllerCommand::SetActiveRenderer(id))?;
+    Ok(())
+}
+
+fn update(renderers: &mut Vec<ConnectDevice>, event: RendererEvent) -> bool {
+    match event {
+        RendererEvent::Added { id, device } | RendererEvent::Updated { id, device } => {
+            match renderers.iter_mut().find(|renderer| renderer.id == id) {
+                Some(renderer) => renderer.name = device.name,
+                None => renderers.push(ConnectDevice {
+                    id,
+                    name: device.name,
+                    active: false,
+                }),
+            }
+        }
+        RendererEvent::Removed { id } => renderers.retain(|renderer| renderer.id != id),
+        RendererEvent::ActiveChanged { id } => set_active(renderers, id),
+        _ => return false,
+    }
+    true
+}
+
+fn set_active(renderers: &mut [ConnectDevice], id: Option<i32>) {
+    for renderer in renderers {
+        renderer.active = Some(renderer.id) == id;
+    }
+}
+
 fn items(tracks: &[QueueTrackRef]) -> Vec<NewQueueItem> {
     tracks
         .iter()
@@ -171,6 +232,11 @@ impl Connect {
                 }
                 Ok(()) = self.status_receiver.changed() => {
                     self.report_state(&session)?;
+                    let current = self.tracklist_receiver.borrow().current_queue_id();
+                    if *self.status_receiver.borrow() == Status::Playing && self.played != current {
+                        self.played = current;
+                        self.take_over(&mut session)?;
+                    }
                 }
                 Ok(()) = self.tracklist_receiver.changed() => {
                     self.report_state(&session)?;
@@ -179,6 +245,9 @@ impl Connect {
                 }
                 Ok(()) = self.volume_receiver.changed() => {
                     self.report_volume(&session)?;
+                }
+                Some(id) = self.activations.recv() => {
+                    activate(&mut session, id)?;
                 }
             }
         }
@@ -190,6 +259,42 @@ impl Connect {
             Event::Queue(queue) => self.handle_queue(session, queue),
             Event::Registered { renderer_id } => {
                 tracing::info!("Registered as Qobuz Connect renderer {renderer_id}");
+                let device = session.device().clone();
+                update(
+                    &mut self.renderers,
+                    RendererEvent::Added {
+                        id: renderer_id,
+                        device,
+                    },
+                );
+                self.publish();
+                Ok(())
+            }
+            Event::Session(state) => {
+                set_active(&mut self.renderers, state.active_renderer_id);
+                self.publish();
+                ask_remote_state(session, state.active_renderer_id)
+            }
+            Event::Renderer(event) => {
+                if let RendererEvent::StateUpdated {
+                    id,
+                    state: Some(state),
+                    ..
+                } = &event
+                    && session.renderer_id() != Some(*id)
+                {
+                    self.remote = Some(Remote {
+                        state: state.clone(),
+                        at: Instant::now(),
+                    });
+                }
+                if let RendererEvent::ActiveChanged { id } = event {
+                    self.taking_over = false;
+                    ask_remote_state(session, id)?;
+                }
+                if update(&mut self.renderers, event) {
+                    self.publish();
+                }
                 Ok(())
             }
             Event::Disconnected => {
@@ -199,6 +304,9 @@ impl Connect {
             Event::Reconnected => {
                 self.connected = true;
                 self.pending = None;
+                self.taking_over = false;
+                self.renderers.clear();
+                self.publish();
                 Ok(())
             }
             other => {
@@ -240,6 +348,7 @@ impl Connect {
                 session.report(RendererReport::Muted(muted))
             }
             RendererCommand::SetActive(true) => {
+                self.taking_over = false;
                 let volume = convert_volume(*self.volume_receiver.borrow());
                 self.reported_volume = Some(volume);
                 session.report(RendererReport::Volume(volume))?;
@@ -248,6 +357,9 @@ impl Connect {
                     quality: self.max_audio_quality,
                     network: NetworkType::Wifi,
                 })?;
+                if let Some(remote) = self.remote.take() {
+                    self.resume(session, remote)?;
+                }
                 self.report_state(session)
             }
             RendererCommand::SetActive(false) => {
@@ -403,6 +515,7 @@ impl Connect {
                     })
                     .collect();
                 let start = usize::try_from(loaded.queue_position).ok();
+                self.remote = None;
                 self.controls.new_queue(items, session.is_active(), start);
                 Ok(())
             }
@@ -426,15 +539,66 @@ impl Connect {
         self.session_queue = Some(tracks);
         self.pending = None;
         self.refused = false;
+        self.remote = None;
         self.controls.replace_queue(items, keep_unknown);
     }
 
     fn report_state(&mut self, session: &Session) -> Result<(), Error> {
+        if !session.is_active() {
+            return Ok(());
+        }
         let Some(state) = self.player_state() else {
             return Ok(());
         };
         self.reported_state_at = Instant::now();
         session.report(RendererReport::State(state))
+    }
+
+    fn resume(&mut self, session: &Session, remote: Remote) -> Result<(), Error> {
+        let state = remote.state;
+        let (Some(id), PlayingState::Playing | PlayingState::Paused) =
+            (state.current_queue_item_id, state.playing)
+        else {
+            return Ok(());
+        };
+        let track_id = {
+            let tracklist = self.tracklist_receiver.borrow();
+            let index = tracklist.position_of_connect_id(id);
+            index.and_then(|index| tracklist.queue().get(index).map(|item| item.track.id))
+        };
+        let Some(track_id) = track_id else {
+            return Ok(());
+        };
+        let position = if state.playing == PlayingState::Playing && state.buffer == BufferState::Ok
+        {
+            state.position.saturating_add(remote.at.elapsed())
+        } else {
+            state.position
+        };
+        tracing::info!(
+            "Continuing the previous renderer: item {id} at {position:?}, {:?}",
+            state.playing
+        );
+        let current = QueueTrackRef {
+            queue_item_id: id,
+            track_id,
+            context_uuid: None,
+        };
+        self.set_state(session, Some(state.playing), Some(position), Some(current))
+    }
+
+    fn take_over(&mut self, session: &mut Session) -> Result<(), Error> {
+        if session.is_active() || self.taking_over || session.renderer_id().is_none() {
+            return Ok(());
+        }
+        tracing::info!("Taking over as the active Qobuz Connect renderer");
+        self.taking_over = true;
+        self.remote = None;
+        session.activate()
+    }
+
+    fn publish(&self) {
+        self.devices.send_replace(self.renderers.clone());
     }
 
     fn player_state(&self) -> Option<PlayerState> {
@@ -471,7 +635,7 @@ impl Connect {
 
     fn report_volume(&mut self, session: &Session) -> Result<(), Error> {
         let volume = convert_volume(*self.volume_receiver.borrow());
-        if !self.connected || self.muted || self.reported_volume == Some(volume) {
+        if !session.is_active() || self.muted || self.reported_volume == Some(volume) {
             return Ok(());
         }
         self.reported_volume = Some(volume);
@@ -507,10 +671,8 @@ impl Connect {
             return Ok(());
         };
         tracing::info!("Mirroring queue change to Qobuz Connect: {command:?}");
-        let fresh_queue = local.iter().all(|item| item.1.is_none());
-        if fresh_queue && !session.is_active() && session.renderer_id().is_some() {
-            tracing::info!("Taking over as the active Qobuz Connect renderer");
-            session.activate()?;
+        if local.iter().all(|item| item.1.is_none()) {
+            self.take_over(session)?;
         }
         if let Some(action) = session.control(command)? {
             self.pending = Some(Pending {
@@ -724,5 +886,48 @@ mod tests {
             delta(&[(10, 1)], &[], 0),
             Some(ControllerCommand::ClearQueue)
         ));
+    }
+
+    #[test]
+    fn renderers_follow_the_session() {
+        let mut renderers = Vec::new();
+        let phone = device("phone".to_owned(), AudioQuality::CD);
+        let web = device("web".to_owned(), AudioQuality::CD);
+        let added = RendererEvent::Added {
+            id: 4,
+            device: phone.clone(),
+        };
+        assert!(update(&mut renderers, added));
+        assert!(update(
+            &mut renderers,
+            RendererEvent::Added { id: 6, device: web }
+        ));
+        assert!(update(
+            &mut renderers,
+            RendererEvent::ActiveChanged { id: Some(6) }
+        ));
+        assert!(!update(
+            &mut renderers,
+            RendererEvent::Volume { id: 6, volume: 3 }
+        ));
+        let renamed = RendererEvent::Updated {
+            id: 4,
+            device: Device {
+                name: "my phone".to_owned(),
+                ..phone
+            },
+        };
+        assert!(update(&mut renderers, renamed));
+        assert_eq!(
+            renderers.iter().filter(|renderer| renderer.active).count(),
+            1
+        );
+        assert!(update(&mut renderers, RendererEvent::Removed { id: 6 }));
+        let expected = ConnectDevice {
+            id: 4,
+            name: "my phone".to_owned(),
+            active: false,
+        };
+        assert_eq!(renderers, vec![expected]);
     }
 }

@@ -167,6 +167,8 @@ pub async fn run() -> AppResult<()> {
         let volume_receiver = player.volume();
         let status_receiver = player.status();
         let controls = player.controls();
+        let (connect_devices, _) = tokio::sync::watch::channel(Vec::new());
+        let (_activate, activations) = tokio::sync::mpsc::unbounded_channel();
 
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
@@ -178,6 +180,8 @@ pub async fn run() -> AppResult<()> {
                 status_receiver,
                 volume_receiver,
                 max_audio_quality,
+                connect_devices,
+                activations,
             )
             .await
             {

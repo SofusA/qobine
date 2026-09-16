@@ -11,7 +11,7 @@ use crate::{
 };
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    controls::Controls,
+    controls::{ConnectDevice, Controls},
     models::{Artist, Track},
     tracklist::{Tracklist, TracklistType},
 };
@@ -156,6 +156,8 @@ pub struct App {
     pub connect_available_devices: watch::Receiver<Vec<String>>,
     pub connect_active_device: watch::Receiver<String>,
     pub set_connect_active_device: mpsc::UnboundedSender<String>,
+    pub connect_devices: watch::Receiver<Vec<ConnectDevice>>,
+    pub activate_connect_device: mpsc::UnboundedSender<i32>,
     pub disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 }
 
@@ -220,6 +222,10 @@ impl App {
                 Ok(()) = self.status.changed() => {
                     let status = self.status.borrow_and_update();
                     self.now_playing.status = *status;
+                    self.should_draw = true;
+                }
+
+                Ok(()) = self.connect_devices.changed() => {
                     self.should_draw = true;
                 }
 
@@ -319,7 +325,7 @@ impl App {
                         .await
                         .is_ok_and(|x| x.enable_disconnect);
 
-                    if enable_connect {
+                    if enable_connect || !self.connect_devices.borrow().is_empty() {
                         self.state = AppState::ConnectOverlay(0);
                         self.should_draw = true;
                     }
@@ -507,14 +513,24 @@ impl App {
                         match key_event.code {
                             KeyCode::Enter => {
                                 let available_devices = self.connect_available_devices.borrow();
-                                let selected_device_string =
-                                    available_devices.get(*selected_device);
-
-                                if let Some(selected_device_string) = selected_device_string
-                                    && let Err(err) = self
+                                let connect_devices = self.connect_devices.borrow();
+                                let sent = match available_devices.get(*selected_device) {
+                                    Some(device) => self
                                         .set_connect_active_device
-                                        .send(selected_device_string.clone())
-                                {
+                                        .send(device.clone())
+                                        .map_err(|err| err.to_string()),
+                                    None => connect_devices
+                                        .get(
+                                            selected_device.saturating_sub(available_devices.len()),
+                                        )
+                                        .map_or(Ok(()), |device| {
+                                            self.activate_connect_device
+                                                .send(device.id)
+                                                .map_err(|err| err.to_string())
+                                        }),
+                                };
+
+                                if let Err(err) = sent {
                                     self.broadcast
                                         .send_error(format!("Unable to select device: {err}"));
                                 }
@@ -527,8 +543,11 @@ impl App {
                                 }
                             }
                             KeyCode::Right | KeyCode::Down => {
-                                let available_devices =
-                                    self.connect_available_devices.borrow().len();
+                                let available_devices = self
+                                    .connect_available_devices
+                                    .borrow()
+                                    .len()
+                                    .saturating_add(self.connect_devices.borrow().len());
 
                                 if *selected_device < available_devices.saturating_sub(1) {
                                     *selected_device = selected_device.saturating_add(1);
