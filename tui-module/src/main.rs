@@ -108,9 +108,14 @@ pub async fn run() -> AppResult<()> {
     let client = client.clone();
     let broadcast = broadcast.clone();
 
+    let (connect_devices_tx, connect_devices_rx) = watch::channel(Vec::new());
+    let (activate_connect_device_tx, activate_connect_device_rx) = mpsc::unbounded_channel();
+    #[cfg(not(feature = "connect"))]
+    drop((connect_devices_tx, activate_connect_device_rx));
+
     #[cfg(feature = "connect")]
     if args.connect.connect {
-        let app_id = client.app_id().await?;
+        let client = client.clone();
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
         let volume_receiver = player.volume();
@@ -119,15 +124,16 @@ pub async fn run() -> AppResult<()> {
 
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
-                &app_id,
+                client,
                 args.connect.name_args.connect_name,
-                args.connect.name_args.connect_port,
                 controls,
                 position_receiver,
                 tracklist_receiver,
                 status_receiver,
                 volume_receiver,
                 max_audio_quality,
+                connect_devices_tx,
+                activate_connect_device_rx,
             )
             .await
             {
@@ -186,6 +192,8 @@ pub async fn run() -> AppResult<()> {
             available_devices_rx,
             active_device_rx,
             set_active_device_tx,
+            connect_devices_rx,
+            activate_connect_device_tx,
             config_tx,
         )
         .await

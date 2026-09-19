@@ -65,6 +65,10 @@ pub enum ControlCommand {
         play: bool,
         start_index: Option<usize>,
     },
+    ReplaceQueue {
+        items: Vec<NewQueueItem>,
+        keep_unknown: bool,
+    },
     ClearQueue,
     StreamingConfiguration {
         configuration: StreamingConfiguration,
@@ -204,6 +208,14 @@ impl Controls {
         });
     }
 
+    /// Adopts the queue of the Qobuz Connect session without interrupting the current track; with `keep_unknown` the tracks queued here that the session does not know yet stay in place.
+    pub fn replace_queue(&self, items: Vec<NewQueueItem>, keep_unknown: bool) {
+        self.send(ControlCommand::ReplaceQueue {
+            items,
+            keep_unknown,
+        });
+    }
+
     pub fn clear_queue(&self) {
         self.send(ControlCommand::ClearQueue);
     }
@@ -230,7 +242,16 @@ impl Controls {
 }
 
 #[derive(Debug, Copy, Clone, serde::Deserialize, serde::Serialize)]
+/// A track as the Qobuz Connect session lists it, by its id in that session.
 pub struct NewQueueItem {
     pub track_id: u32,
-    pub queue_id: u64,
+    pub connect_id: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A device of the Qobuz Connect session, by its renderer id in that session.
+pub struct ConnectDevice {
+    pub id: i32,
+    pub name: String,
+    pub active: bool,
 }

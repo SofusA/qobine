@@ -17,7 +17,7 @@ use tokio::{
     time::sleep,
 };
 
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
 
 use crate::{
     AppResult,
@@ -45,6 +45,7 @@ pub struct Player {
     controls: Controls,
     database: Arc<Database>,
     next_track_is_queried: bool,
+    pending_seek: Option<(u32, Duration)>,
     next_track_in_sink_queue: bool,
     downloader: Downloader,
     state_change_delay: Option<Duration>,
@@ -101,6 +102,7 @@ impl Player {
             database,
             next_track_in_sink_queue: false,
             next_track_is_queried: false,
+            pending_seek: None,
             downloader,
             state_change_delay,
             sample_rate_change_delay,
@@ -245,8 +247,24 @@ impl Player {
         }
         self.sink.play();
         self.set_target_status(Status::Playing);
+        if !next_track
+            && let Some((id, position)) = self.pending_seek.take()
+            && id == track.id
+        {
+            self.seek_once_started(position).await?;
+        }
 
         Ok(())
+    }
+
+    async fn seek_once_started(&mut self, position: Duration) -> AppResult<()> {
+        for _ in 0..20 {
+            if !self.sink.position().is_zero() {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        self.seek(position)
     }
 
     async fn set_volume(&self, volume: f32) -> AppResult<()> {
@@ -285,7 +303,17 @@ impl Player {
         Ok(())
     }
 
-    fn seek(&self, duration: Duration) -> AppResult<()> {
+    fn seek(&mut self, duration: Duration) -> AppResult<()> {
+        if self.sink.is_empty() {
+            let current = self
+                .tracklist_rx
+                .borrow()
+                .current_track()
+                .map(|track| track.id);
+            self.pending_seek = current.map(|id| (id, duration));
+            self.position.send(duration)?;
+            return Ok(());
+        }
         match self.sink.seek(duration) {
             Ok(()) => {
                 self.position.send(self.sink.position())?;
@@ -297,7 +325,7 @@ impl Player {
         Ok(())
     }
 
-    fn jump_forward(&self) -> AppResult<()> {
+    fn jump_forward(&mut self) -> AppResult<()> {
         let duration = self
             .tracklist_rx
             .borrow()
@@ -318,7 +346,7 @@ impl Player {
         Ok(())
     }
 
-    fn jump_backward(&self) -> AppResult<()> {
+    fn jump_backward(&mut self) -> AppResult<()> {
         let current_position = self.sink.position();
 
         if current_position.as_millis() < 10000 {
@@ -353,10 +381,7 @@ impl Player {
             self.new_queue(tracklist, false).await?;
         } else {
             tracklist.reset();
-            self.sink.clear();
-            self.next_track_is_queried = false;
-            self.set_target_status(Status::Paused);
-            self.broadcast_tracklist(tracklist).await?;
+            self.stop(tracklist).await?;
         }
 
         Ok(())
@@ -406,25 +431,31 @@ impl Player {
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
 
-        let mut queue_items = vec![];
-        for (index, item) in items.iter().enumerate() {
-            let track = self.client.track(item.track_id).await?;
-            let queue_item = QueueItem {
-                track,
-                queue_id: item.queue_id,
-                index,
+        let start = start_index
+            .and_then(|index| items.get(index))
+            .map(|item| item.connect_id);
+        let tracks = self
+            .fetch_tracks(items.iter().map(|item| item.track_id).collect())
+            .await?;
+        let mut queue_items = Vec::with_capacity(items.len());
+        for item in &items {
+            let Some(track) = tracks.get(&item.track_id) else {
+                continue;
             };
-            queue_items.push(queue_item);
-        }
-
-        if let Some(item) = queue_items.first_mut() {
-            item.track.status = TrackStatus::Playing;
+            let index = queue_items.len();
+            queue_items.push(QueueItem {
+                track: track.clone(),
+                queue_id: u64::try_from(index).unwrap_or_default(),
+                index,
+                connect_id: Some(item.connect_id),
+            });
         }
 
         let mut tracklist = Tracklist::new_with_id(TracklistType::Tracks, queue_items);
-        if let Some(start_index) = start_index {
-            tracklist.skip_to_track(start_index);
-        }
+        let start = start
+            .and_then(|connect_id| tracklist.position_of_connect_id(connect_id))
+            .unwrap_or(0);
+        tracklist.skip_to_track(start);
 
         if play && let Some(first_track) = tracklist.current_track() {
             tracing::info!("New queue starting with: {}", first_track.title);
@@ -434,6 +465,94 @@ impl Player {
         self.broadcast_tracklist(tracklist).await?;
 
         Ok(())
+    }
+
+    async fn replace_queue(
+        &mut self,
+        items: Vec<NewQueueItem>,
+        keep_unknown: bool,
+    ) -> AppResult<()> {
+        let mut tracklist = self.tracklist_rx.borrow().clone();
+        let mut unknown: Vec<QueueItem> = tracklist
+            .queue()
+            .into_iter()
+            .filter(|item| item.connect_id.is_none())
+            .cloned()
+            .collect();
+        let mut matched = Vec::with_capacity(items.len());
+        let mut missing = Vec::new();
+        for item in &items {
+            let known = known_item(&tracklist, *item).or_else(|| {
+                let index = unknown
+                    .iter()
+                    .position(|local| local.track.id == item.track_id)?;
+                let mut local = unknown.remove(index);
+                local.connect_id = Some(item.connect_id);
+                Some(local)
+            });
+            if known.is_none() {
+                missing.push(item.track_id);
+            }
+            matched.push(known);
+        }
+        let tracks = self.fetch_tracks(missing).await?;
+        let queue: Vec<QueueItem> = items
+            .iter()
+            .zip(matched)
+            .filter_map(|(item, known)| {
+                known.or_else(|| {
+                    let track = tracks.get(&item.track_id)?;
+                    Some(tracklist.queue_item(track.clone(), Some(item.connect_id)))
+                })
+            })
+            .collect();
+
+        let before = fingerprint(&tracklist);
+        let mut adopted = tracklist.clone();
+        let current_survives = adopted.replace(queue, keep_unknown);
+        if fingerprint(&adopted) == before {
+            return Ok(());
+        }
+        let same_items = adopted
+            .queue()
+            .iter()
+            .map(|item| item.queue_id)
+            .eq(tracklist.queue().iter().map(|item| item.queue_id));
+        if !same_items {
+            adopted.set_list_type(TracklistType::Tracks);
+        }
+        if current_survives {
+            self.update_queue(adopted).await
+        } else {
+            self.stop(adopted).await
+        }
+    }
+
+    async fn stop(&mut self, tracklist: Tracklist) -> AppResult<()> {
+        self.set_target_status(Status::Paused);
+        self.sink.pause();
+        self.sink.clear();
+        self.next_track_is_queried = false;
+        self.next_track_in_sink_queue = false;
+        self.position.send(Duration::default())?;
+        self.broadcast_tracklist(tracklist).await
+    }
+
+    /// The tracks of a Qobuz Connect queue by id; tracks the catalog no longer serves are left out and logged.
+    async fn fetch_tracks(&self, track_ids: Vec<u32>) -> AppResult<HashMap<u32, Track>> {
+        let tracks: HashMap<u32, Track> = self
+            .client
+            .tracks(&track_ids)
+            .await?
+            .into_iter()
+            .map(|track| (track.id, track))
+            .collect();
+        for track_id in track_ids.iter().filter(|id| !tracks.contains_key(id)) {
+            tracing::warn!(
+                "Skipping track {track_id} of the Qobuz Connect queue, the catalog does not serve it"
+            );
+        }
+        Ok(tracks)
     }
 
     async fn clear_queue(&mut self) -> AppResult<()> {
@@ -739,6 +858,10 @@ impl Player {
                 play,
                 start_index,
             } => self.new_track_queue(items, play, start_index).await?,
+            ControlCommand::ReplaceQueue {
+                items,
+                keep_unknown,
+            } => self.replace_queue(items, keep_unknown).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
@@ -855,6 +978,24 @@ impl Player {
     }
 }
 
+fn fingerprint(tracklist: &Tracklist) -> Vec<(u64, Option<i32>, TrackStatus)> {
+    tracklist
+        .queue()
+        .iter()
+        .map(|item| (item.queue_id, item.connect_id, item.track.status.clone()))
+        .collect()
+}
+
+fn known_item(tracklist: &Tracklist, item: NewQueueItem) -> Option<QueueItem> {
+    tracklist
+        .queue()
+        .into_iter()
+        .find(|queued| {
+            queued.connect_id == Some(item.connect_id) && queued.track.id == item.track_id
+        })
+        .cloned()
+}
+
 fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
     tracks
         .into_iter()
@@ -864,6 +1005,7 @@ fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
             track,
             queue_id,
             index,
+            connect_id: None,
         })
         .collect()
 }

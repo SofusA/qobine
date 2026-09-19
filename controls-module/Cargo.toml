@@ -16,3 +16,6 @@ tokio.workspace = true
 serde.workspace = true
 time.workspace = true
 html-escape.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -30,9 +30,8 @@ The web interface is ideal for a setup with a single board computer, e.g. Raspbe
 
 ## Connect
 ### Qobuz Connect
-There is initial support for Qobuz Connect in web, tui and rfid players, and a standalone minimal connect player.
-This can be enabled with the `--connect` flag and cargo feature flag.
-However this is currently very limited, experimental and full of bugs.
+Qobuz Connect is supported in the web, tui and rfid players, and in a standalone minimal connect player: qobine shows up as a playback device in the Qobuz apps, and the tui can switch playback between devices.
+This can be enabled with the `--connect` flag and the `connect` cargo feature. It is still experimental; the module README lists what works and the limitations.
 
 [More info on Connect player](/connect-module)
 

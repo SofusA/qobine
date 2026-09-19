@@ -85,12 +85,15 @@ impl Sink {
             let player = &playback.player;
 
             let current_volume = *self.volume.borrow();
+            let was_paused = player.is_paused();
             player.set_volume(0.0);
             player.pause();
 
             let result = player.try_seek(duration);
 
-            player.play();
+            if !was_paused {
+                player.play();
+            }
             set_volume(player, current_volume);
 
             match result {

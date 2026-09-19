@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use app::{App, create_now_playing_state};
 use controls_module::{
-    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
+    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver,
+    controls::{ConnectDevice, Controls},
 };
 use disconnect_module::DisconnectClientConfig;
 use favorites::FavoritesState;
@@ -49,6 +50,8 @@ pub async fn init(
     connect_available_devices: watch::Receiver<Vec<String>>,
     connect_active_device: watch::Receiver<String>,
     set_connect_active_device: mpsc::UnboundedSender<String>,
+    connect_devices: watch::Receiver<Vec<ConnectDevice>>,
+    activate_connect_device: mpsc::UnboundedSender<i32>,
     disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
 ) -> AppResult<()> {
     let mut terminal = ratatui::init();
@@ -104,6 +107,8 @@ pub async fn init(
         connect_available_devices,
         connect_active_device,
         set_connect_active_device,
+        connect_devices,
+        activate_connect_device,
         disconnect_client_config_sender,
     };
 
