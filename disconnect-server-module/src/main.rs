@@ -35,6 +35,12 @@ const RATE_LIMIT_MAX_REQUESTS: usize = 60;
 
 const SSE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
+#[cfg(not(test))]
+const ACTIVE_DEVICE_GRACE_PERIOD: Duration = Duration::from_secs(15);
+
+#[cfg(test)]
+const ACTIVE_DEVICE_GRACE_PERIOD: Duration = Duration::from_millis(200);
+
 #[derive(Clone)]
 struct AppState {
     groups: Arc<RwLock<HashMap<String, Group>>>,
@@ -470,13 +476,13 @@ struct Guard {
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        let groups = self.groups.clone();
+        let groups_clone = self.groups.clone();
         let secret = self.secret.clone();
         let client_id = self.client_id.clone();
         let stream_type = self.stream_type;
 
         tokio::spawn(async move {
-            let mut groups = groups.write().await;
+            let mut groups = groups_clone.write().await;
 
             let should_remove_group = {
                 let Some(group) = groups.get_mut(&secret) else {
@@ -485,24 +491,15 @@ impl Drop for Guard {
 
                 match stream_type {
                     StreamType::Device => {
+                        let was_active = group.active_device == client_id;
+
                         group.streams.remove(&client_id);
 
                         tracing::info!(
                             device_id = %client_id,
+                            was_active,
                             "device stream disconnected"
                         );
-
-                        if group.active_device == client_id {
-                            if let Some(new_active) = group.streams.iter().next().cloned() {
-                                group.active_device.clone_from(&new_active);
-
-                                let _ = group
-                                    .tx
-                                    .send(DisconnectServerEvent::ActiveDevice(new_active));
-                            } else {
-                                group.active_device.clear();
-                            }
-                        }
 
                         let available_devices: Vec<String> =
                             group.streams.iter().cloned().collect();
@@ -510,6 +507,46 @@ impl Drop for Guard {
                         let _ = group
                             .tx
                             .send(DisconnectServerEvent::AvailableDevices(available_devices));
+
+                        if was_active {
+                            // Release the lock before waiting.
+                            drop(groups);
+
+                            tokio::time::sleep(ACTIVE_DEVICE_GRACE_PERIOD).await;
+
+                            let mut groups = groups_clone.write().await;
+
+                            let should_remove_group = {
+                                let Some(group) = groups.get_mut(&secret) else {
+                                    return;
+                                };
+
+                                // Do nothing if it reconnected or active device changed manually.
+                                if group.streams.contains(&client_id)
+                                    || group.active_device != client_id
+                                {
+                                    return;
+                                }
+
+                                if let Some(new_active) = group.streams.iter().next().cloned() {
+                                    group.active_device.clone_from(&new_active);
+
+                                    let _ = group
+                                        .tx
+                                        .send(DisconnectServerEvent::ActiveDevice(new_active));
+                                } else {
+                                    group.active_device.clear();
+                                }
+
+                                group.streams.is_empty() && group.listeners.is_empty()
+                            };
+
+                            if should_remove_group {
+                                groups.remove(&secret);
+                            }
+
+                            return;
+                        }
                     }
 
                     StreamType::Listener => {
@@ -985,6 +1022,30 @@ mod tests {
             .expect("request failed")
     }
 
+    async fn wait_for_active_device_change(state: &AppState, secret: &str, previous_active: &str) {
+        timeout(TEST_TIMEOUT, async {
+            loop {
+                let active_device = state
+                    .groups
+                    .read()
+                    .await
+                    .get(secret)
+                    .map(|group| group.active_device.clone());
+
+                if active_device
+                    .as_deref()
+                    .is_some_and(|device| device != previous_active)
+                {
+                    return;
+                }
+
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("active device did not change after grace period");
+    }
+
     #[tokio::test]
     async fn devices_can_change_disconnect_and_rejoin_while_listener_survives() {
         let server = spawn_server().await;
@@ -1166,6 +1227,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn active_device_reconnect_during_grace_period_prevents_failover() {
+        let server = spawn_server().await;
+        let client = Client::new();
+        let secret = "reconnect-grace";
+
+        let mut device_1 = connect_stream(&client, &server, secret, "device-1", StreamType::Device);
+
+        let device_1_active =
+            serde_json::to_value(DisconnectServerEvent::ActiveDevice("device-1".to_string()))
+                .unwrap();
+
+        wait_for_json_event(&mut device_1, &device_1_active).await;
+
+        let device_2 = connect_device(&client, &server, secret, "device-2").await;
+
+        wait_for_device_count(&server.state, secret, 2).await;
+
+        disconnect(device_1);
+
+        wait_for_device_count(&server.state, secret, 1).await;
+
+        let reconnected_device_1 = connect_device(&client, &server, secret, "device-1").await;
+
+        wait_for_device_count(&server.state, secret, 2).await;
+
+        sleep(ACTIVE_DEVICE_GRACE_PERIOD + Duration::from_millis(100)).await;
+
+        let state = get_disconnect_state(&client, &server, secret).await;
+
+        assert_eq!(
+            state.active_device, "device-1",
+            "reconnected active device should remain active"
+        );
+
+        assert!(state.available_devices.contains(&"device-1".to_string()));
+        assert!(state.available_devices.contains(&"device-2".to_string()));
+
+        disconnect(reconnected_device_1);
+        disconnect(device_2);
+
+        wait_for_group_removal(&server.state, secret).await;
+    }
+
+    #[tokio::test]
     async fn active_device_disconnect_causes_failover() {
         let server = spawn_server().await;
         let client = Client::new();
@@ -1212,6 +1317,7 @@ mod tests {
         disconnect(device_2);
 
         wait_for_device_count(&server.state, secret, 2).await;
+        wait_for_active_device_change(&server.state, secret, "device-2").await;
 
         let state = get_disconnect_state(&client, &server, secret).await;
 
