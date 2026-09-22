@@ -863,6 +863,10 @@ impl Player {
                 keep_unknown,
             } => self.replace_queue(items, keep_unknown).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
+            ControlCommand::Stop => {
+                let tracklist = self.tracklist_rx.borrow().clone();
+                self.stop(tracklist).await?;
+            }
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
                     self.database.set_max_audio_quality(new_quality).await?;

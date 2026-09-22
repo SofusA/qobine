@@ -134,6 +134,7 @@ pub async fn run() -> AppResult<()> {
                 max_audio_quality,
                 connect_devices_tx,
                 activate_connect_device_rx,
+                args.connect.name_args.connect_port,
             )
             .await
             {

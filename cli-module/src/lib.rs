@@ -56,6 +56,10 @@ pub struct RfidArgs {
 pub struct ConnectNameArgs {
     #[clap(long, default_value = "qobine")]
     pub connect_name: String,
+
+    #[clap(long, default_value_t = 39621)]
+    /// Port the Qobuz apps reach qobine on over the LAN
+    pub connect_port: u16,
 }
 
 #[derive(Args, Debug)]

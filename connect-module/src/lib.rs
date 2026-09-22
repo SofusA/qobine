@@ -12,13 +12,14 @@ use qobuz_connect::proto::qconnect::{
     QueueTrackRef,
 };
 use qobuz_connect::{
-    Autoplay, ControllerCommand, Credentials, Device, Error, Event, PlayerState, QueueEvent,
-    RendererCommand, RendererEvent, RendererReport, Session,
+    Autoplay, ControllerCommand, Credentials, Device, Discovery, Error, Event, Handover,
+    PlayerState, QueueEvent, RendererCommand, RendererEvent, RendererReport, Session,
 };
 use tokio::sync::{mpsc, watch};
 
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(10);
+const REJOIN_DELAY: Duration = Duration::from_secs(5);
 
 struct Connect {
     controls: Controls,
@@ -42,6 +43,8 @@ struct Connect {
     taking_over: bool,
     remote: Option<Remote>,
     played: Option<u64>,
+    discovery: Discovery,
+    handovers: mpsc::Receiver<Handover>,
 }
 
 struct Pending {
@@ -73,17 +76,13 @@ pub async fn init(
     max_audio_quality: AudioQuality,
     devices: watch::Sender<Vec<ConnectDevice>>,
     activations: mpsc::UnboundedReceiver<i32>,
+    port: u16,
 ) -> AppResult<()> {
     let device = device(connect_name, max_audio_quality);
-    let session = Session::join_with(
-        move || {
-            let client = client.clone();
-            async move { credentials(&client).await }
-        },
-        device,
-    )
-    .await
-    .map_err(|err| map_err(&err))?;
+    let app_id = client.app_id().await?;
+    let (discovery, handovers) = Discovery::start(&device, &app_id, port)
+        .await
+        .map_err(|err| map_err(&err))?;
 
     let mut connect = Connect {
         controls,
@@ -107,8 +106,56 @@ pub async fn init(
         taking_over: false,
         remote: None,
         played: None,
+        discovery,
+        handovers,
     };
-    connect.run(session).await.map_err(|err| map_err(&err))
+    let mut session = own_session(&client, &device)
+        .await
+        .map_err(|err| map_err(&err))?;
+    loop {
+        let handover = connect
+            .run(&mut session)
+            .await
+            .map_err(|err| map_err(&err))?;
+        session = next_session(&client, &device, handover)
+            .await
+            .map_err(|err| map_err(&err))?;
+        connect.reset();
+    }
+}
+
+async fn own_session(client: &Arc<StreamClient>, device: &Device) -> Result<Session, Error> {
+    let client = client.clone();
+    Session::join_with(
+        move || {
+            let client = client.clone();
+            async move { credentials(&client).await }
+        },
+        device.clone(),
+    )
+    .await
+}
+
+/// The session handed over on the LAN, or the account's own one again once a session is over or a handover cannot be joined.
+async fn next_session(
+    client: &Arc<StreamClient>,
+    device: &Device,
+    handover: Option<Handover>,
+) -> Result<Session, Error> {
+    if let Some(handover) = handover {
+        tracing::info!(
+            "Joining session {} handed over on the LAN",
+            handover.session_id
+        );
+        match Session::join(handover.credentials, device.clone()).await {
+            Ok(session) => return Ok(session),
+            Err(err) => tracing::warn!("Joining the handed over session failed: {err}"),
+        }
+    } else {
+        tracing::info!("Session over, joining the account's own session again");
+        tokio::time::sleep(REJOIN_DELAY).await;
+    }
+    own_session(client, device).await
 }
 
 async fn credentials(client: &StreamClient) -> Result<Credentials, Error> {
@@ -218,37 +265,38 @@ fn items(tracks: &[QueueTrackRef]) -> Vec<NewQueueItem> {
 }
 
 impl Connect {
-    async fn run(&mut self, mut session: Session) -> Result<(), Error> {
+    async fn run(&mut self, session: &mut Session) -> Result<Option<Handover>, Error> {
         loop {
             tokio::select! {
                 event = session.recv() => {
-                    let Some(event) = event else { return Err(Error::Closed) };
-                    self.handle_event(&mut session, event)?;
+                    let Some(event) = event else { return Ok(None) };
+                    self.handle_event(session, event)?;
                 }
                 Ok(()) = self.position_receiver.changed() => {
                     if self.reported_state_at.elapsed() >= REPORT_INTERVAL {
-                        self.report_state(&session)?;
+                        self.report_state(session)?;
                     }
                 }
                 Ok(()) = self.status_receiver.changed() => {
-                    self.report_state(&session)?;
+                    self.report_state(session)?;
                     let current = self.tracklist_receiver.borrow().current_queue_id();
                     if *self.status_receiver.borrow() == Status::Playing && self.played != current {
                         self.played = current;
-                        self.take_over(&mut session)?;
+                        self.take_over(session)?;
                     }
                 }
                 Ok(()) = self.tracklist_receiver.changed() => {
-                    self.report_state(&session)?;
-                    self.mirror(&mut session)?;
-                    self.apply_deferred(&session)?;
+                    self.report_state(session)?;
+                    self.mirror(session)?;
+                    self.apply_deferred(session)?;
                 }
                 Ok(()) = self.volume_receiver.changed() => {
-                    self.report_volume(&session)?;
+                    self.report_volume(session)?;
                 }
                 Some(id) = self.activations.recv() => {
-                    activate(&mut session, id)?;
+                    activate(session, id)?;
                 }
+                Some(handover) = self.handovers.recv() => return Ok(Some(handover)),
             }
         }
     }
@@ -271,6 +319,7 @@ impl Connect {
                 Ok(())
             }
             Event::Session(state) => {
+                self.discovery.set_session(Some(&state.session_uuid));
                 set_active(&mut self.renderers, state.active_renderer_id);
                 self.publish();
                 ask_remote_state(session, state.active_renderer_id)
@@ -363,7 +412,7 @@ impl Connect {
                 self.report_state(session)
             }
             RendererCommand::SetActive(false) => {
-                self.controls.pause();
+                self.controls.stop();
                 Ok(())
             }
             RendererCommand::SetMaxAudioQuality(quality) => {
@@ -595,6 +644,19 @@ impl Connect {
         self.taking_over = true;
         self.remote = None;
         session.activate()
+    }
+
+    fn reset(&mut self) {
+        self.connected = true;
+        self.session_queue = None;
+        self.pending = None;
+        self.refused = false;
+        self.deferred = None;
+        self.renderers.clear();
+        self.taking_over = false;
+        self.remote = None;
+        self.publish();
+        self.discovery.set_session(None);
     }
 
     fn publish(&self) {
