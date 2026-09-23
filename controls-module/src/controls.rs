@@ -37,6 +37,7 @@ pub enum ControlCommand {
     PlayPause,
     Play,
     Pause,
+    Stop,
     JumpForward,
     JumpBackward,
     Seek {
@@ -218,6 +219,11 @@ impl Controls {
 
     pub fn clear_queue(&self) {
         self.send(ControlCommand::ClearQueue);
+    }
+
+    /// Pauses, drops the loaded audio and releases the output device; the queue and the current track stay.
+    pub fn stop(&self) {
+        self.send(ControlCommand::Stop);
     }
 
     pub fn set_audio_max_quality(&self, new_quality: AudioQuality) {
