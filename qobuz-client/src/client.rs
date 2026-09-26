@@ -308,10 +308,16 @@ async fn read_code_from_stdin() -> Result<String, Error> {
     out.flush().await.map_err(|_| Error::Login)?;
     let mut input = String::new();
 
-    let _n = reader
-        .read_line(&mut input)
-        .await
-        .map_err(|_| Error::Login)?;
+    while input.trim().is_empty() {
+        input.clear();
+        let read = reader
+            .read_line(&mut input)
+            .await
+            .map_err(|_| Error::Login)?;
+        if read == 0 {
+            return std::future::pending().await;
+        }
+    }
 
     let input = input.trim();
     // Accept either raw code or full URL containing code_autorisation=
