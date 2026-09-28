@@ -45,7 +45,14 @@ impl SearchState {
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .areas(area);
 
-        render_input(&self.filter, self.editing, input_area, frame, "Search");
+        render_input(
+            &self.filter,
+            self.editing,
+            input_area,
+            frame,
+            "Search",
+            None,
+        );
 
         let block = block(None);
         frame.render_widget(block, content_area);

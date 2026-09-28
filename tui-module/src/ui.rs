@@ -305,6 +305,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ["Select selected item", "Enter"],
         ["Switch sidebar / content", "Left/Right"],
         ["Shuffle tracks", "S"],
+        ["Toggle sorting", "s"],
         ["Add to queue", "B"],
         ["Play next", "N"],
         ["Delete from queue", "D"],
@@ -337,7 +338,14 @@ fn render_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(table, area);
 }
 
-pub fn render_input(input: &Input, editing: bool, area: Rect, frame: &mut Frame, title: &str) {
+pub fn render_input(
+    input: &Input,
+    editing: bool,
+    area: Rect,
+    frame: &mut Frame,
+    title: &str,
+    right_title: Option<&str>,
+) {
     let width = area.width.saturating_sub(3);
     let scroll = input.visual_scroll(usize::from(width));
 
@@ -349,10 +357,16 @@ pub fn render_input(input: &Input, editing: bool, area: Rect, frame: &mut Frame,
 
     let scroll_offset = u16::try_from(scroll).unwrap_or(u16::MAX);
 
+    let mut input_block = block(None).title(Line::from(format!(" {title} ")).centered());
+
+    if let Some(right_title) = right_title {
+        input_block = input_block.title(Line::from(format!(" {right_title}")).right_aligned());
+    }
+
     let paragraph = Paragraph::new(input.value())
         .style(style)
         .scroll((0, scroll_offset))
-        .block(block(Some(title)));
+        .block(input_block);
 
     frame.render_widget(paragraph, area);
 

@@ -23,8 +23,25 @@ use crate::{
     },
 };
 
+#[derive(Clone, Copy, Default)]
+enum FavoritesSort {
+    #[default]
+    FavoritedDate,
+    Alphabetical,
+}
+
+impl FavoritesSort {
+    const fn next(self) -> Self {
+        match self {
+            Self::FavoritedDate => Self::Alphabetical,
+            Self::Alphabetical => Self::FavoritedDate,
+        }
+    }
+}
+
 pub struct FavoritesState {
     filter: Input,
+    sort: FavoritesSort,
     pub albums: Grid<AlbumSimple>,
     pub artists: Grid<Artist>,
     pub playlists: Grid<PlaylistSimple>,
@@ -41,6 +58,7 @@ impl FavoritesState {
         Ok(Self {
             editing: bool::default(),
             filter: Input::default(),
+            sort: FavoritesSort::default(),
             albums: Grid::new(favorites.albums),
             artists: Grid::new(favorites.artists),
             playlists: Grid::new(
@@ -61,7 +79,19 @@ impl FavoritesState {
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .areas(area);
 
-        render_input(&self.filter, self.editing, input_area, frame, "Filter");
+        let sort_title = match self.sort {
+            FavoritesSort::FavoritedDate => "󰒺 Newest",
+            FavoritesSort::Alphabetical => "󰒺 A-Z",
+        };
+
+        render_input(
+            &self.filter,
+            self.editing,
+            input_area,
+            frame,
+            "Filter",
+            Some(sort_title),
+        );
 
         let block = block(None);
         frame.render_widget(block, content_area);
@@ -70,6 +100,7 @@ impl FavoritesState {
             sidebar(SubTab::labels().to_vec(), self.focus == Pane::Sidebar);
 
         let content_area = content_area.inner(Margin::new(1, 1));
+
         let [sidebar_area, content_area] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
@@ -81,6 +112,7 @@ impl FavoritesState {
         frame.render_stateful_widget(sidebar, sidebar_area, &mut sidebar_state);
 
         let content_focused = self.focus == Pane::Content;
+
         match self.sub_tab {
             SubTab::Albums => self.albums.render(
                 content_area,
@@ -130,60 +162,7 @@ impl FavoritesState {
                         }
                         _ => {
                             self.filter.handle_event(&event);
-
-                            let match_in = |s: &str| {
-                                s.to_lowercase()
-                                    .contains(&self.filter.value().to_lowercase())
-                            };
-
-                            self.albums.set_filter(
-                                self.albums
-                                    .all_items()
-                                    .iter()
-                                    .filter(|album| {
-                                        match_in(&album.title) || match_in(&album.artist.name)
-                                    })
-                                    .cloned()
-                                    .collect(),
-                            );
-
-                            self.artists.set_filter(
-                                self.artists
-                                    .all_items()
-                                    .iter()
-                                    .filter(|artist| match_in(&artist.name))
-                                    .cloned()
-                                    .collect(),
-                            );
-
-                            self.playlists.set_filter(
-                                self.playlists
-                                    .all_items()
-                                    .iter()
-                                    .filter(|playlist| match_in(&playlist.title))
-                                    .cloned()
-                                    .collect(),
-                            );
-
-                            self.tracks.set_filter(
-                                self.tracks
-                                    .all_items()
-                                    .iter()
-                                    .filter(|track| {
-                                        match_in(&track.title)
-                                            || track
-                                                .artist_name
-                                                .as_ref()
-                                                .is_some_and(|artist| match_in(artist))
-                                            || track
-                                                .album_title
-                                                .as_ref()
-                                                .is_some_and(|album| match_in(album))
-                                    })
-                                    .cloned()
-                                    .collect(),
-                            );
-
+                            self.apply_filter_and_sort();
                             Ok(Output::Consumed)
                         }
                     }
@@ -191,6 +170,11 @@ impl FavoritesState {
                     match key_event.code {
                         KeyCode::Char('e') => {
                             self.start_editing();
+                            Ok(Output::Consumed)
+                        }
+                        KeyCode::Char('s') => {
+                            self.sort = self.sort.next();
+                            self.apply_filter_and_sort();
                             Ok(Output::Consumed)
                         }
                         _ => match self.focus {
@@ -275,6 +259,67 @@ impl FavoritesState {
                     .await
             }
         }
+    }
+
+    fn apply_filter_and_sort(&mut self) {
+        let query = self.filter.value().to_lowercase();
+
+        let mut albums: Vec<_> = self
+            .albums
+            .all_items()
+            .iter()
+            .filter(|album| {
+                album.title.to_lowercase().contains(&query)
+                    || album.artist.name.to_lowercase().contains(&query)
+            })
+            .cloned()
+            .collect();
+
+        let mut artists: Vec<_> = self
+            .artists
+            .all_items()
+            .iter()
+            .filter(|artist| artist.name.to_lowercase().contains(&query))
+            .cloned()
+            .collect();
+
+        let mut playlists: Vec<_> = self
+            .playlists
+            .all_items()
+            .iter()
+            .filter(|playlist| playlist.title.to_lowercase().contains(&query))
+            .cloned()
+            .collect();
+
+        let mut tracks: Vec<_> = self
+            .tracks
+            .all_items()
+            .iter()
+            .filter(|track| {
+                track.title.to_lowercase().contains(&query)
+                    || track
+                        .artist_name
+                        .as_ref()
+                        .is_some_and(|artist| artist.to_lowercase().contains(&query))
+                    || track
+                        .album_title
+                        .as_ref()
+                        .is_some_and(|album| album.to_lowercase().contains(&query))
+            })
+            .cloned()
+            .collect();
+
+        if matches!(self.sort, FavoritesSort::Alphabetical) {
+            albums.sort_by_cached_key(|album| album.title.to_lowercase());
+            artists.sort_by_cached_key(|artist| artist.name.to_lowercase());
+            playlists.sort_by_cached_key(|playlist| playlist.title.to_lowercase());
+            tracks.sort_by_cached_key(|track| track.title.to_lowercase());
+        }
+
+        self.albums.set_filter(albums);
+        self.artists.set_filter(artists);
+        self.playlists.set_filter(playlists);
+        self.tracks.set_filter(tracks);
     }
 
     const fn start_editing(&mut self) {

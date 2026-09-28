@@ -19,7 +19,7 @@ impl NewPlaylistOverlay {
     }
 
     pub fn render(&self, frame: &mut Frame, area: Rect) {
-        render_input(&self.name, false, area, frame, "Create playlist");
+        render_input(&self.name, false, area, frame, "Create playlist", None);
     }
 
     pub async fn handle_event(

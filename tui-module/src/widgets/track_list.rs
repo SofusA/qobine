@@ -62,7 +62,23 @@ impl TrackList {
     }
 
     pub fn set_filter(&mut self, items: Vec<Track>) {
+        let selected_id = self
+            .items
+            .state
+            .selected()
+            .and_then(|index| self.items.filter().get(index))
+            .map(|track| track.id);
+
+        let selected_index = selected_id
+            .and_then(|selected_id| items.iter().position(|track| track.id == selected_id));
+
+        let is_empty = items.is_empty();
+
         self.items.set_filter(items);
+
+        self.items
+            .state
+            .select(selected_index.or_else(|| (!is_empty).then_some(0)));
     }
 
     pub const fn select_index(&mut self, index: usize) {

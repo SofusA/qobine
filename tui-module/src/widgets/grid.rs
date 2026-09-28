@@ -46,6 +46,8 @@ pub trait GridItem {
     const CARD_WIDTH: u16;
     const CARD_HEIGHT: u16;
 
+    fn id(&self) -> &Self::Id;
+
     fn render_card(
         &self,
         area: Rect,
@@ -274,8 +276,17 @@ where
     }
 
     pub fn set_filter(&mut self, items: Vec<T>) {
+        let selected_id = self.selected().map(GridItem::id);
+
+        let selected_index = selected_id
+            .and_then(|selected_id| items.iter().position(|item| item.id() == selected_id));
+
         self.items.set_filter(items);
-        self.reset_view();
+        self.scroll_row = 0;
+
+        self.items
+            .state
+            .select(selected_index.or_else(|| (!self.items.filter().is_empty()).then_some(0)));
     }
 
     pub fn set_all_items(&mut self, items: Vec<T>) {
@@ -342,6 +353,10 @@ impl GridItem for AlbumSimple {
     type Id = String;
     const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
     const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 5;
+
+    fn id(&self) -> &Self::Id {
+        &self.id
+    }
 
     fn render_card(
         &self,
@@ -469,6 +484,10 @@ impl GridItem for Artist {
     const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
     const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 3;
 
+    fn id(&self) -> &Self::Id {
+        &self.id
+    }
+
     fn render_card(
         &self,
         area: Rect,
@@ -564,6 +583,10 @@ impl GridItem for PlaylistSimple {
     type Id = u32;
     const CARD_WIDTH: u16 = ALBUM_COVER_WIDTH + 2;
     const CARD_HEIGHT: u16 = ALBUM_COVER_HEIGHT + 4;
+
+    fn id(&self) -> &Self::Id {
+        &self.id
+    }
 
     fn render_card(
         &self,
