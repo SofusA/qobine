@@ -378,6 +378,20 @@ impl QobuzClient {
             .await
     }
 
+    /// Renews the token delegated by a Qobuz app over the LAN; Qobuz answers with the new token and its expiry.
+    pub async fn refresh_token(&self) -> Result<DelegatedToken> {
+        let endpoint = format!("{}qws/refreshToken", self.base_url);
+        let response: RefreshResponse = self
+            .post(&endpoint, HashMap::from([("jwt", "jwt_api")]))
+            .await?;
+        Ok(response.jwt_api)
+    }
+
+    pub fn set_credentials(&mut self, user_auth_token: &str, user_id: i64) {
+        self.user_token = user_auth_token.to_string();
+        self.user_id = user_id;
+    }
+
     #[must_use]
     pub const fn user_id(&self) -> i64 {
         self.user_id
@@ -1181,7 +1195,14 @@ fn client_headers(app_id: &str, user_token: Option<&str>) -> Result<HeaderMap> {
 
     if let Some(token) = user_token {
         tracing::debug!("adding token to request headers: {}", token);
-        headers.insert("X-User-Auth-Token", HeaderValue::from_str(token)?);
+        if is_delegated(token) {
+            headers.insert(
+                "Authorization",
+                HeaderValue::from_str(&format!("Bearer {token}"))?,
+            );
+        } else {
+            headers.insert("X-User-Auth-Token", HeaderValue::from_str(token)?);
+        }
     }
 
     headers.insert(
@@ -1197,12 +1218,42 @@ fn client_headers(app_id: &str, user_token: Option<&str>) -> Result<HeaderMap> {
     Ok(headers)
 }
 
+/// Tokens delegated by a Qobuz app over the LAN are JWTs, which Qobuz takes as bearer tokens.
+fn is_delegated(token: &str) -> bool {
+    token.matches('.').count() == 2
+}
+
+/// The user a delegated token was minted for, from its `quid` claim.
+#[must_use]
+pub fn delegated_user_id(token: &str) -> Option<i64> {
+    use base64::{Engine, engine::general_purpose};
+    let claims = general_purpose::URL_SAFE_NO_PAD
+        .decode(token.split('.').nth(1)?)
+        .ok()?;
+    serde_json::from_slice::<Value>(&claims)
+        .ok()?
+        .get("quid")?
+        .as_i64()
+}
+
 const OAUTH_PRIVATE_KEY: &str = "6lz8C03UDIC7";
 
 #[derive(Debug, Clone)]
 pub struct OAuthResult {
     pub user_auth_token: String,
     pub user_id: i64,
+}
+
+#[derive(Deserialize)]
+struct RefreshResponse {
+    jwt_api: DelegatedToken,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DelegatedToken {
+    pub jwt: String,
+    /// Unix time.
+    pub exp: u64,
 }
 
 /// Fetch the `app_id` from the Qobuz web player bundle.
@@ -1505,4 +1556,20 @@ fn capitalize(s: &mut str) {
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessfulResponse {
     status: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_delegated_token_names_its_user() {
+        use base64::{Engine, engine::general_purpose};
+        let claims = general_purpose::URL_SAFE_NO_PAD.encode(r#"{"quid":1408119}"#);
+        assert_eq!(
+            delegated_user_id(&format!("header.{claims}.signature")),
+            Some(1_408_119)
+        );
+        assert_eq!(delegated_user_id("not a token"), None);
+    }
 }

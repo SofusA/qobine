@@ -4,9 +4,12 @@ use cli_module::{
     ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality,
     get_client, handle_shared_commands, spawn_clean_up,
 };
-use player_module::{AppResult, database::Database, notification::NotificationBroadcast};
+use player_module::{
+    AppResult, client::StreamClient, database::Database, notification::NotificationBroadcast,
+};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing_subscriber::{EnvFilter, filter::LevelFilter};
 
 use clap::Parser;
 
@@ -21,6 +24,10 @@ struct Arguments {
 
     #[clap(flatten)]
     connect: ConnectNameArgs,
+
+    #[clap(long)]
+    /// Skip the Qobuz login: the account is the one of the app that picks qobine on the LAN
+    no_login: bool,
 
     #[cfg(feature = "gpio")]
     #[clap(flatten)]
@@ -41,7 +48,13 @@ async fn main() {
 }
 
 pub async fn run() -> AppResult<()> {
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
 
     let args = Arguments::parse();
     let database = Arc::new(Database::new().await?);
@@ -55,13 +68,17 @@ pub async fn run() -> AppResult<()> {
     let (exit_sender, exit_receiver) = broadcast::channel(5);
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
-    let client = get_client(
-        &database,
-        max_audio_quality,
-        args.shared.file_based_streaming,
-        headless,
-    )
-    .await?;
+    let client = if args.no_login {
+        StreamClient::new(None, max_audio_quality, args.shared.file_based_streaming)
+    } else {
+        get_client(
+            &database,
+            max_audio_quality,
+            args.shared.file_based_streaming,
+            headless,
+        )
+        .await?
+    };
     let client = Arc::new(client);
 
     let broadcast = Arc::new(NotificationBroadcast::new());

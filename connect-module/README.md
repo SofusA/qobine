@@ -14,6 +14,14 @@ How to build "release" (how I build at least):
 RUSTFLAGS="-C target-cpu=native" cargo build --release -p tui-module --features connect
 ```
 
+## Without a login
+
+`--no-login` skips the login of the standalone player: qobine waits for a Qobuz app to pick it on the LAN and streams with that app's account, renewing the token it was handed before it expires. It is then only visible on the LAN and only joins sessions handed over, and after a restart it waits to be picked again.
+
+```
+cargo run -p connect-module -- --no-login
+```
+
 ## What works
 
 - Playback control from the apps: play, pause, seek, skip to a track, volume, mute, maximum audio quality.

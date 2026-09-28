@@ -1,7 +1,7 @@
 use crate::{AppResult, AudioQuality, PlayerError};
 use controls_module::tracklist::Tracklist;
 use num_traits::ToPrimitive;
-use qobuz_client::client::OAuthResult;
+use qobuz_client::client::{OAuthResult, delegated_user_id};
 use serde_json::to_string;
 use sqlx::types::Json;
 use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
@@ -476,6 +476,17 @@ impl From<OAuthResult> for Credentials {
         Self {
             user_auth_token: value.user_auth_token,
             user_id: value.user_id,
+        }
+    }
+}
+
+impl Credentials {
+    /// The account of the Qobuz app that handed a Connect session over on the LAN.
+    #[must_use]
+    pub fn delegated(token: String) -> Self {
+        Self {
+            user_id: delegated_user_id(&token).unwrap_or_default(),
+            user_auth_token: token,
         }
     }
 }

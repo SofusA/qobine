@@ -4454,9 +4454,9 @@ dependencies = [
 
 [[package]]
 name = "qobuz-connect"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4242be6e1eda5a7fb32eb4e741bb9f874a73308dfc53a9f86737f351ff3a3e85"
+checksum = "9d2c4bb8d2283629015a1de719a49770332ae203c9a7bd660912b2098dbea728"
 dependencies = [
  "bytes",
  "futures-util",

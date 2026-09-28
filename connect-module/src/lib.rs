@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
@@ -20,6 +20,9 @@ use tokio::sync::{mpsc, watch};
 const REPORT_INTERVAL: Duration = Duration::from_secs(1);
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(10);
 const REJOIN_DELAY: Duration = Duration::from_secs(5);
+const REFRESH_LEAD: Duration = Duration::from_secs(300);
+const REFRESH_RETRY: Duration = Duration::from_secs(60);
+const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
 
 struct Connect {
     controls: Controls,
@@ -43,6 +46,13 @@ struct Connect {
     taking_over: bool,
     remote: Option<Remote>,
     played: Option<u64>,
+    client: Arc<StreamClient>,
+    device: Device,
+    delegated: bool,
+    become_active: bool,
+    activate_at: Option<Instant>,
+    token_expires: u64,
+    refresh_at: Option<Instant>,
     discovery: Discovery,
     handovers: mpsc::Receiver<Handover>,
 }
@@ -55,7 +65,7 @@ struct Pending {
 struct Deferred {
     playing: Option<PlayingState>,
     position: Option<Duration>,
-    current: QueueTrackRef,
+    current: i32,
 }
 
 struct Remote {
@@ -79,6 +89,7 @@ pub async fn init(
     port: u16,
 ) -> AppResult<()> {
     let device = device(connect_name, max_audio_quality);
+    let delegated = !client.credentials_is_set()?;
     let app_id = client.app_id().await?;
     let (discovery, handovers) = Discovery::start(&device, &app_id, port)
         .await
@@ -106,18 +117,28 @@ pub async fn init(
         taking_over: false,
         remote: None,
         played: None,
+        client,
+        device,
+        delegated,
+        become_active: false,
+        activate_at: None,
+        token_expires: 0,
+        refresh_at: None,
         discovery,
         handovers,
     };
-    let mut session = own_session(&client, &device)
-        .await
-        .map_err(|err| map_err(&err))?;
+    let mut session = if connect.delegated {
+        next_session(&mut connect, None).await
+    } else {
+        own_session(&connect.client, &connect.device).await
+    }
+    .map_err(|err| map_err(&err))?;
     loop {
         let handover = connect
             .run(&mut session)
             .await
             .map_err(|err| map_err(&err))?;
-        session = next_session(&client, &device, handover)
+        session = next_session(&mut connect, handover)
             .await
             .map_err(|err| map_err(&err))?;
         connect.reset();
@@ -136,26 +157,70 @@ async fn own_session(client: &Arc<StreamClient>, device: &Device) -> Result<Sess
     .await
 }
 
-/// The session handed over on the LAN, or the account's own one again once a session is over or a handover cannot be joined.
-async fn next_session(
-    client: &Arc<StreamClient>,
-    device: &Device,
-    handover: Option<Handover>,
-) -> Result<Session, Error> {
+/// The session handed over on the LAN, or the account's own one again once a session is over or a handover cannot be joined. Without a login, the next handover instead.
+async fn next_session(connect: &mut Connect, handover: Option<Handover>) -> Result<Session, Error> {
     if let Some(handover) = handover {
-        tracing::info!(
-            "Joining session {} handed over on the LAN",
-            handover.session_id
-        );
-        match Session::join(handover.credentials, device.clone()).await {
-            Ok(session) => return Ok(session),
-            Err(err) => tracing::warn!("Joining the handed over session failed: {err}"),
+        if let Some(session) = join_handed(connect, handover).await {
+            return Ok(session);
         }
-    } else {
+    } else if !connect.delegated {
         tracing::info!("Session over, joining the account's own session again");
         tokio::time::sleep(REJOIN_DELAY).await;
     }
-    own_session(client, device).await
+    if connect.delegated {
+        loop {
+            tracing::info!(
+                "Waiting for a Qobuz app to pick {} on the LAN",
+                connect.device.name
+            );
+            let handover = connect
+                .handovers
+                .recv()
+                .await
+                .ok_or_else(|| Error::Discovery("the server stopped".to_owned()))?;
+            if let Some(session) = join_handed(connect, handover).await {
+                return Ok(session);
+            }
+        }
+    }
+    own_session(&connect.client, &connect.device).await
+}
+
+/// The handed over session, streamed with the account of the app when there is no login of its own.
+async fn join_handed(connect: &mut Connect, handover: Handover) -> Option<Session> {
+    tracing::info!(
+        "Joining session {} handed over on the LAN",
+        handover.session_id
+    );
+    if connect.delegated {
+        connect
+            .delegate(handover.api_jwt, handover.api_expires)
+            .await;
+    }
+    match Session::join(handover.credentials, connect.device.clone()).await {
+        Ok(session) => {
+            connect.become_active = handover.become_active;
+            Some(session)
+        }
+        Err(err) => {
+            tracing::warn!("Joining the handed over session failed: {err}");
+            None
+        }
+    }
+}
+
+async fn due(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at.into()).await,
+        None => std::future::pending().await,
+    }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 async fn credentials(client: &StreamClient) -> Result<Credentials, Error> {
@@ -297,6 +362,11 @@ impl Connect {
                     activate(session, id)?;
                 }
                 Some(handover) = self.handovers.recv() => return Ok(Some(handover)),
+                () = due(self.refresh_at) => self.refresh().await,
+                () = due(self.activate_at) => {
+                    self.activate_at = None;
+                    session.activate()?;
+                }
             }
         }
     }
@@ -322,7 +392,12 @@ impl Connect {
                 self.discovery.set_session(Some(&state.session_uuid));
                 set_active(&mut self.renderers, state.active_renderer_id);
                 self.publish();
-                ask_remote_state(session, state.active_renderer_id)
+                ask_remote_state(session, state.active_renderer_id)?;
+                if self.become_active {
+                    self.become_active = false;
+                    self.activate_at = Instant::now().checked_add(ACTIVATION_WAIT);
+                }
+                Ok(())
             }
             Event::Renderer(event) => {
                 if let RendererEvent::StateUpdated {
@@ -332,10 +407,14 @@ impl Connect {
                 } = &event
                     && session.renderer_id() != Some(*id)
                 {
+                    tracing::debug!("Renderer {id} reports {state:?}");
                     self.remote = Some(Remote {
                         state: state.clone(),
                         at: Instant::now(),
                     });
+                    if self.activate_at.take().is_some() {
+                        session.activate()?;
+                    }
                 }
                 if let RendererEvent::ActiveChanged { id } = event {
                     self.taking_over = false;
@@ -373,7 +452,12 @@ impl Connect {
                 position,
                 current,
                 next: _,
-            } => self.set_state(session, playing, position, current),
+            } => self.set_state(
+                session,
+                playing,
+                position,
+                current.map(|track| track.queue_item_id),
+            ),
             RendererCommand::SetVolume(volume) => {
                 self.controls
                     .set_volume(volume.to_f32().unwrap_or(0.0) / 100.0);
@@ -438,20 +522,20 @@ impl Connect {
         session: &Session,
         playing: Option<PlayingState>,
         position: Option<Duration>,
-        current: Option<QueueTrackRef>,
+        current: Option<i32>,
     ) -> Result<(), Error> {
         let jump = match current {
-            Some(track) if track.queue_item_id < 0 => {
+            Some(id) if id < 0 => {
                 self.controls.pause();
                 return Ok(());
             }
-            Some(track) => {
+            Some(id) => {
                 let tracklist = self.tracklist_receiver.borrow().clone();
-                if tracklist.current_connect_id() == Some(track.queue_item_id) {
+                if tracklist.current_connect_id() == Some(id) {
                     false
                 } else {
-                    let Some(index) = tracklist.position_of_connect_id(track.queue_item_id) else {
-                        return self.defer(session, playing, position, track);
+                    let Some(index) = tracklist.position_of_connect_id(id) else {
+                        return self.defer(session, playing, position, id);
                     };
                     self.controls.skip_to_position(index, true);
                     true
@@ -483,12 +567,12 @@ impl Connect {
         session: &Session,
         playing: Option<PlayingState>,
         position: Option<Duration>,
-        current: QueueTrackRef,
+        current: i32,
     ) -> Result<(), Error> {
         let expected = self
             .session_queue
             .as_ref()
-            .is_some_and(|queue| queue.iter().any(|(id, _)| *id == current.queue_item_id));
+            .is_some_and(|queue| queue.iter().any(|(id, _)| *id == current));
         self.deferred = Some(Deferred {
             playing,
             position,
@@ -508,7 +592,7 @@ impl Connect {
         let known = self
             .tracklist_receiver
             .borrow()
-            .position_of_connect_id(deferred.current.queue_item_id)
+            .position_of_connect_id(deferred.current)
             .is_some();
         if known {
             self.set_state(
@@ -610,14 +694,6 @@ impl Connect {
         else {
             return Ok(());
         };
-        let track_id = {
-            let tracklist = self.tracklist_receiver.borrow();
-            let index = tracklist.position_of_connect_id(id);
-            index.and_then(|index| tracklist.queue().get(index).map(|item| item.track.id))
-        };
-        let Some(track_id) = track_id else {
-            return Ok(());
-        };
         let position = if state.playing == PlayingState::Playing && state.buffer == BufferState::Ok
         {
             state.position.saturating_add(remote.at.elapsed())
@@ -628,12 +704,7 @@ impl Connect {
             "Continuing the previous renderer: item {id} at {position:?}, {:?}",
             state.playing
         );
-        let current = QueueTrackRef {
-            queue_item_id: id,
-            track_id,
-            context_uuid: None,
-        };
-        self.set_state(session, Some(state.playing), Some(position), Some(current))
+        self.set_state(session, Some(state.playing), Some(position), Some(id))
     }
 
     fn take_over(&mut self, session: &mut Session) -> Result<(), Error> {
@@ -646,8 +717,42 @@ impl Connect {
         session.activate()
     }
 
+    /// Streams with the account of the app that handed over, renewing its token before it expires.
+    async fn delegate(&mut self, token: String, expires: u64) {
+        let credentials = player_module::database::Credentials::delegated(token);
+        match self.client.set_credentials(credentials).await {
+            Ok(()) => self.delegated_until(expires),
+            Err(err) => tracing::warn!("Taking over the account of the app failed: {err}"),
+        }
+    }
+
+    /// Retries every minute when Qobuz cannot be reached, until the token is past its expiry.
+    async fn refresh(&mut self) {
+        match self.client.refresh_token().await {
+            Ok(expires) => {
+                tracing::info!("Renewed the delegated token");
+                self.delegated_until(expires);
+            }
+            Err(err) => {
+                tracing::warn!("Renewing the delegated token failed: {err}");
+                self.refresh_at = if unix_now() < self.token_expires {
+                    Instant::now().checked_add(REFRESH_RETRY)
+                } else {
+                    None
+                };
+            }
+        }
+    }
+
+    fn delegated_until(&mut self, expires: u64) {
+        let left = Duration::from_secs(expires.saturating_sub(unix_now()));
+        self.token_expires = expires;
+        self.refresh_at = Instant::now().checked_add(left.saturating_sub(REFRESH_LEAD));
+    }
+
     fn reset(&mut self) {
         self.connected = true;
+        self.activate_at = None;
         self.session_queue = None;
         self.pending = None;
         self.refused = false;
