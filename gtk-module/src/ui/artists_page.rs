@@ -13,6 +13,9 @@ pub type ArtistsPage = GridPage<Artist>;
 pub fn new_artists_page(on_open: Rc<dyn Fn(ArtistHeaderInfo)>) -> ArtistsPage {
     let matches_query = |artist: &Artist, query: &str| artist.name.to_lowercase().contains(query);
 
+    let alphabetical_compare =
+        |a: &Artist, b: &Artist| a.name.to_lowercase().cmp(&b.name.to_lowercase());
+
     let build_tile = |artist: &Artist| build_artist_tile(artist).upcast();
 
     let on_activate = move |artist: &Artist| {
@@ -24,6 +27,7 @@ pub fn new_artists_page(on_open: Rc<dyn Fn(ArtistHeaderInfo)>) -> ArtistsPage {
         10,
         gtk::Align::End,
         matches_query,
+        alphabetical_compare,
         build_tile,
         on_activate,
     )

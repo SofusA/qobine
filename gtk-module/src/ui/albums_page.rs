@@ -16,6 +16,14 @@ pub fn new_albums_page(on_open: Rc<dyn Fn(AlbumHeaderInfo)>) -> AlbumsPage {
             || album.artist.name.to_lowercase().contains(query)
     };
 
+    let alphabetical_compare = |a: &AlbumSimple, b: &AlbumSimple| {
+        a.artist
+            .name
+            .to_lowercase()
+            .cmp(&b.artist.name.to_lowercase())
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+    };
+
     let build_tile = |album: &AlbumSimple| build_album_tile(album).upcast();
 
     let on_activate = move |album: &AlbumSimple| {
@@ -29,6 +37,7 @@ pub fn new_albums_page(on_open: Rc<dyn Fn(AlbumHeaderInfo)>) -> AlbumsPage {
         8,
         gtk::Align::Start,
         matches_query,
+        alphabetical_compare,
         build_tile,
         on_activate,
     )

@@ -12,6 +12,7 @@ use player_module::client::StreamClient;
 
 use crate::UiEventSender;
 use crate::ui::build_track_row;
+use crate::ui::grid_page::FavoriteSort;
 
 #[derive(Clone)]
 pub struct FavoriteTracksPage {
@@ -20,11 +21,13 @@ pub struct FavoriteTracksPage {
     empty_label: gtk::Label,
     controls: Controls,
     client: Arc<StreamClient>,
-
     play_button: gtk::Button,
     shuffle_button: gtk::Button,
+    original_tracks: Rc<RefCell<Vec<Track>>>,
     tracks: Rc<RefCell<Vec<Track>>>,
-
+    owned_playlists: Rc<RefCell<Vec<PlaylistSimple>>>,
+    query: Rc<RefCell<String>>,
+    sort: Rc<RefCell<FavoriteSort>>,
     ui_event_sender: UiEventSender,
 }
 
@@ -145,6 +148,12 @@ impl FavoriteTracksPage {
         root.append(&scrolled);
         root.append(&empty_label);
 
+        let original_tracks = Rc::new(RefCell::new(Vec::new()));
+        let tracks = Rc::new(RefCell::new(Vec::new()));
+        let owned_playlists = Rc::new(RefCell::new(Vec::new()));
+        let query = Rc::new(RefCell::new(String::new()));
+        let sort = Rc::new(RefCell::new(FavoriteSort::DateAdded));
+
         Self {
             root,
             listbox,
@@ -153,7 +162,11 @@ impl FavoriteTracksPage {
             client,
             play_button,
             shuffle_button,
+            original_tracks,
             tracks,
+            owned_playlists,
+            query,
+            sort,
             ui_event_sender,
         }
     }
@@ -162,18 +175,79 @@ impl FavoriteTracksPage {
         &self.root
     }
 
-    pub fn load(&self, tracks: Vec<Track>, owned_playlists: &Vec<PlaylistSimple>) {
+    pub fn load(&self, tracks: Vec<Track>, owned_playlists: &[PlaylistSimple]) {
+        *self.original_tracks.borrow_mut() = tracks;
+        *self.owned_playlists.borrow_mut() = owned_playlists.to_vec();
+        *self.query.borrow_mut() = String::new();
+
+        self.rebuild();
+    }
+
+    pub fn set_sort(&self, sort: FavoriteSort) {
+        if *self.sort.borrow() == sort {
+            return;
+        }
+
+        *self.sort.borrow_mut() = sort;
+        self.rebuild();
+    }
+
+    pub fn filter(&self, query: &str) {
+        *self.query.borrow_mut() = query.trim().to_lowercase();
+        self.rebuild();
+    }
+
+    fn rebuild(&self) {
         self.clear();
 
+        let query = self.query.borrow();
+
+        let mut tracks: Vec<Track> = self
+            .original_tracks
+            .borrow()
+            .iter()
+            .filter(|track| {
+                query.is_empty()
+                    || track.title.to_lowercase().contains(query.as_str())
+                    || track
+                        .artist_name
+                        .as_ref()
+                        .is_some_and(|artist| artist.to_lowercase().contains(query.as_str()))
+            })
+            .cloned()
+            .collect();
+
+        if *self.sort.borrow() == FavoriteSort::Alphabetical {
+            tracks.sort_by(|a, b| {
+                a.title
+                    .to_lowercase()
+                    .cmp(&b.title.to_lowercase())
+                    .then_with(|| {
+                        a.artist_name
+                            .as_deref()
+                            .unwrap_or_default()
+                            .to_lowercase()
+                            .cmp(&b.artist_name.as_deref().unwrap_or_default().to_lowercase())
+                    })
+            });
+        }
+
         let is_empty = tracks.is_empty();
+        let favorite_track_ids = self
+            .original_tracks
+            .borrow()
+            .iter()
+            .map(|track| track.id)
+            .collect();
+
+        *self.tracks.borrow_mut() = tracks;
 
         self.listbox.set_visible(!is_empty);
         self.empty_label.set_visible(is_empty);
         self.play_button.set_sensitive(!is_empty);
         self.shuffle_button.set_sensitive(!is_empty);
 
-        let favorite_track_ids = tracks.iter().map(|x| x.id).collect();
-        *self.tracks.borrow_mut() = tracks;
+        let owned_playlists = self.owned_playlists.borrow();
 
         for track in self.tracks.borrow().iter() {
             let row = build_track_row(
@@ -185,7 +259,7 @@ impl FavoriteTracksPage {
                 self.client.clone(),
                 self.ui_event_sender.clone(),
                 &favorite_track_ids,
-                owned_playlists,
+                &owned_playlists,
             );
 
             self.listbox.append(&row);

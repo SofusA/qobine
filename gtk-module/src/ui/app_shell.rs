@@ -19,6 +19,7 @@ use crate::ui::albums_page::{AlbumsPage, new_albums_page};
 use crate::ui::artists_page::{ArtistsPage, new_artists_page};
 use crate::ui::discover_page::DiscoverPage;
 use crate::ui::favorite_tracks_page::FavoriteTracksPage;
+use crate::ui::grid_page::FavoriteSort;
 use crate::ui::playlists_page::{PlaylistsPage, new_playlists_page};
 use crate::ui::preferences::build_preferences_menu;
 use crate::ui::queue::QueuePage;
@@ -202,6 +203,30 @@ impl AppShell {
         content_header.pack_start(&create_playlist_button);
         content_header.pack_end(&filter_button);
 
+        let sort_dropdown = gtk4::DropDown::from_strings(&["Date added", "Alphabetical"]);
+
+        sort_dropdown.connect_selected_notify({
+            let albums_page = albums_page.clone();
+            let artists_page = artists_page.clone();
+            let playlists_page = playlists_page.clone();
+            let tracks_page = favorite_tracks_page.clone();
+
+            move |dropdown| {
+                let sort = match dropdown.selected() {
+                    1 => FavoriteSort::Alphabetical,
+                    _ => FavoriteSort::DateAdded,
+                };
+
+                albums_page.borrow().set_sort(sort);
+                artists_page.borrow().set_sort(sort);
+                playlists_page.borrow().set_sort(sort);
+                tracks_page.set_sort(sort);
+            }
+        });
+
+        sort_dropdown.set_selected(0);
+        content_header.pack_end(&sort_dropdown);
+
         let filter_entry = gtk4::SearchEntry::builder()
             .placeholder_text("Filter…")
             .hexpand(true)
@@ -215,6 +240,7 @@ impl AppShell {
             let albums_page = albums_page.clone();
             let artists_page = artists_page.clone();
             let playlists_page = playlists_page.clone();
+            let tracks_page = favorite_tracks_page.clone();
 
             move |button| {
                 if button.is_active() {
@@ -227,6 +253,7 @@ impl AppShell {
                     albums_page.borrow().filter("");
                     artists_page.borrow().filter("");
                     playlists_page.borrow().filter("");
+                    tracks_page.filter("");
                 }
             }
         });
@@ -235,12 +262,14 @@ impl AppShell {
             let albums_page = albums_page.clone();
             let artists_page = artists_page.clone();
             let playlists_page = playlists_page.clone();
+            let tracks_page = favorite_tracks_page.clone();
 
             move |search_entry| {
                 let query = search_entry.text();
                 albums_page.borrow().filter(&query);
                 artists_page.borrow().filter(&query);
                 playlists_page.borrow().filter(&query);
+                tracks_page.filter(&query);
             }
         });
 

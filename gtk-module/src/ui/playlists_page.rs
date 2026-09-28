@@ -16,6 +16,10 @@ pub fn new_playlists_page(on_open: Rc<dyn Fn(PlaylistHeaderInfo)>) -> PlaylistsP
 
     let build_tile = |playlist: &PlaylistSimple| build_playlist_tile(playlist).upcast();
 
+    let alphabetical_compare = |a: &PlaylistSimple, b: &PlaylistSimple| {
+        a.title.to_lowercase().cmp(&b.title.to_lowercase())
+    };
+
     let on_activate = move |playlist: &PlaylistSimple| {
         on_open(PlaylistHeaderInfo { id: playlist.id });
     };
@@ -25,6 +29,7 @@ pub fn new_playlists_page(on_open: Rc<dyn Fn(PlaylistHeaderInfo)>) -> PlaylistsP
         10,
         gtk::Align::End,
         matches_query,
+        alphabetical_compare,
         build_tile,
         on_activate,
     )

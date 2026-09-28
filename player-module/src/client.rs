@@ -511,39 +511,28 @@ impl StreamClient {
         let favorites_result = client.favorites(1000).await?;
         let user_playlists = client.user_playlists().await?;
 
-        let mut albums: Vec<_> = favorites_result
+        let albums: Vec<_> = favorites_result
             .albums
             .items
             .into_iter()
             .map(|x| parse_album(x, &audio_quality).into())
             .collect();
 
-        albums.sort_by(|a: &AlbumSimple, b| {
-            a.artist
-                .name
-                .to_lowercase()
-                .cmp(&b.artist.name.to_lowercase())
-        });
-
-        let mut artists: Vec<_> = favorites_result
+        let artists: Vec<_> = favorites_result
             .artists
             .items
             .into_iter()
             .map(parse_artist)
             .collect();
-        artists.sort_by_key(|a| a.name.to_lowercase());
 
-        let mut playlists: Vec<_> = user_playlists
+        let playlists: Vec<_> = user_playlists
             .playlists
             .items
             .into_iter()
             .map(|x| parse_playlist(x, client.user_id(), &audio_quality))
             .collect();
 
-        playlists.sort_by_key(|a| a.title.to_lowercase());
-
-        let mut track_items = favorites_result.tracks.items;
-        track_items.sort_by_key(|t| std::cmp::Reverse(t.favorited_at));
+        let track_items = favorites_result.tracks.items;
 
         let tracks: Vec<_> = track_items
             .into_iter()
