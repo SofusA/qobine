@@ -138,7 +138,7 @@ pub fn init(
 
             let oauth = exchange_oauth_code(&code, &app_id_for_exchange).await?;
             let credentials: Credentials = oauth.into();
-            client_clone.set_credentials(credentials.clone())?;
+            client_clone.set_credentials(credentials.clone()).await?;
             database_clone.set_credentials(Some(credentials)).await?;
 
             if let Err(err) = ui_sender.send(UiEvent::FavoritesChanged) {

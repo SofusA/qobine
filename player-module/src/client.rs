@@ -48,13 +48,30 @@ impl StreamClient {
         Ok(self.credentials.lock()?.is_some())
     }
 
-    pub fn set_credentials(&self, credentials: Credentials) -> AppResult<()> {
-        let mut lock = self.credentials.lock()?;
-        *lock = Some(credentials);
+    pub async fn set_credentials(&self, credentials: Credentials) -> AppResult<()> {
+        if let Some(client) = self.qobuz_client.get() {
+            client
+                .write()
+                .await
+                .set_credentials(&credentials.user_auth_token, credentials.user_id);
+        }
+        *self.credentials.lock()? = Some(credentials);
         Ok(())
     }
 
+    /// Renews the delegated token and tells when the renewed one expires.
+    pub async fn refresh_token(&self) -> AppResult<u64> {
+        let token = self.get_client().await?.refresh_token().await?;
+        self.set_credentials(Credentials::delegated(token.jwt))
+            .await?;
+        Ok(token.exp)
+    }
+
+    /// The app id, looked up without a client when there is no login yet.
     pub async fn app_id(&self) -> AppResult<String> {
+        if !self.credentials_is_set()? {
+            return Ok(get_app_id().await?);
+        }
         let client = self.get_client().await?;
         Ok(client.app_id().to_string())
     }
