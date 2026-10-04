@@ -149,11 +149,19 @@ pub enum SharedCommands {
     },
 }
 
-pub async fn handle_shared_commands(command: SharedCommands, database: &Database) -> AppResult<()> {
+pub async fn handle_shared_commands(
+    command: SharedCommands,
+    database: &Arc<Database>,
+) -> AppResult<()> {
     match command {
         SharedCommands::Login => {
-            let (_client, oauth_result) =
-                StreamClient::new_with_oauth_login(AudioQuality::Mp3, false, true).await?;
+            let (_client, oauth_result) = StreamClient::new_with_oauth_login(
+                AudioQuality::Mp3,
+                false,
+                true,
+                database.clone(),
+            )
+            .await?;
 
             database.set_credentials(Some(oauth_result.into())).await?;
             println!("Login successful!");
@@ -174,7 +182,7 @@ pub async fn handle_shared_commands(command: SharedCommands, database: &Database
 }
 
 pub async fn get_client(
-    database: &Database,
+    database: &Arc<Database>,
     max_audio_quality: AudioQuality,
     file_based_streaming: bool,
     headless: bool,
@@ -182,11 +190,20 @@ pub async fn get_client(
     let database_credentials = database.get_credentials().await?;
 
     let client = if let Some(credentials) = database_credentials {
-        StreamClient::new(Some(credentials), max_audio_quality, file_based_streaming)
+        StreamClient::new(
+            Some(credentials),
+            max_audio_quality,
+            file_based_streaming,
+            database.clone(),
+        )
     } else {
-        let (client, oauth_result) =
-            StreamClient::new_with_oauth_login(max_audio_quality, file_based_streaming, headless)
-                .await?;
+        let (client, oauth_result) = StreamClient::new_with_oauth_login(
+            max_audio_quality,
+            file_based_streaming,
+            headless,
+            database.clone(),
+        )
+        .await?;
 
         database.set_credentials(Some(oauth_result.into())).await?;
 

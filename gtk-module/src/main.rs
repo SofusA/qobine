@@ -8,10 +8,7 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
 use player_module::{
-    AppResult,
-    client::{StreamClient, get_app_id},
-    database::Database,
-    notification::NotificationBroadcast,
+    AppResult, client::StreamClient, database::Database, notification::NotificationBroadcast,
 };
 
 #[tokio::main]
@@ -34,12 +31,13 @@ pub async fn run() -> AppResult<()> {
     let credentials = database.get_credentials().await?;
     let configuration = database.get_configuration().await?;
 
-    let app_id = get_app_id().await?;
     let client = Arc::new(StreamClient::new(
         credentials,
         configuration.max_audio_quality,
         configuration.use_file_based_streaming,
+        database.clone(),
     ));
+    let app_id = client.app_id().await?;
 
     let broadcast = Arc::new(NotificationBroadcast::new());
 

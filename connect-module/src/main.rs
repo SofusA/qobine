@@ -69,7 +69,12 @@ pub async fn run() -> AppResult<()> {
 
     let max_audio_quality = default_audio_quality(&database, args.shared.max_audio_quality).await?;
     let client = if args.no_login {
-        StreamClient::new(None, max_audio_quality, args.shared.file_based_streaming)
+        StreamClient::new(
+            None,
+            max_audio_quality,
+            args.shared.file_based_streaming,
+            database.clone(),
+        )
     } else {
         get_client(
             &database,

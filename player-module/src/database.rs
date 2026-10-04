@@ -1,7 +1,7 @@
 use crate::{AppResult, AudioQuality, PlayerError};
 use controls_module::tracklist::Tracklist;
 use num_traits::ToPrimitive;
-use qobuz_client::client::{OAuthResult, delegated_user_id};
+use qobuz_client::client::{OAuthResult, Secrets, delegated_user_id};
 use serde_json::to_string;
 use sqlx::types::Json;
 use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
@@ -261,6 +261,36 @@ impl Database {
         };
 
         Ok(credentials)
+    }
+
+    /// The app id and secret read from the web player bundle last time, with the bundle version.
+    pub async fn get_secrets(&self) -> AppResult<Option<Secrets>> {
+        let row =
+            sqlx::query!("select bundle, app_id, app_secret from credentials where rowid = 1")
+                .fetch_one(&self.pool)
+                .await?;
+
+        Ok(match (row.bundle, row.app_id) {
+            (Some(bundle), Some(app_id)) => Some(Secrets {
+                bundle,
+                app_id,
+                secret: row.app_secret,
+            }),
+            _ => None,
+        })
+    }
+
+    pub async fn set_secrets(&self, secrets: &Secrets) -> AppResult<()> {
+        sqlx::query!(
+            "update credentials set bundle = ?, app_id = ?, app_secret = ? where rowid = 1",
+            secrets.bundle,
+            secrets.app_id,
+            secrets.secret
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn get_configuration(&self) -> AppResult<Configuration> {

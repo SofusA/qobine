@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update credentials set bundle = ?, app_id = ?, app_secret = ? where rowid = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "3fa732ddaf9ea87e1cb442faa45601d2201183a14dd7c37a6f1df2c2b2c58e20"
+}

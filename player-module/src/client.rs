@@ -1,6 +1,9 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
-use crate::database::Credentials;
+use crate::database::{Credentials, Database};
 use controls_module::models::{
     Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Favorites, Genre, Playlist,
     PlaylistSimple, SearchResults, Track,
@@ -12,7 +15,7 @@ use controls_module::models::{
 };
 use moka::future::Cache;
 use qobuz_client::{
-    client::{AudioQuality, OAuthResult, QobuzClient, ReleaseType, browser_oauth_login},
+    client::{AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, browser_oauth_login},
     qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
 };
@@ -25,13 +28,13 @@ use tokio::{
 use crate::{AppResult, error::PlayerError, simple_cache::SimpleCache};
 
 pub use qobuz_client::client::exchange_oauth_code;
-pub use qobuz_client::client::get_app_id;
 
 pub struct StreamClient {
     qobuz_client: OnceCell<RwLock<QobuzClient>>,
     credentials: Mutex<Option<Credentials>>,
     max_audio_quality: RwLock<AudioQuality>,
     file_based_streaming: RwLock<bool>,
+    database: Arc<Database>,
     favorites_cache: SimpleCache<Favorites>,
     genres_cache: SimpleCache<Vec<Genre>>,
     genre_playlists_cache: Cache<GenrePlaylistSlug, Vec<PlaylistSimple>>,
@@ -67,13 +70,19 @@ impl StreamClient {
         Ok(token.exp)
     }
 
-    /// The app id, looked up without a client when there is no login yet.
+    /// The app id of the web player, which the Qobuz login and Connect announce.
     pub async fn app_id(&self) -> AppResult<String> {
-        if !self.credentials_is_set()? {
-            return Ok(get_app_id().await?);
+        Ok(self.secrets(None).await?.app_id)
+    }
+
+    /// The app id and secret of the web player, from the database unless its bundle changed since.
+    async fn secrets(&self, probe_with: Option<&str>) -> AppResult<Secrets> {
+        let cached = self.database.get_secrets().await?;
+        let secrets = qobuz_client::client::secrets(cached.clone(), probe_with).await?;
+        if cached.as_ref() != Some(&secrets) {
+            self.database.set_secrets(&secrets).await?;
         }
-        let client = self.get_client().await?;
-        Ok(client.app_id().to_string())
+        Ok(secrets)
     }
 
     /// The response of `qws/createToken`, which carries the token and endpoint of the Qobuz Connect cloud socket.
@@ -86,17 +95,16 @@ impl StreamClient {
         max_audio_quality: AudioQuality,
         file_based_streaming: bool,
         headless: bool,
+        database: Arc<Database>,
     ) -> AppResult<(Self, OAuthResult)> {
-        let app_id = get_app_id().await?;
-        let oauth_result = browser_oauth_login(headless, &app_id).await?;
-        let client = Self::new(
-            Some(Credentials {
+        let client = Self::new(None, max_audio_quality, file_based_streaming, database);
+        let oauth_result = browser_oauth_login(headless, &client.app_id().await?).await?;
+        client
+            .set_credentials(Credentials {
                 user_auth_token: oauth_result.user_auth_token.clone(),
                 user_id: oauth_result.user_id,
-            }),
-            max_audio_quality,
-            file_based_streaming,
-        );
+            })
+            .await?;
 
         Ok((client, oauth_result))
     }
@@ -110,6 +118,7 @@ impl StreamClient {
         credentials: Option<Credentials>,
         max_audio_quality: AudioQuality,
         file_based_streaming: bool,
+        database: Arc<Database>,
     ) -> Self {
         let album_cache = moka::future::CacheBuilder::new(1000)
             .time_to_live(std::time::Duration::from_hours(24 * 7))
@@ -148,6 +157,7 @@ impl StreamClient {
             credentials,
             max_audio_quality,
             file_based_streaming,
+            database,
             favorites_cache: SimpleCache::new(Duration::days(1)),
             genres_cache: SimpleCache::new(Duration::days(7)),
             genre_playlists_cache,
@@ -169,16 +179,11 @@ impl StreamClient {
             });
         };
 
-        let file_based_streaming = self.file_based_streaming.read().await;
+        let file_based_streaming = *self.file_based_streaming.read().await;
+        let token = credentials.user_auth_token.as_str();
+        let secrets = self.secrets(file_based_streaming.then_some(token)).await?;
 
-        let client = QobuzClient::new(
-            &credentials.user_auth_token,
-            credentials.user_id,
-            *file_based_streaming,
-        )
-        .await?;
-
-        Ok(client)
+        Ok(QobuzClient::new(token, credentials.user_id, secrets)?)
     }
 
     async fn get_client(&self) -> AppResult<tokio::sync::RwLockReadGuard<'_, QobuzClient>> {

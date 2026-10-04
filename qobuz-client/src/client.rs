@@ -42,6 +42,8 @@ use stream_download::{Settings, StreamDownload, storage::temp::TempStorageProvid
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 const RNG_INIT: &str = "abb21364945c0583309667d13ca3d93a";
+const API_URL: &str = "https://www.qobuz.com/api.json/0.2/";
+const PLAY_URL: &str = "https://play.qobuz.com";
 
 #[derive(Debug)]
 pub struct QobuzClient {
@@ -330,40 +332,18 @@ async fn read_code_from_stdin() -> Result<String, Error> {
 }
 
 impl QobuzClient {
-    pub async fn new(
-        user_auth_token: &str,
-        user_id: i64,
-        file_based_streaming: bool,
-    ) -> Result<Self> {
+    pub fn new(user_auth_token: &str, user_id: i64, secrets: Secrets) -> Result<Self> {
         let http_client = reqwest::Client::builder().cookie_store(true).build()?;
 
-        let base_url = "https://www.qobuz.com/api.json/0.2/".to_string();
-
-        let (app_id, active_secret) = if file_based_streaming {
-            let SecretsForFileBasedStreaming {
-                app_id,
-                active_secret,
-            } = get_secrets_for_file_based_streaming(&http_client, &base_url, user_auth_token)
-                .await?;
-            tracing::debug!("Got login secrets + active secret, app_id: {}", app_id);
-            (app_id, Some(active_secret))
-        } else {
-            let Secrets { app_id } = get_secrets(&http_client).await?;
-            tracing::debug!("Got login secrets, app_id: {}", app_id);
-            (app_id, None)
-        };
-
-        let client = Self {
+        Ok(Self {
             http_client,
             session: None,
             user_token: user_auth_token.to_string(),
             user_id,
-            app_id,
-            base_url,
-            active_secret,
-        };
-
-        Ok(client)
+            app_id: secrets.app_id,
+            base_url: API_URL.to_string(),
+            active_secret: secrets.secret,
+        })
     }
 
     #[must_use]
@@ -1256,18 +1236,10 @@ pub struct DelegatedToken {
     pub exp: u64,
 }
 
-/// Fetch the `app_id` from the Qobuz web player bundle.
-pub async fn get_app_id() -> Result<String> {
-    let http_client = reqwest::Client::new();
-    let Secrets { app_id } = get_secrets(&http_client).await?;
-    Ok(app_id)
-}
-
 /// Exchange an OAuth authorization code for a `user_auth_token`.
 pub async fn exchange_oauth_code(code: &str, app_id: &str) -> Result<OAuthResult> {
     let http_client = reqwest::Client::new();
-    let base_url = "https://www.qobuz.com/api.json/0.2/";
-    let endpoint = format!("{base_url}oauth/callback");
+    let endpoint = format!("{API_URL}oauth/callback");
     let params = vec![("code", code), ("private_key", OAUTH_PRIVATE_KEY)];
 
     let response = make_get_call(&endpoint, Some(&params), &http_client, app_id, None, None).await;
@@ -1311,75 +1283,61 @@ fn build_oauth_url(app_id: &str, redirect_port: u16) -> String {
     format!("https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url={redirect}")
 }
 
-struct Secrets {
-    app_id: String,
+/// What the web player bundle holds: the app id, the bundle version it came from and, once probed with a user token, the secret that signs file based streaming requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Secrets {
+    pub bundle: String,
+    pub app_id: String,
+    pub secret: Option<String>,
 }
 
-async fn get_secrets(client: &reqwest::Client) -> Result<Secrets> {
-    let play_url = "https://play.qobuz.com";
-
-    let login_html = client
-        .get(format!("{play_url}/login"))
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await
-        .map_err(|_| Error::Login)?;
-
-    let bundle_regex = Regex::new(
-        r#"<script src="(/resources/\d+\.\d+\.\d+-[a-z0-9]\d{3}/bundle\.js)"></script>"#,
-    )
-    .map_err(|_| Error::Login)?;
-
-    let app_id_regex = Regex::new(
-        r#"production:\{api:\{appId:"(?P<app_id>\d{9})",appSecret:"(?P<app_secret>\w{32})""#,
-    )
-    .map_err(|_| Error::AppID)?;
-
-    let bundle_path = bundle_regex
-        .captures(&login_html)
-        .and_then(|c| c.get(1))
-        .ok_or(Error::AppID)?
-        .as_str();
-
-    let bundle_html = client
-        .get(format!("{play_url}{bundle_path}"))
+/// The current secrets: `cached` again while the bundle has not changed, read from a fresh bundle otherwise. `probe_with`, the user token, also finds the secret, and refreshes a cache without one.
+pub async fn secrets(cached: Option<Secrets>, probe_with: Option<&str>) -> Result<Secrets> {
+    let http_client = reqwest::Client::new();
+    let bundle = match bundle_path(&http_client).await {
+        Ok(bundle) => bundle,
+        Err(err) => {
+            let Some(cached) = cached else {
+                return Err(err);
+            };
+            tracing::warn!("{err}, keeping the cached app id");
+            return Ok(cached);
+        }
+    };
+    let reusable = |cached: &Secrets| {
+        cached.bundle == bundle && (probe_with.is_none() || cached.secret.is_some())
+    };
+    if let Some(cached) = cached.filter(reusable) {
+        return Ok(cached);
+    }
+    tracing::info!("Reading the web player bundle {bundle}");
+    let script = http_client
+        .get(format!("{PLAY_URL}{bundle}"))
         .send()
         .await?
         .error_for_status()?
         .text()
         .await
         .map_err(|_| Error::AppID)?;
-
-    let app_captures = app_id_regex.captures(&bundle_html).ok_or(Error::AppID)?;
-    let app_id = app_captures
-        .name("app_id")
-        .ok_or(Error::AppID)?
-        .as_str()
-        .to_owned();
-
-    Ok(Secrets { app_id })
+    let app_id = app_id(&script)?;
+    let secret = match probe_with {
+        Some(token) => {
+            let secrets = timezone_secrets(&script)?;
+            Some(find_active_secret(secrets, API_URL, &http_client, &app_id, token).await?)
+        }
+        None => None,
+    };
+    Ok(Secrets {
+        bundle,
+        app_id,
+        secret,
+    })
 }
 
-struct SecretsForFileBasedStreaming {
-    app_id: String,
-    active_secret: String,
-}
-
-/// extract the `app_id`, per-timezone secrets, and probe for an active one
-/// tried to mirror 8cd4d7a
-async fn get_secrets_for_file_based_streaming(
-    client: &reqwest::Client,
-    base_url: &str,
-    user_token: &str,
-) -> Result<SecretsForFileBasedStreaming> {
-    use base64::{Engine, engine::general_purpose};
-
-    let play_url = "https://play.qobuz.com";
-
+/// The path of the bundle the login page loads, which changes with every release of the web player.
+async fn bundle_path(client: &reqwest::Client) -> Result<String> {
     let login_html = client
-        .get(format!("{play_url}/login"))
+        .get(format!("{PLAY_URL}/login"))
         .send()
         .await?
         .error_for_status()?
@@ -1392,41 +1350,40 @@ async fn get_secrets_for_file_based_streaming(
     )
     .map_err(|_| Error::Login)?;
 
+    Ok(bundle_regex
+        .captures(&login_html)
+        .and_then(|c| c.get(1))
+        .ok_or(Error::AppID)?
+        .as_str()
+        .to_owned())
+}
+
+fn app_id(script: &str) -> Result<String> {
     let app_id_regex = Regex::new(
         r#"production:\{api:\{appId:"(?P<app_id>\d{9})",appSecret:"(?P<app_secret>\w{32})""#,
     )
     .map_err(|_| Error::AppID)?;
+
+    Ok(app_id_regex
+        .captures(script)
+        .and_then(|c| c.name("app_id"))
+        .ok_or(Error::AppID)?
+        .as_str()
+        .to_owned())
+}
+
+/// The per-timezone secrets, decoded the way 8cd4d7a did.
+fn timezone_secrets(script: &str) -> Result<HashMap<String, String>> {
+    use base64::{Engine, engine::general_purpose};
 
     let seed_regex = Regex::new(
         r#"[a-z]\.initialSeed\("(?P<seed>[\w=]+)",window\.utimezone\.(?P<timezone>[a-z]+)\)"#,
     )
     .map_err(|_| Error::Login)?;
 
-    let bundle_path = bundle_regex
-        .captures(&login_html)
-        .and_then(|c| c.get(1))
-        .ok_or(Error::AppID)?
-        .as_str();
-
-    let bundle_html = client
-        .get(format!("{play_url}{bundle_path}"))
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await
-        .map_err(|_| Error::AppID)?;
-
-    let app_captures = app_id_regex.captures(&bundle_html).ok_or(Error::AppID)?;
-    let app_id = app_captures
-        .name("app_id")
-        .ok_or(Error::AppID)?
-        .as_str()
-        .to_owned();
-
     let mut secrets = HashMap::new();
 
-    for seed_cap in seed_regex.captures_iter(&bundle_html) {
+    for seed_cap in seed_regex.captures_iter(script) {
         let seed = seed_cap.name("seed").ok_or(Error::Login)?.as_str();
         let mut timezone = seed_cap
             .name("timezone")
@@ -1441,7 +1398,7 @@ async fn get_secrets_for_file_based_streaming(
         );
         let info_re = Regex::new(&info_re_str).map_err(|_| Error::Login)?;
 
-        for c in info_re.captures_iter(&bundle_html) {
+        for c in info_re.captures_iter(script) {
             let tz_full = c.name("timezone").ok_or(Error::Login)?.as_str().to_owned();
             let info = c.name("info").ok_or(Error::Login)?.as_str();
             let extras = c.name("extras").ok_or(Error::Login)?.as_str();
@@ -1467,12 +1424,7 @@ async fn get_secrets_for_file_based_streaming(
         }
     }
 
-    let active_secret = find_active_secret(secrets, base_url, client, &app_id, user_token).await?;
-
-    Ok(SecretsForFileBasedStreaming {
-        app_id,
-        active_secret,
-    })
+    Ok(secrets)
 }
 
 /// Probe each per-timezone secret with a known-good track id; the first one
