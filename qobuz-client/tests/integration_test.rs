@@ -14,10 +14,15 @@ async fn get_token() -> Option<Credentials> {
 
 async fn get_client() -> Option<QobuzClient> {
     let credentials = get_token().await?;
+    let secrets = qobuz_client::client::secrets(None).await.ok()?;
 
-    qobuz_client::client::QobuzClient::new(&credentials.user_auth_token, credentials.user_id, false)
-        .await
-        .ok()
+    QobuzClient::new(
+        &credentials.user_auth_token,
+        credentials.user_id,
+        &secrets.app_id,
+        None,
+    )
+    .ok()
 }
 
 #[tokio::test]

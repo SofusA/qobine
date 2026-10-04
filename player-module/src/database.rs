@@ -1,7 +1,7 @@
 use crate::{AppResult, AudioQuality, PlayerError};
 use controls_module::tracklist::Tracklist;
 use num_traits::ToPrimitive;
-use qobuz_client::client::{OAuthResult, delegated_user_id};
+use qobuz_client::client::{OAuthResult, Secrets, delegated_user_id};
 use serde_json::to_string;
 use sqlx::types::Json;
 use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
@@ -261,6 +261,42 @@ impl Database {
         };
 
         Ok(credentials)
+    }
+
+    /// The app id and secrets read from the web player bundle last time, with the bundle path.
+    pub async fn get_secrets(&self) -> AppResult<Option<Secrets>> {
+        let row = sqlx::query!(
+            "select bundle, app_id, timezone_secrets from credentials where rowid = 1"
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(match (row.bundle, row.app_id, row.timezone_secrets) {
+            (Some(bundle), Some(app_id), Some(secrets)) => {
+                serde_json::from_str(&secrets)
+                    .ok()
+                    .map(|timezone_secrets| Secrets {
+                        bundle,
+                        app_id,
+                        timezone_secrets,
+                    })
+            }
+            _ => None,
+        })
+    }
+
+    pub async fn set_secrets(&self, secrets: &Secrets) -> AppResult<()> {
+        let timezone_secrets = to_string(&secrets.timezone_secrets)?;
+        sqlx::query!(
+            "update credentials set bundle = ?, app_id = ?, timezone_secrets = ? where rowid = 1",
+            secrets.bundle,
+            secrets.app_id,
+            timezone_secrets
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn get_configuration(&self) -> AppResult<Configuration> {
@@ -550,6 +586,23 @@ async fn create_configuration(pool: &Pool<Sqlite>) -> AppResult<()> {
 mod tests {
     use super::*;
     use time::{Duration, OffsetDateTime};
+
+    #[sqlx::test]
+    async fn secrets_round_trip(pool: sqlx::Pool<sqlx::Sqlite>) {
+        let db = Database::init(pool).await.unwrap();
+        assert_eq!(db.get_secrets().await.unwrap(), None);
+
+        let secrets = qobuz_client::client::Secrets {
+            bundle: "/resources/1.0.0-a001/bundle.js".to_owned(),
+            app_id: "123".to_owned(),
+            timezone_secrets: std::collections::HashMap::from([(
+                "Berlin".to_owned(),
+                "s".to_owned(),
+            )]),
+        };
+        db.set_secrets(&secrets).await.unwrap();
+        assert_eq!(db.get_secrets().await.unwrap(), Some(secrets));
+    }
 
     #[sqlx::test]
     async fn clean_up_cache_entries(pool: sqlx::Pool<sqlx::Sqlite>) {

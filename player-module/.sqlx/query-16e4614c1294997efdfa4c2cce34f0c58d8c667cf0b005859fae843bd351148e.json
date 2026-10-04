@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "select bundle, app_id, timezone_secrets from credentials where rowid = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "bundle",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "app_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "timezone_secrets",
+        "ordinal": 2,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "16e4614c1294997efdfa4c2cce34f0c58d8c667cf0b005859fae843bd351148e"
+}
