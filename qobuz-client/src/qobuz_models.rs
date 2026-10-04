@@ -12,6 +12,7 @@ pub mod genre;
 pub mod playlist;
 pub mod search_results;
 pub mod track;
+pub mod user;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Composer {

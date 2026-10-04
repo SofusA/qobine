@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{Album, AlbumSimple, Artist},
+    models::{Album, AlbumSimple, Artist, FavoriteIds},
 };
 use num_traits::ToPrimitive;
 use player_module::{AppResult, client::StreamClient};
@@ -13,7 +13,7 @@ use ratatui_image::StatefulImage;
 
 use super::{ArtistOverlay, Overlay, about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, Pane, block, format_seconds,
@@ -171,8 +171,8 @@ impl AlbumOverlay {
         }
 
         let [title, artist, metadata] = self.album_detail_lines(
-            favorites.albums().contains(&self.id),
-            favorites.artists().contains(&self.artist.id),
+            favorites.albums.contains(&self.id),
+            favorites.artists.contains(&self.artist.id),
         );
 
         let has_description = self
@@ -263,7 +263,7 @@ impl AlbumOverlay {
                                 frame.buffer_mut(),
                                 true,
                                 true,
-                                favorites.tracks(),
+                                &favorites.tracks,
                             );
                         }
 
@@ -272,7 +272,7 @@ impl AlbumOverlay {
                                 content_area,
                                 frame.buffer_mut(),
                                 true,
-                                favorites.albums(),
+                                &favorites.albums,
                                 image_cache,
                             );
                         }

@@ -1,11 +1,12 @@
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 
 use crate::database::{Credentials, Database};
 use controls_module::models::{
-    Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, Favorites, Genre, Playlist,
+    Album, AlbumSimple, Artist, ArtistPage, DiscoverPage, FavoriteIds, Favorites, Genre, Playlist,
     PlaylistSimple, SearchResults, Track,
     mapper::{
         extract_year, hifi_available, parse_album, parse_album_simple, parse_artist,
@@ -19,7 +20,7 @@ use qobuz_client::{
         AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, StreamingEnd,
         browser_oauth_login,
     },
-    qobuz_models::{TrackInfo, TrackUrl},
+    qobuz_models::{TrackInfo, TrackUrl, user::LastUpdate},
     stream::flac_source_stream::SeekableStreamReader,
 };
 use time::Duration;
@@ -39,6 +40,28 @@ pub struct StreamToken {
     pub format_id: Option<i32>,
 }
 
+/// How long a check of `user/lastUpdate` stands before the next read of the library repeats it.
+const LIBRARY_CHECK: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The favorites and playlists, kept until Qobuz reports a change to them or one is made here.
+/// The generation tells a fetch that began before a change not to store what it brings back.
+#[derive(Default)]
+struct Library {
+    generation: u64,
+    stamp: Option<LastUpdate>,
+    checked: Option<Instant>,
+    ids: Option<FavoriteIds>,
+    favorites: Option<Favorites>,
+}
+
+impl Library {
+    fn forget(&mut self) {
+        self.ids = None;
+        self.favorites = None;
+        self.generation = self.generation.wrapping_add(1);
+    }
+}
+
 pub struct StreamClient {
     qobuz_client: OnceCell<RwLock<QobuzClient>>,
     credentials: Mutex<Option<Credentials>>,
@@ -46,7 +69,7 @@ pub struct StreamClient {
     file_based_streaming: RwLock<bool>,
     database: Arc<Database>,
     secrets: OnceCell<Secrets>,
-    favorites_cache: SimpleCache<Favorites>,
+    library: Mutex<Library>,
     genres_cache: SimpleCache<Vec<Genre>>,
     genre_playlists_cache: Cache<GenrePlaylistSlug, Vec<PlaylistSimple>>,
     album_cache: Cache<String, Album>,
@@ -180,7 +203,7 @@ impl StreamClient {
             file_based_streaming,
             database,
             secrets: OnceCell::default(),
-            favorites_cache: SimpleCache::new(Duration::days(1)),
+            library: Mutex::default(),
             genres_cache: SimpleCache::new(Duration::days(7)),
             genre_playlists_cache,
             album_cache,
@@ -525,71 +548,132 @@ impl StreamClient {
     }
 
     pub async fn add_favorite_track(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.add_favorite_track(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.add_favorite_track(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn remove_favorite_track(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.remove_favorite_track(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.remove_favorite_track(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn add_favorite_album(&self, id: &str) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.add_favorite_album(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.add_favorite_album(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn remove_favorite_album(&self, id: &str) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.remove_favorite_album(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.remove_favorite_album(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn add_favorite_artist(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.add_favorite_artist(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.add_favorite_artist(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn remove_favorite_artist(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.remove_favorite_artist(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.remove_favorite_artist(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn add_favorite_playlist(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.add_favorite_playlist(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client().await?.add_favorite_playlist(id).await?;
+        self.library_changed()?;
         Ok(())
     }
 
     pub async fn remove_favorite_playlist(&self, id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.remove_favorite_playlist(id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client()
+            .await?
+            .remove_favorite_playlist(id)
+            .await?;
+        self.library_changed()?;
         Ok(())
     }
 
+    /// After a change made here: the lists are stale and the stamp has moved, so the next read takes a fresh one.
+    fn library_changed(&self) -> AppResult<()> {
+        let mut library = self.library.lock()?;
+        library.forget();
+        library.stamp = None;
+        library.checked = None;
+        Ok(())
+    }
+
+    /// Asks `user/lastUpdate` at most once a minute and forgets the library when the stamp moved.
+    /// The stamp is read before the lists, so a change during a fetch shows up at the next check.
+    async fn check_library(&self) -> AppResult<()> {
+        let checked = self.library.lock()?.checked;
+        if checked.is_some_and(|checked| checked.elapsed() < LIBRARY_CHECK) {
+            return Ok(());
+        }
+        let latest = self.get_client().await?.last_update().await;
+        let mut library = self.library.lock()?;
+        match latest {
+            Ok(latest) => {
+                if library.stamp.as_ref().is_some_and(|known| *known != latest) {
+                    library.forget();
+                }
+                library.stamp = Some(latest);
+            }
+            Err(err) => tracing::warn!("Keeping the library as it is: {err}"),
+        }
+        library.checked = Some(Instant::now());
+        Ok(())
+    }
+
+    /// The ids of every favorite and user playlist, the few kilobytes the flags need.
+    pub async fn favorite_ids(&self) -> AppResult<FavoriteIds> {
+        self.check_library().await?;
+        let (cached, generation) = {
+            let library = self.library.lock()?;
+            (library.ids.clone(), library.generation)
+        };
+        if let Some(ids) = cached {
+            return Ok(ids);
+        }
+        let client = self.get_client().await?;
+        let (ids, playlists) = try_join!(client.favorite_ids(), client.user_playlists())?;
+        let ids = FavoriteIds {
+            albums: ids.albums.into_iter().collect(),
+            artists: ids.artists.into_iter().collect(),
+            playlists: playlists
+                .playlists
+                .items
+                .iter()
+                .map(|playlist| playlist.id)
+                .collect(),
+            tracks: ids.tracks.into_iter().collect(),
+        };
+        let mut library = self.library.lock()?;
+        if library.generation == generation {
+            library.ids = Some(ids.clone());
+        }
+        Ok(ids)
+    }
+
     pub async fn favorites(&self) -> AppResult<Favorites> {
-        if let Some(cache) = self.favorites_cache.get().await {
-            return Ok(cache);
+        self.check_library().await?;
+        let (cached, generation) = {
+            let library = self.library.lock()?;
+            (library.favorites.clone(), library.generation)
+        };
+        if let Some(favorites) = cached {
+            return Ok(favorites);
         }
 
         let client = self.get_client().await?;
         let audio_quality = self.max_audio_quality.read().await;
 
-        let favorites_result = client.favorites().await?;
-        let user_playlists = client.user_playlists().await?;
+        let (favorites_result, user_playlists) =
+            try_join!(client.favorites(), client.user_playlists())?;
 
         let albums: Vec<_> = favorites_result
             .albums
@@ -626,7 +710,10 @@ impl StreamClient {
             tracks,
         };
 
-        self.favorites_cache.set(favorites.clone()).await;
+        let mut library = self.library.lock()?;
+        if library.generation == generation {
+            library.favorites = Some(favorites.clone());
+        }
         Ok(favorites)
     }
 
@@ -646,21 +733,24 @@ impl StreamClient {
             client.user_id(),
             &*self.max_audio_quality.read().await,
         );
-        let cache = self.favorites_cache.get().await;
-
-        if let Some(mut cache) = cache {
-            cache.playlists.push(playlist.clone());
-            cache.playlists.sort_by(|a, b| a.title.cmp(&b.title));
-            self.favorites_cache.set(cache).await;
+        let mut library = self.library.lock()?;
+        if let Some(ids) = &mut library.ids {
+            ids.playlists.insert(playlist.id);
+        }
+        if let Some(favorites) = &mut library.favorites {
+            favorites.playlists.push(playlist.clone());
+            favorites.playlists.sort_by(|a, b| a.title.cmp(&b.title));
         }
 
         Ok(playlist)
     }
 
     pub async fn delete_playlist(&self, playlist_id: u32) -> AppResult<()> {
-        let client = self.get_client().await?;
-        client.delete_playlist(playlist_id).await?;
-        self.favorites_cache.clear().await;
+        self.get_client()
+            .await?
+            .delete_playlist(playlist_id)
+            .await?;
+        self.library_changed()?;
         Ok(())
     }
 

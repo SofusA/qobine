@@ -7,7 +7,7 @@ use crate::{
         artist::ArtistsResponse,
         artist_page::ArtistPage,
         discover::Discover,
-        favorites::Favorites,
+        favorites::{FavoriteIds, Favorites},
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
         search_results::SearchAllResults,
@@ -15,6 +15,7 @@ use crate::{
             SuggestTrackInput, SuggestTrackRequest, Track, TrackListRequest, TrackListResponse,
             TrackSuggestionResponse,
         },
+        user::{LastUpdate, LastUpdateResponse},
     },
     stream::{
         cmaf, crypto, fetch_segment, file_based,
@@ -165,6 +166,8 @@ enum Endpoint {
     Search,
     SessionStart,
     Favorites,
+    FavoriteIds,
+    LastUpdate,
     FavoriteAdd,
     FavoriteRemove,
     FavoritePlaylistAdd,
@@ -199,6 +202,8 @@ impl Display for Endpoint {
             Self::TrackURL => "track/getFileUrl",
             Self::UserPlaylist => "playlist/getUserPlaylists",
             Self::Favorites => "favorite/getUserFavorites",
+            Self::FavoriteIds => "favorite/getUserFavoriteIds",
+            Self::LastUpdate => "user/lastUpdate",
             Self::FavoriteAdd => "favorite/create",
             Self::FavoriteRemove => "favorite/delete",
             Self::FavoritePlaylistAdd => "playlist/subscribe",
@@ -856,6 +861,19 @@ impl QobuzClient {
             favorites.tracks.items.extend(page.tracks.items);
             offset = offset.saturating_add(API_PAGE);
         }
+    }
+
+    /// The ids of every favorite, the few kilobytes the flags need.
+    pub async fn favorite_ids(&self) -> Result<FavoriteIds> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::FavoriteIds);
+        self.get(&endpoint, None).await
+    }
+
+    /// When the library last changed, the web player's cue to reload its lists.
+    pub async fn last_update(&self) -> Result<LastUpdate> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::LastUpdate);
+        let response: LastUpdateResponse = self.get(&endpoint, None).await?;
+        Ok(response.last_update)
     }
 
     pub async fn add_favorite_track(&self, id: u32) -> Result<SuccessfulResponse> {

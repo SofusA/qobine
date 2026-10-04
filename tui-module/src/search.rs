@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{AlbumSimple, Artist, PlaylistSimple},
+    models::{AlbumSimple, Artist, FavoriteIds, PlaylistSimple},
 };
 use player_module::{AppResult, client::StreamClient};
 use ratatui::{
@@ -11,7 +11,7 @@ use ratatui::{
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     image_cache::ImageManager,
     sub_tab::SubTab,
     ui::{Pane, block, leaves_content, render_input, sidebar},
@@ -79,21 +79,21 @@ impl SearchState {
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.albums(),
+                &favorites.albums,
                 image_cache,
             ),
             SubTab::Artists => self.artists.render(
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.artists(),
+                &favorites.artists,
                 image_cache,
             ),
             SubTab::Playlists => self.playlists.render(
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.playlists(),
+                &favorites.playlists,
                 image_cache,
             ),
             SubTab::Tracks => self.tracks.render(
@@ -101,7 +101,7 @@ impl SearchState {
                 frame.buffer_mut(),
                 true,
                 content_focused,
-                favorites.tracks(),
+                &favorites.tracks,
             ),
         }
     }
