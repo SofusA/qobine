@@ -332,7 +332,12 @@ async fn read_code_from_stdin() -> Result<String, Error> {
 }
 
 impl QobuzClient {
-    pub fn new(user_auth_token: &str, user_id: i64, secrets: Secrets) -> Result<Self> {
+    pub fn new(
+        user_auth_token: &str,
+        user_id: i64,
+        app_id: &str,
+        active_secret: Option<String>,
+    ) -> Result<Self> {
         let http_client = reqwest::Client::builder().cookie_store(true).build()?;
 
         Ok(Self {
@@ -340,9 +345,9 @@ impl QobuzClient {
             session: None,
             user_token: user_auth_token.to_string(),
             user_id,
-            app_id: secrets.app_id,
+            app_id: app_id.to_string(),
             base_url: API_URL.to_string(),
-            active_secret: secrets.secret,
+            active_secret,
         })
     }
 
@@ -1283,32 +1288,33 @@ fn build_oauth_url(app_id: &str, redirect_port: u16) -> String {
     format!("https://www.qobuz.com/signin/oauth?ext_app_id={app_id}&redirect_url={redirect}")
 }
 
-/// What the web player bundle holds: the app id, the bundle version it came from and, once probed with a user token, the secret that signs file based streaming requests.
+/// What the web player bundle holds: the app id and the per-timezone secrets that sign file based streaming requests, with the path of the bundle they were read from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Secrets {
     pub bundle: String,
     pub app_id: String,
-    pub secret: Option<String>,
+    pub timezone_secrets: HashMap<String, String>,
 }
 
-/// The current secrets: `cached` again while the bundle has not changed, read from a fresh bundle otherwise. `probe_with`, the user token, also finds the secret, and refreshes a cache without one.
-pub async fn secrets(cached: Option<Secrets>, probe_with: Option<&str>) -> Result<Secrets> {
-    let http_client = reqwest::Client::new();
-    let bundle = match bundle_path(&http_client).await {
-        Ok(bundle) => bundle,
+/// The web player secrets: `cached` while the login page still names its bundle or cannot be read, otherwise read from the bundle it names.
+pub async fn secrets(cached: Option<&Secrets>) -> Result<Secrets> {
+    match read_secrets(cached).await {
+        Ok(secrets) => Ok(secrets),
         Err(err) => {
             let Some(cached) = cached else {
                 return Err(err);
             };
-            tracing::warn!("{err}, keeping the cached app id");
-            return Ok(cached);
+            tracing::warn!("Keeping the cached web player secrets: {err}");
+            Ok(cached.clone())
         }
-    };
-    let reusable = |cached: &Secrets| {
-        cached.bundle == bundle && (probe_with.is_none() || cached.secret.is_some())
-    };
-    if let Some(cached) = cached.filter(reusable) {
-        return Ok(cached);
+    }
+}
+
+async fn read_secrets(cached: Option<&Secrets>) -> Result<Secrets> {
+    let http_client = reqwest::Client::new();
+    let bundle = bundle_path(&http_client).await?;
+    if let Some(cached) = cached.filter(|cached| cached.bundle == bundle) {
+        return Ok(cached.clone());
     }
     tracing::info!("Reading the web player bundle {bundle}");
     let script = http_client
@@ -1319,19 +1325,24 @@ pub async fn secrets(cached: Option<Secrets>, probe_with: Option<&str>) -> Resul
         .text()
         .await
         .map_err(|_| Error::AppID)?;
-    let app_id = app_id(&script)?;
-    let secret = match probe_with {
-        Some(token) => {
-            let secrets = timezone_secrets(&script)?;
-            Some(find_active_secret(secrets, API_URL, &http_client, &app_id, token).await?)
-        }
-        None => None,
-    };
     Ok(Secrets {
+        app_id: app_id(&script)?,
+        timezone_secrets: timezone_secrets(&script)?,
         bundle,
-        app_id,
-        secret,
     })
+}
+
+/// The one of the per-timezone secrets that signs requests from the user's region, found by trying them.
+pub async fn active_secret(secrets: &Secrets, user_token: &str) -> Result<String> {
+    let http_client = reqwest::Client::new();
+    find_active_secret(
+        &secrets.timezone_secrets,
+        API_URL,
+        &http_client,
+        &secrets.app_id,
+        user_token,
+    )
+    .await
 }
 
 /// The path of the bundle the login page loads, which changes with every release of the web player.
@@ -1424,13 +1435,17 @@ fn timezone_secrets(script: &str) -> Result<HashMap<String, String>> {
         }
     }
 
+    if secrets.is_empty() {
+        return Err(Error::ActiveSecret);
+    }
+
     Ok(secrets)
 }
 
 /// Probe each per-timezone secret with a known-good track id; the first one
 /// that returns a valid response is the active secret for our request region
 async fn find_active_secret(
-    secrets: HashMap<String, String>,
+    secrets: &HashMap<String, String>,
     base_url: &str,
     client: &reqwest::Client,
     app_id: &str,
@@ -1442,7 +1457,7 @@ async fn find_active_secret(
     for (timezone, secret) in secrets {
         let response = track_url(
             64_868_955,
-            &secret,
+            secret,
             base_url,
             client,
             app_id,
@@ -1453,7 +1468,7 @@ async fn find_active_secret(
 
         if response.is_ok() {
             tracing::debug!("found active secret for timezone: {}", timezone);
-            return Ok(secret);
+            return Ok(secret.clone());
         }
     }
 

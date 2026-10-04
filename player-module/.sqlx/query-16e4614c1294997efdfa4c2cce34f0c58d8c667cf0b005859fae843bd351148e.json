@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "select bundle, app_id, app_secret from credentials where rowid = 1",
+  "query": "select bundle, app_id, timezone_secrets from credentials where rowid = 1",
   "describe": {
     "columns": [
       {
@@ -14,7 +14,7 @@
         "type_info": "Text"
       },
       {
-        "name": "app_secret",
+        "name": "timezone_secrets",
         "ordinal": 2,
         "type_info": "Text"
       }
@@ -28,5 +28,5 @@
       true
     ]
   },
-  "hash": "d84bfc7a27e404fda246f3dff04cc4d2c8cddb2b15304eb7c4eb6807f1cdc914"
+  "hash": "16e4614c1294997efdfa4c2cce34f0c58d8c667cf0b005859fae843bd351148e"
 }

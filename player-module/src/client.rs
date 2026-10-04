@@ -35,6 +35,7 @@ pub struct StreamClient {
     max_audio_quality: RwLock<AudioQuality>,
     file_based_streaming: RwLock<bool>,
     database: Arc<Database>,
+    secrets: OnceCell<Secrets>,
     favorites_cache: SimpleCache<Favorites>,
     genres_cache: SimpleCache<Vec<Genre>>,
     genre_playlists_cache: Cache<GenrePlaylistSlug, Vec<PlaylistSimple>>,
@@ -72,17 +73,22 @@ impl StreamClient {
 
     /// The app id of the web player, which the Qobuz login and Connect announce.
     pub async fn app_id(&self) -> AppResult<String> {
-        Ok(self.secrets(None).await?.app_id)
+        Ok(self.secrets().await?.app_id)
     }
 
-    /// The app id and secret of the web player, from the database unless its bundle changed since.
-    async fn secrets(&self, probe_with: Option<&str>) -> AppResult<Secrets> {
-        let cached = self.database.get_secrets().await?;
-        let secrets = qobuz_client::client::secrets(cached.clone(), probe_with).await?;
-        if cached.as_ref() != Some(&secrets) {
-            self.database.set_secrets(&secrets).await?;
-        }
-        Ok(secrets)
+    /// The app id and secrets of the web player, resolved once per run: from the database unless its bundle changed since.
+    async fn secrets(&self) -> AppResult<Secrets> {
+        self.secrets
+            .get_or_try_init(|| async {
+                let cached = self.database.get_secrets().await?;
+                let secrets = qobuz_client::client::secrets(cached.as_ref()).await?;
+                if cached.as_ref() != Some(&secrets) {
+                    self.database.set_secrets(&secrets).await?;
+                }
+                Ok::<_, PlayerError>(secrets)
+            })
+            .await
+            .cloned()
     }
 
     /// The response of `qws/createToken`, which carries the token and endpoint of the Qobuz Connect cloud socket.
@@ -158,6 +164,7 @@ impl StreamClient {
             max_audio_quality,
             file_based_streaming,
             database,
+            secrets: OnceCell::default(),
             favorites_cache: SimpleCache::new(Duration::days(1)),
             genres_cache: SimpleCache::new(Duration::days(7)),
             genre_playlists_cache,
@@ -179,11 +186,20 @@ impl StreamClient {
             });
         };
 
-        let file_based_streaming = *self.file_based_streaming.read().await;
         let token = credentials.user_auth_token.as_str();
-        let secrets = self.secrets(file_based_streaming.then_some(token)).await?;
+        let secrets = self.secrets().await?;
+        let active_secret = if *self.file_based_streaming.read().await {
+            Some(qobuz_client::client::active_secret(&secrets, token).await?)
+        } else {
+            None
+        };
 
-        Ok(QobuzClient::new(token, credentials.user_id, secrets)?)
+        Ok(QobuzClient::new(
+            token,
+            credentials.user_id,
+            &secrets.app_id,
+            active_secret,
+        )?)
     }
 
     async fn get_client(&self) -> AppResult<tokio::sync::RwLockReadGuard<'_, QobuzClient>> {
