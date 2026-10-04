@@ -8,6 +8,7 @@ mod downloader;
 pub mod error;
 pub mod notification;
 pub mod player;
+mod report;
 mod simple_cache;
 mod sink;
 mod stderr_redirect;

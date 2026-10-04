@@ -15,7 +15,10 @@ use controls_module::models::{
 };
 use moka::future::Cache;
 use qobuz_client::{
-    client::{AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, browser_oauth_login},
+    client::{
+        AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, StreamingEnd,
+        browser_oauth_login,
+    },
     qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
 };
@@ -28,6 +31,13 @@ use tokio::{
 use crate::{AppResult, error::PlayerError, simple_cache::SimpleCache};
 
 pub use qobuz_client::client::exchange_oauth_code;
+
+/// What `file/url` granted for a track: the token its streaming reports carry and the format streamed.
+#[derive(Debug, Clone)]
+pub struct StreamToken {
+    pub blob: Option<String>,
+    pub format_id: Option<i32>,
+}
 
 pub struct StreamClient {
     qobuz_client: OnceCell<RwLock<QobuzClient>>,
@@ -45,6 +55,7 @@ pub struct StreamClient {
     suggested_albums_cache: Cache<String, Vec<AlbumSimple>>,
     search_cache: Cache<String, SearchResults>,
     discover_cache: Cache<Option<u32>, DiscoverPage>,
+    stream_tokens: Cache<u32, StreamToken>,
 }
 
 impl StreamClient {
@@ -154,6 +165,10 @@ impl StreamClient {
             .time_to_live(std::time::Duration::from_hours(24))
             .build();
 
+        let stream_tokens = moka::future::CacheBuilder::new(100)
+            .time_to_live(std::time::Duration::from_hours(24))
+            .build();
+
         let credentials = Mutex::new(credentials);
         let max_audio_quality = RwLock::new(max_audio_quality);
         let file_based_streaming = RwLock::new(file_based_streaming);
@@ -174,6 +189,7 @@ impl StreamClient {
             suggested_albums_cache,
             search_cache,
             discover_cache,
+            stream_tokens,
         }
     }
 
@@ -256,6 +272,11 @@ impl StreamClient {
         let audio_quality = self.max_audio_quality.read().await;
 
         let info = client.get_streaming_info(track_id, *audio_quality).await?;
+        let token = StreamToken {
+            blob: info.blob.clone(),
+            format_id: info.format_id,
+        };
+        self.stream_tokens.insert(track_id, token).await;
         Ok(info)
     }
 
@@ -265,7 +286,28 @@ impl StreamClient {
         let info = client
             .get_file_based_streaming_info(track_id, *audio_quality)
             .await?;
+        let token = StreamToken {
+            blob: info.blob.clone(),
+            format_id: Some(info.format_id),
+        };
+        self.stream_tokens.insert(track_id, token).await;
         Ok(info)
+    }
+
+    /// The token of the last `file/url` for a track, which its streaming reports carry.
+    pub async fn stream_token(&self, track_id: u32) -> Option<StreamToken> {
+        self.stream_tokens.get(&track_id).await
+    }
+
+    pub async fn report_streaming_start(&self, track_id: u32, format_id: i32) -> AppResult<()> {
+        let client = self.get_client().await?;
+        Ok(client.report_streaming_start(track_id, format_id).await?)
+    }
+
+    pub async fn report_streaming_end(&self, events: &[StreamingEnd]) -> AppResult<()> {
+        let client = self.get_client().await?;
+        let version = concat!("qobine-", env!("CARGO_PKG_VERSION"));
+        Ok(client.report_streaming_end(events, version).await?)
     }
 
     pub async fn stream_track_file_based(
