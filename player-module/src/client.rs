@@ -588,7 +588,7 @@ impl StreamClient {
         let client = self.get_client().await?;
         let audio_quality = self.max_audio_quality.read().await;
 
-        let favorites_result = client.favorites(1000).await?;
+        let favorites_result = client.favorites().await?;
         let user_playlists = client.user_playlists().await?;
 
         let albums: Vec<_> = favorites_result
