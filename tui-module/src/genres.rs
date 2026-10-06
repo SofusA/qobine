@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{AlbumSimple, PlaylistSimple},
+    models::{AlbumSimple, FavoriteIds, PlaylistSimple},
 };
 use futures::future::try_join_all;
 use player_module::{
@@ -15,14 +15,13 @@ use ratatui::{
 };
 
 use crate::{
-    app::FavoriteIds,
+    app::{NotificationList, Output},
+    ui::block,
+};
+use crate::{
     image_cache::ImageManager,
     ui::{Pane, SELECTED_STYLE, leaves_content, sidebar},
     widgets::grid::Grid,
-};
-use crate::{
-    app::{NotificationList, Output},
-    ui::block,
 };
 
 pub struct GenresState {
@@ -251,14 +250,14 @@ impl GenresState {
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.albums(),
+                &favorites.albums,
                 image_cache,
             ),
             Some(Selected::Playlist(list)) => list.render(
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.playlists(),
+                &favorites.playlists,
                 image_cache,
             ),
             None => {}

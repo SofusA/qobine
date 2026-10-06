@@ -12,7 +12,7 @@ use crate::{
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver,
     controls::{ConnectDevice, Controls},
-    models::{Artist, Track},
+    models::{Artist, FavoriteIds, Favorites, Track},
     tracklist::{Tracklist, TracklistType},
 };
 use core::fmt;
@@ -27,7 +27,7 @@ use player_module::{
     notification::{Notification, NotificationBroadcast},
 };
 use ratatui::{DefaultTerminal, widgets::Clear};
-use std::{collections::HashSet, io, sync::Arc, time::Instant};
+use std::{io, sync::Arc, time::Instant};
 use tokio::{
     sync::{mpsc, watch},
     time::{self, Duration},
@@ -57,29 +57,10 @@ impl NotificationList {
     }
 }
 
-pub struct FavoriteIds {
-    albums: HashSet<String>,
-    artists: HashSet<u32>,
-    playlists: HashSet<u32>,
-    tracks: HashSet<u32>,
-}
-
-impl FavoriteIds {
-    pub const fn albums(&self) -> &HashSet<String> {
-        &self.albums
-    }
-
-    pub const fn artists(&self) -> &HashSet<u32> {
-        &self.artists
-    }
-
-    pub const fn playlists(&self) -> &HashSet<u32> {
-        &self.playlists
-    }
-
-    pub const fn tracks(&self) -> &HashSet<u32> {
-        &self.tracks
-    }
+/// What a library load delivers: the ids within a second, the lists when they are in.
+pub enum FavoritesUpdate {
+    Ids(FavoriteIds),
+    Lists(Favorites),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -146,6 +127,9 @@ pub struct App {
     pub now_playing: NowPlayingState,
     pub favorites: FavoritesState,
     pub favorite_ids: FavoriteIds,
+    pub favorites_tx: mpsc::UnboundedSender<AppResult<FavoritesUpdate>>,
+    pub favorites_rx: mpsc::UnboundedReceiver<AppResult<FavoritesUpdate>>,
+    pub favorites_failed: bool,
     pub search: SearchState,
     pub queue: QueueState,
     pub discover: DiscoverState,
@@ -219,6 +203,18 @@ impl App {
                     self.should_draw = true;
                 }
 
+                Some(update) = self.favorites_rx.recv() => {
+                    match update {
+                        Ok(FavoritesUpdate::Ids(ids)) => self.favorite_ids = ids,
+                        Ok(FavoritesUpdate::Lists(favorites)) => self.favorites.load(favorites),
+                        Err(err) => {
+                            self.favorites_failed = true;
+                            self.notifications.push(Notification::Error(err.to_string()));
+                        }
+                    }
+                    self.should_draw = true;
+                }
+
                 Ok(()) = self.status.changed() => {
                     let status = self.status.borrow_and_update();
                     self.now_playing.status = *status;
@@ -258,12 +254,21 @@ impl App {
         Ok(())
     }
 
-    pub(crate) async fn update_favorites(&mut self) {
-        let favorites = FavoritesState::new(&self.client).await;
-        if let Ok(favorites) = favorites {
-            self.favorite_ids = build_favorite_ids(&favorites);
-            self.favorites = favorites;
-        }
+    /// Loads the library off the event loop; the ids and the lists arrive through `favorites_rx`.
+    pub(crate) fn update_favorites(&mut self) {
+        self.favorites_failed = false;
+        let client = self.client.clone();
+        let sender = self.favorites_tx.clone();
+        tokio::spawn(async move {
+            let ids = client.favorite_ids().await.map(FavoritesUpdate::Ids);
+            let failed = ids.is_err();
+            let _ = sender.send(ids);
+            if failed {
+                return;
+            }
+            let lists = client.favorites().await.map(FavoritesUpdate::Lists);
+            let _ = sender.send(lists);
+        });
     }
 
     fn handle_focus_event(&mut self, key_code: KeyCode) -> Output {
@@ -306,7 +311,7 @@ impl App {
                 self.should_draw = true;
             }
             Output::UpdateFavorites => {
-                self.update_favorites().await;
+                self.update_favorites();
                 self.should_draw = true;
             }
             Output::NotConsumed => match key_code {
@@ -437,7 +442,7 @@ impl App {
                     if popups.is_empty() {
                         self.state = AppState::Normal;
                     }
-                    self.update_favorites().await;
+                    self.update_favorites();
                     self.should_draw = true;
                 }
             }
@@ -478,7 +483,7 @@ impl App {
                             if popups.is_empty() {
                                 self.state = AppState::Normal;
                             }
-                            self.update_favorites().await;
+                            self.update_favorites();
                         }
                         self.notifications
                             .push(Notification::Info("Added to playlist".into())); // Add track and playlist name
@@ -658,7 +663,11 @@ impl App {
         Ok(())
     }
 
-    const fn navigate_to_favorites(&mut self) {
+    /// A load that failed is tried again when the tab opens.
+    fn navigate_to_favorites(&mut self) {
+        if self.favorites_failed {
+            self.update_favorites();
+        }
         self.current_screen = Tab::Favorites;
     }
 
@@ -706,42 +715,5 @@ pub fn create_now_playing_state(tracklist: &Tracklist, status: Status) -> NowPla
         status,
         tracklist_position: tracklist.current_position(),
         duration_ms: 0,
-    }
-}
-
-pub fn build_favorite_ids(favorite_state: &FavoritesState) -> FavoriteIds {
-    let albums = favorite_state
-        .albums
-        .all_items()
-        .iter()
-        .map(|x| x.id.clone())
-        .collect();
-
-    let artists = favorite_state
-        .artists
-        .all_items()
-        .iter()
-        .map(|x| x.id)
-        .collect();
-
-    let playlists = favorite_state
-        .playlists
-        .all_items()
-        .iter()
-        .map(|x| x.id)
-        .collect();
-
-    let tracks = favorite_state
-        .tracks
-        .all_items()
-        .iter()
-        .map(|x| x.id)
-        .collect();
-
-    FavoriteIds {
-        albums,
-        artists,
-        playlists,
-        tracks,
     }
 }

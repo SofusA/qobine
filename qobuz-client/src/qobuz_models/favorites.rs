@@ -26,3 +26,10 @@ pub struct Artists {
     pub total: i64,
     pub items: Vec<Artist>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FavoriteIds {
+    pub albums: Vec<String>,
+    pub artists: Vec<u32>,
+    pub tracks: Vec<u32>,
+}

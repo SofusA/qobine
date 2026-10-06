@@ -33,11 +33,6 @@ impl<T> SimpleCache<T> {
         *self.created.write().await = Some(Instant::now());
     }
 
-    pub async fn clear(&self) {
-        *self.value.write().await = None;
-        *self.created.write().await = None;
-    }
-
     async fn valid(&self) -> bool {
         match *self.created.read().await {
             Some(created) => created.elapsed() < self.ttl,

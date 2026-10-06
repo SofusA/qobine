@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{Track, TrackStatus},
+    models::{FavoriteIds, Track, TrackStatus},
 };
 use player_module::{AppResult, client::StreamClient, notification::Notification};
 use ratatui::{
@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     detail_pages::{Overlay, TrackInfoOverlay},
     ui::{basic_list_table, block, mark_explicit_and_hifi},
 };
@@ -46,7 +46,7 @@ impl QueueState {
                         track.title.clone(),
                         track.explicit,
                         track.hires_available,
-                        favorites.tracks().contains(&track.id),
+                        favorites.tracks.contains(&track.id),
                     );
 
                     let mut spans = vec![Span::from(format!("{} ", index.saturating_add(1)))];

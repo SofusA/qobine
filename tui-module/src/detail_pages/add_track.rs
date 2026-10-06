@@ -1,11 +1,7 @@
-use controls_module::models::{PlaylistSimple, Track};
+use controls_module::models::{FavoriteIds, PlaylistSimple, Track};
 use ratatui::{crossterm::event::KeyCode, prelude::*};
 
-use crate::{
-    app::{FavoriteIds, Output},
-    ui::block,
-    widgets::playlist_list::PlaylistList,
-};
+use crate::{app::Output, ui::block, widgets::playlist_list::PlaylistList};
 
 pub struct AddTrackOverlay {
     playlists: PlaylistList,
@@ -33,7 +29,7 @@ impl AddTrackOverlay {
         frame.render_widget(&outer_block, area);
 
         self.playlists
-            .render(inner, frame.buffer_mut(), true, favorites.playlists());
+            .render(inner, frame.buffer_mut(), true, &favorites.playlists);
     }
 
     pub fn handle_event(&mut self, code: KeyCode) -> Output {

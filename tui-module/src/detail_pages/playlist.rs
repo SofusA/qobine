@@ -1,11 +1,14 @@
-use controls_module::{controls::Controls, models::Playlist};
+use controls_module::{
+    controls::Controls,
+    models::{FavoriteIds, Playlist},
+};
 use num_traits::ToPrimitive;
 use player_module::{AppResult, client::StreamClient};
 use ratatui::{crossterm::event::KeyCode, prelude::*, widgets::Paragraph};
 use ratatui_image::StatefulImage;
 
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds, tab_bar},
     widgets::track_list::{TrackList, TrackListEvent},
@@ -68,7 +71,7 @@ impl PlaylistOverlay {
             frame.buffer_mut(),
             true,
             true,
-            favorites.tracks(),
+            &favorites.tracks,
         );
 
         let selected_control = usize::from(self.shuffle);

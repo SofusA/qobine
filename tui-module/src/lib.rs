@@ -4,6 +4,7 @@ use app::{App, create_now_playing_state};
 use controls_module::{
     ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver,
     controls::{ConnectDevice, Controls},
+    models::FavoriteIds,
 };
 use disconnect_module::DisconnectClientConfig;
 use favorites::FavoritesState;
@@ -18,7 +19,7 @@ use tokio::sync::{mpsc, watch};
 use ui::center;
 
 use crate::{
-    app::{AppState, NotificationList, Tab, build_favorite_ids},
+    app::{AppState, NotificationList, Tab},
     image_cache::{ImageLoaded, ImageManager},
     search::SearchState,
 };
@@ -70,10 +71,9 @@ pub async fn init(
     let now_playing = create_now_playing_state(&tracklist_value, status_value);
 
     let initial_configuration = database.get_configuration().await?;
-    let favorites = FavoritesState::new(&client).await?;
-    let favorite_ids = build_favorite_ids(&favorites);
 
     let (image_tx, image_rx) = mpsc::unbounded_channel::<ImageLoaded>();
+    let (favorites_tx, favorites_rx) = mpsc::unbounded_channel();
     let image_cache = ImageManager::new(picker, image_tx);
 
     let mut app = App {
@@ -90,8 +90,11 @@ pub async fn init(
         should_draw: true,
         should_clear: false,
         state: AppState::default(),
-        favorites,
-        favorite_ids,
+        favorites: FavoritesState::default(),
+        favorite_ids: FavoriteIds::default(),
+        favorites_tx,
+        favorites_rx,
+        favorites_failed: false,
         search: SearchState::default(),
         queue: QueueState::new(queue_tracks),
         discover: discover::DiscoverState::new(&client).await?,
@@ -112,7 +115,7 @@ pub async fn init(
         disconnect_client_config_sender,
     };
 
-    app.update_favorites().await;
+    app.update_favorites();
 
     let result = app.run(&mut terminal).await;
     ratatui::restore();

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use qobuz_client::qobuz_models::playlist::Owner;
 
 pub mod mapper;
@@ -100,6 +102,14 @@ pub struct Favorites {
     pub artists: Vec<Artist>,
     pub playlists: Vec<Playlist>,
     pub tracks: Vec<Track>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct FavoriteIds {
+    pub albums: HashSet<String>,
+    pub artists: HashSet<u32>,
+    pub playlists: HashSet<u32>,
+    pub tracks: HashSet<u32>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
