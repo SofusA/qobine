@@ -26,7 +26,7 @@ use crate::{
 use axum::{extract::Query, response::Html, routing::get};
 use regex::Regex;
 use reqwest::{
-    Method, Response, StatusCode,
+    Method, Response,
     header::{HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
@@ -172,6 +172,8 @@ enum Endpoint {
     GenrePlaylists,
     DiscoverIndex,
     Suggest,
+    ReportStreamingStart,
+    ReportStreamingEnd,
 }
 
 impl Display for Endpoint {
@@ -204,6 +206,8 @@ impl Display for Endpoint {
             Self::GenrePlaylists => "discover/playlists",
             Self::DiscoverIndex => "discover/index",
             Self::Suggest => "dynamic/suggest",
+            Self::ReportStreamingStart => "track/reportStreamingStart",
+            Self::ReportStreamingEnd => "track/reportStreamingEndJson",
         };
 
         f.write_str(endpoint)
@@ -370,6 +374,44 @@ impl QobuzClient {
             .post(&endpoint, HashMap::from([("jwt", "jwt_api")]))
             .await?;
         Ok(response.jwt_api)
+    }
+
+    /// Tells Qobuz a track started streaming, as the web player does once per track.
+    pub async fn report_streaming_start(&self, track_id: u32, format_id: i32) -> Result<()> {
+        let event = StreamingStart {
+            track_id,
+            date: time::OffsetDateTime::now_utc().unix_timestamp(),
+            user_id: self.user_id,
+            format_id,
+        };
+        let events = serde_json::to_string(&[event]).map_err(|error| Error::Api {
+            message: error.to_string(),
+        })?;
+        let endpoint = format!("{}{}", self.base_url, Endpoint::ReportStreamingStart);
+        self.make_post_call(&endpoint, HashMap::from([("events", events.as_str())]))
+            .await?;
+        Ok(())
+    }
+
+    /// Tells Qobuz how long tracks were streamed, which is what pays the artists.
+    pub async fn report_streaming_end(
+        &self,
+        events: &[StreamingEnd],
+        software_version: &str,
+    ) -> Result<()> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::ReportStreamingEnd);
+        let report = StreamingEndReport {
+            events,
+            renderer_context: RendererContext { software_version },
+        };
+        let response: StatusResponse = self.post_json(&endpoint, &report).await?;
+        if response.status == "success" {
+            Ok(())
+        } else {
+            Err(Error::Api {
+                message: response.status,
+            })
+        }
     }
 
     pub fn set_credentials(&mut self, user_auth_token: &str, user_id: i64) {
@@ -1136,7 +1178,7 @@ struct StartResponse {
 }
 
 async fn handle_response(response: Response) -> Result<String> {
-    if response.status() == StatusCode::OK {
+    if response.status().is_success() {
         let res = response.text().await.unwrap_or_default();
         Ok(res)
     } else {
@@ -1239,6 +1281,41 @@ pub struct DelegatedToken {
     pub jwt: String,
     /// Unix time.
     pub exp: u64,
+}
+
+#[derive(Serialize)]
+struct StreamingStart {
+    track_id: u32,
+    date: i64,
+    user_id: i64,
+    format_id: i32,
+}
+
+/// A stretch of a track streamed without interruption, as the web player reports it: `blob` is the token `file/url` answered with.
+#[derive(Debug, Clone, Serialize)]
+pub struct StreamingEnd {
+    pub blob: String,
+    pub track_context_uuid: String,
+    pub start_stream: String,
+    pub online: bool,
+    pub local: bool,
+    pub duration: u64,
+}
+
+#[derive(Serialize)]
+struct StreamingEndReport<'a> {
+    events: &'a [StreamingEnd],
+    renderer_context: RendererContext<'a>,
+}
+
+#[derive(Serialize)]
+struct RendererContext<'a> {
+    software_version: &'a str,
+}
+
+#[derive(Deserialize)]
+struct StatusResponse {
+    status: String,
 }
 
 /// Exchange an OAuth authorization code for a `user_auth_token`.

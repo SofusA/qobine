@@ -26,6 +26,7 @@ use crate::{
     downloader::{DownloadResult, Downloader},
     error::PlayerError,
     notification::{Notification, NotificationBroadcast},
+    report::Reports,
     sink::{QueryTrackResult, Sink},
 };
 
@@ -54,6 +55,7 @@ pub struct Player {
     active_rx: Receiver<bool>,
     auto_play: Sender<bool>,
     auto_play_rx: Receiver<bool>,
+    reports: Option<Reports>,
 }
 
 impl Player {
@@ -87,6 +89,14 @@ impl Player {
 
         let (active, active_rx) = watch::channel(true);
 
+        let reports = Reports::spawn(
+            client.clone(),
+            active.subscribe(),
+            target_status.subscribe(),
+            position.subscribe(),
+            tracklist_tx.subscribe(),
+        );
+
         Ok(Self {
             broadcast,
             tracklist_tx,
@@ -110,6 +120,7 @@ impl Player {
             active_rx,
             auto_play,
             auto_play_rx,
+            reports: Some(reports),
         })
     }
 
@@ -974,11 +985,15 @@ impl Player {
 
                 Ok(exit) = exit_receiver.recv() => {
                     if exit {
-                        break Ok(());
+                        break;
                     }
                 }
             }
         }
+        if let Some(reports) = self.reports.take() {
+            reports.finish().await;
+        }
+        Ok(())
     }
 }
 

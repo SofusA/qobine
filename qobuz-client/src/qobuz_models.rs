@@ -44,11 +44,17 @@ pub struct TrackInfo {
     pub duration: Option<f64>,
     #[serde(default)]
     pub n_samples: Option<u64>,
+    #[serde(default)]
+    pub blob: Option<String>,
+    #[serde(default)]
+    pub format_id: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct TrackUrl {
     pub url: String,
+    #[serde(default)]
+    pub blob: Option<String>,
     pub format_id: i32,
     pub mime_type: String,
     pub sampling_rate: f64,
