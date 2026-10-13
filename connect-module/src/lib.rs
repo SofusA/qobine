@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{ConnectDevice, Controls, NewQueueItem},
@@ -24,12 +25,113 @@ const REFRESH_LEAD: Duration = Duration::from_secs(300);
 const REFRESH_RETRY: Duration = Duration::from_secs(60);
 const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
 
-struct Connect {
+pub async fn init(
+    mut client_config: watch::Receiver<SharedPlaybackConfig>,
+    client: Arc<StreamClient>,
     controls: Controls,
-    position_receiver: PositionReceiver,
-    tracklist_receiver: TracklistReceiver,
-    status_receiver: StatusReceiver,
-    volume_receiver: VolumeReceiver,
+    mut position_receiver: PositionReceiver,
+    mut tracklist_receiver: TracklistReceiver,
+    mut status_receiver: StatusReceiver,
+    mut volume_receiver: VolumeReceiver,
+    max_audio_quality: AudioQuality,
+    devices: watch::Sender<Vec<ConnectDevice>>,
+    mut activations: mpsc::UnboundedReceiver<i32>,
+    port: u16,
+) -> AppResult<()> {
+    loop {
+        let connect_name = loop {
+            let config = client_config.borrow().clone();
+
+            match config {
+                SharedPlaybackConfig::Connect(name) => break name,
+
+                SharedPlaybackConfig::Disconnect(_) | SharedPlaybackConfig::None => {
+                    tracing::info!("Qobuz Connect disabled");
+
+                    // Remove stale renderers from the UI.
+                    devices.send_replace(Vec::new());
+
+                    if client_config.changed().await.is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+        };
+
+        tracing::info!("Starting Qobuz Connect as {connect_name}");
+
+        let connect_future = run_client(
+            client.clone(),
+            connect_name,
+            controls.clone(),
+            &mut position_receiver,
+            &mut tracklist_receiver,
+            &mut status_receiver,
+            &mut volume_receiver,
+            max_audio_quality,
+            devices.clone(),
+            &mut activations,
+            port,
+        );
+
+        tokio::pin!(connect_future);
+
+        let result = tokio::select! {
+            result = &mut connect_future => Some(result),
+
+            changed = client_config.changed() => {
+                if changed.is_err() {
+                    return Ok(());
+                }
+
+                tracing::info!("Shared playback configuration changed");
+                None
+            }
+        };
+
+        // At this point connect_future is dropped, releasing its borrows.
+        drop(connect_future);
+
+        devices.send_replace(Vec::new());
+
+        match result {
+            None => {
+                // Configuration changed. Immediately inspect the new value.
+                continue;
+            }
+
+            Some(Ok(())) => {
+                tracing::warn!("Qobuz Connect stopped unexpectedly, retrying in 5 seconds");
+            }
+
+            Some(Err(err)) => {
+                tracing::error!("Qobuz Connect failed: {err}; retrying in 5 seconds");
+            }
+        }
+
+        // If startup/session handling failed, retry unless the config changes.
+        tokio::select! {
+            () = tokio::time::sleep(REJOIN_DELAY) => {}
+
+            changed = client_config.changed() => {
+                if changed.is_err() {
+                    return Ok(());
+                }
+
+                tracing::info!(
+                    "Shared playback configuration changed while waiting to retry"
+                );
+            }
+        }
+    }
+}
+
+struct Connect<'a> {
+    controls: Controls,
+    position_receiver: &'a mut PositionReceiver,
+    tracklist_receiver: &'a mut TracklistReceiver,
+    status_receiver: &'a mut StatusReceiver,
+    volume_receiver: &'a mut VolumeReceiver,
     max_audio_quality: ConnectQuality,
     connected: bool,
     muted: bool,
@@ -41,7 +143,7 @@ struct Connect {
     refused: bool,
     deferred: Option<Deferred>,
     devices: watch::Sender<Vec<ConnectDevice>>,
-    activations: mpsc::UnboundedReceiver<i32>,
+    activations: &'a mut mpsc::UnboundedReceiver<i32>,
     renderers: Vec<ConnectDevice>,
     taking_over: bool,
     remote: Option<Remote>,
@@ -75,22 +177,23 @@ struct Remote {
 
 type LocalItem = (u64, Option<i32>, u32);
 
-pub async fn init(
+async fn run_client(
     client: Arc<StreamClient>,
     connect_name: String,
     controls: Controls,
-    position_receiver: PositionReceiver,
-    tracklist_receiver: TracklistReceiver,
-    status_receiver: StatusReceiver,
-    volume_receiver: VolumeReceiver,
+    position_receiver: &mut PositionReceiver,
+    tracklist_receiver: &mut TracklistReceiver,
+    status_receiver: &mut StatusReceiver,
+    volume_receiver: &mut VolumeReceiver,
     max_audio_quality: AudioQuality,
     devices: watch::Sender<Vec<ConnectDevice>>,
-    activations: mpsc::UnboundedReceiver<i32>,
+    activations: &mut mpsc::UnboundedReceiver<i32>,
     port: u16,
 ) -> AppResult<()> {
     let device = device(connect_name, max_audio_quality);
     let delegated = !client.credentials_is_set()?;
     let app_id = client.app_id().await?;
+
     let (discovery, handovers) = Discovery::start(&device, &app_id, port)
         .await
         .map_err(|err| map_err(&err))?;
@@ -127,20 +230,24 @@ pub async fn init(
         discovery,
         handovers,
     };
+
     let mut session = if connect.delegated {
         next_session(&mut connect, None).await
     } else {
         own_session(&connect.client, &connect.device).await
     }
     .map_err(|err| map_err(&err))?;
+
     loop {
         let handover = connect
             .run(&mut session)
             .await
             .map_err(|err| map_err(&err))?;
+
         session = next_session(&mut connect, handover)
             .await
             .map_err(|err| map_err(&err))?;
+
         connect.reset();
     }
 }
@@ -158,7 +265,10 @@ async fn own_session(client: &Arc<StreamClient>, device: &Device) -> Result<Sess
 }
 
 /// The session handed over on the LAN, or the account's own one again once a session is over or a handover cannot be joined. Without a login, the next handover instead.
-async fn next_session(connect: &mut Connect, handover: Option<Handover>) -> Result<Session, Error> {
+async fn next_session(
+    connect: &mut Connect<'_>,
+    handover: Option<Handover>,
+) -> Result<Session, Error> {
     if let Some(handover) = handover {
         if let Some(session) = join_handed(connect, handover).await {
             return Ok(session);
@@ -187,7 +297,7 @@ async fn next_session(connect: &mut Connect, handover: Option<Handover>) -> Resu
 }
 
 /// The handed over session, streamed with the account of the app when there is no login of its own.
-async fn join_handed(connect: &mut Connect, handover: Handover) -> Option<Session> {
+async fn join_handed(connect: &mut Connect<'_>, handover: Handover) -> Option<Session> {
     tracing::info!(
         "Joining session {} handed over on the LAN",
         handover.session_id
@@ -329,7 +439,7 @@ fn items(tracks: &[QueueTrackRef]) -> Vec<NewQueueItem> {
         .collect()
 }
 
-impl Connect {
+impl Connect<'_> {
     async fn run(&mut self, session: &mut Session) -> Result<Option<Handover>, Error> {
         loop {
             tokio::select! {

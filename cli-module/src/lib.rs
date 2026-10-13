@@ -34,7 +34,7 @@ pub struct SharedArgs {
 
 #[derive(Args, Debug)]
 pub struct ConnectArgs {
-    #[clap(long)]
+    #[clap(long, conflicts_with = "disconnect")]
     pub connect: bool,
 
     #[clap(flatten)]
