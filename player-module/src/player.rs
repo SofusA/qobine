@@ -25,6 +25,7 @@ use crate::{
     database::Database,
     downloader::{DownloadResult, Downloader},
     error::PlayerError,
+    expand_tilde,
     notification::{Notification, NotificationBroadcast},
     report::Reports,
     sink::{QueryTrackResult, Sink},
@@ -884,6 +885,7 @@ impl Player {
                     self.client.set_max_audio_quality(new_quality).await;
                 }
                 StreamingConfiguration::SetAudioCacheDirectory { new_directory } => {
+                    let new_directory = expand_tilde(&new_directory);
                     self.database.set_cache_directory(&new_directory).await?;
                     self.downloader.set_audio_cache_dir(new_directory);
                 }

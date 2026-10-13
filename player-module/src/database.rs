@@ -166,7 +166,7 @@ impl Database {
     }
 
     pub async fn set_cache_directory(&self, directory: &Path) -> AppResult<()> {
-        tokio::fs::create_dir_all(directory)
+        tokio::fs::create_dir_all(&directory)
             .await
             .map_err(|e| PlayerError::StorageError {
                 error: format!("Unable to create directory: {e}"),
