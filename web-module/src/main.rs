@@ -3,11 +3,11 @@ use cli_module::ConnectArgs;
 #[cfg(feature = "gpio")]
 use cli_module::GpioArgs;
 use cli_module::{
-    DelayArgs, DisconnectArgs, RfidArgs, SharedArgs, SharedCommands, create_player,
-    default_audio_quality, get_client, handle_shared_commands, parse_disconnect_args,
-    spawn_clean_up,
+    DelayArgs, DisconnectArgs, ParsedDisconnect, RfidArgs, SharedArgs, SharedCommands,
+    SharedPlaybackConfig, create_player, default_audio_quality, get_client, handle_shared_commands,
+    parse_disconnect_args, spawn_clean_up,
 };
-use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
+use disconnect_module::spawn_disconnect;
 use rfid_module::{RfidState, spawn_rfid};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -122,7 +122,9 @@ pub async fn run() -> AppResult<()> {
         let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
         let (active_device_tx, active_device_rx) = watch::channel(String::default());
         let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
-        let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {
+
+        // TODO: Also fix Connect
+        let (_, config_rx) = watch::channel(SharedPlaybackConfig::Disconnect(ParsedDisconnect {
             server_url: disconnect_args.server_url.clone(),
             password: disconnect_args.password.clone(),
             device_name: disconnect_args.device_name.clone(),

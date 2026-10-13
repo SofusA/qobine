@@ -1,6 +1,6 @@
+use cli_module::{ParsedDisconnect, SharedPlaybackConfig};
 use controls_module::{ExitSender, controls::Controls};
 use crossterm::event::KeyModifiers;
-use disconnect_module::DisconnectClientConfig;
 use player_module::{
     AudioQuality,
     database::{Configuration, Database},
@@ -102,7 +102,7 @@ pub struct PreferencesState {
     disconnect_server_url: Input,
     disconnect_password: Input,
     disconnect_device_name: Input,
-    disconnect_saved_config: Option<DisconnectClientConfig>,
+    shared_playback_saved_config: SharedPlaybackConfig,
 }
 
 impl PreferencesState {
@@ -128,18 +128,18 @@ impl PreferencesState {
             .unwrap_or_default();
         let disconnect_device_name_value = configuration.device_name.clone().unwrap_or_default();
 
-        let disconnect_saved_config = if disconnect_enabled
+        let shared_playback_saved_config = if disconnect_enabled
             && !disconnect_server_url_value.trim().is_empty()
             && !disconnect_password_value.trim().is_empty()
             && !disconnect_device_name_value.trim().is_empty()
         {
-            Some(DisconnectClientConfig {
+            SharedPlaybackConfig::Disconnect(ParsedDisconnect {
                 server_url: disconnect_server_url_value.trim().to_string(),
                 password: disconnect_password_value.trim().to_string(),
                 device_name: disconnect_device_name_value.trim().to_string(),
             })
         } else {
-            None
+            SharedPlaybackConfig::None
         };
 
         Self {
@@ -155,7 +155,7 @@ impl PreferencesState {
             disconnect_server_url: Input::default().with_value(disconnect_server_url_value),
             disconnect_password: Input::default().with_value(disconnect_password_value),
             disconnect_device_name: Input::default().with_value(disconnect_device_name_value),
-            disconnect_saved_config,
+            shared_playback_saved_config,
             tab: PreferencesTab::default(),
             pane: PreferencesPane::default(),
             field: PreferenceFocus::default(),
@@ -484,14 +484,14 @@ impl PreferencesState {
         event: Event,
         controls: &Controls,
         database: &Database,
-        disconnect_client_config_sender: &watch::Sender<Option<DisconnectClientConfig>>,
+        shared_playback_config_sender: &watch::Sender<SharedPlaybackConfig>,
     ) -> Output {
         match event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 if key_event.code == KeyCode::Char('s')
                     && key_event.modifiers.contains(KeyModifiers::CONTROL)
                 {
-                    self.save_all_settings(controls, database, disconnect_client_config_sender)
+                    self.save_all_settings(controls, database, shared_playback_config_sender)
                         .await;
 
                     return Output::Consumed;
@@ -732,7 +732,7 @@ impl PreferencesState {
         &mut self,
         controls: &Controls,
         database: &Database,
-        disconnect_client_config_sender: &watch::Sender<Option<DisconnectClientConfig>>,
+        shared_playback_config_sender: &watch::Sender<SharedPlaybackConfig>,
     ) {
         let cache_directory = self.cache_path_input.value().trim().to_string();
         let cache_ttl_hours = self.parse_cache_ttl();
@@ -754,10 +754,10 @@ impl PreferencesState {
         controls.set_auto_play(self.auto_play);
         self.configuration.auto_play = self.auto_play;
 
-        let disconnect_config = self.disconnect_config();
+        let shared_playback_config = self.shared_playback_config();
 
-        let _ = disconnect_client_config_sender.send(disconnect_config.clone());
-        self.disconnect_saved_config = disconnect_config.clone();
+        let _ = shared_playback_config_sender.send(shared_playback_config.clone());
+        self.shared_playback_saved_config = shared_playback_config.clone();
 
         self.configuration.enable_disconnect = self.disconnect_enabled;
         self.configuration.disconnect_server_url =
@@ -765,7 +765,8 @@ impl PreferencesState {
         self.configuration.disconnect_password = trimmed_optional_value(&self.disconnect_password);
         self.configuration.device_name = trimmed_optional_value(&self.disconnect_device_name);
 
-        if let Some(config) = disconnect_config {
+        // TODO: Also Connect
+        if let SharedPlaybackConfig::Disconnect(config) = shared_playback_config {
             let _ = database
                 .set_disconnect_config(&config.server_url, &config.password, &config.device_name)
                 .await;
@@ -805,20 +806,20 @@ impl PreferencesState {
         self.parse_cache_ttl() != self.configuration.cache_ttl_hours
     }
 
-    fn disconnect_config(&self) -> Option<DisconnectClientConfig> {
+    fn shared_playback_config(&self) -> SharedPlaybackConfig {
         let server_url = self.disconnect_server_url.value().trim();
         let password = self.disconnect_password.value().trim();
         let device_name = self.disconnect_device_name.value().trim();
 
         if !self.disconnect_enabled {
-            return None;
+            return SharedPlaybackConfig::None;
         }
 
         if server_url.is_empty() || password.is_empty() || device_name.is_empty() {
-            return None;
+            return SharedPlaybackConfig::None;
         }
 
-        Some(DisconnectClientConfig {
+        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
             server_url: server_url.to_string(),
             password: password.to_string(),
             device_name: device_name.to_string(),

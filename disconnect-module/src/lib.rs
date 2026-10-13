@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     AutoPlayReceiver, ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver,
     VolumeReceiver,
@@ -16,7 +17,7 @@ mod client;
 pub fn spawn_disconnect(
     player: &Player,
     exit_sender: ExitSender,
-    client_config: watch::Receiver<Option<DisconnectClientConfig>>,
+    client_config: watch::Receiver<SharedPlaybackConfig>,
     available_devices_sender: watch::Sender<Vec<String>>,
     active_device_sender: watch::Sender<String>,
     set_active_device_receiver: mpsc::UnboundedReceiver<String>,
@@ -61,15 +62,8 @@ pub fn spawn_disconnect(
     });
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DisconnectClientConfig {
-    pub server_url: String,
-    pub password: String,
-    pub device_name: String,
-}
-
 struct DisconnectState {
-    client_config: watch::Receiver<Option<DisconnectClientConfig>>,
+    client_config: watch::Receiver<SharedPlaybackConfig>,
 
     position_receiver: PositionReceiver,
     tracklist_receiver: TracklistReceiver,
@@ -95,7 +89,8 @@ impl DisconnectState {
         let mut set_active_device_receiver = Some(set_active_device_receiver);
 
         loop {
-            let Some(config) = self.client_config.borrow().clone() else {
+            let SharedPlaybackConfig::Disconnect(config) = self.client_config.borrow().clone()
+            else {
                 tracing::info!("Disconnect disabled");
 
                 if self.client_config.changed().await.is_err() {
@@ -233,7 +228,7 @@ impl DisconnectState {
 }
 
 async fn init(
-    client_config: watch::Receiver<Option<DisconnectClientConfig>>,
+    client_config: watch::Receiver<SharedPlaybackConfig>,
     controls: Controls,
 
     tracklist_sender: watch::Sender<Tracklist>,

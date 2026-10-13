@@ -1,7 +1,7 @@
-use cli_module::{create_player, spawn_clean_up_mut};
+use cli_module::{ParsedDisconnect, SharedPlaybackConfig, create_player, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
-use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
+use disconnect_module::spawn_disconnect;
 #[cfg(target_os = "linux")]
 use mpris_module::spawn_mpris;
 use std::sync::Arc;
@@ -68,21 +68,22 @@ pub async fn run() -> AppResult<()> {
         ttl_rx,
     );
 
-    let disconnect_client_config = if configuration.enable_disconnect
+    // TODO: Also look for Connect
+    let shared_playback_config = if configuration.enable_disconnect
         && let Some(server_url) = configuration.disconnect_server_url
         && let Some(password) = configuration.disconnect_password
         && let Some(device_name) = configuration.device_name
     {
-        Some(DisconnectClientConfig {
+        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
             server_url,
             password,
             device_name,
         })
     } else {
-        None
+        SharedPlaybackConfig::None
     };
 
-    let (config_tx, config_rx) = watch::channel(disconnect_client_config);
+    let (config_tx, config_rx) = watch::channel(shared_playback_config);
     let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
     let (active_device_tx, active_device_rx) = watch::channel(String::default());
     let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();

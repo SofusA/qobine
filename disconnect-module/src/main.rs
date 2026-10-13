@@ -1,8 +1,8 @@
 use cli_module::{
-    DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality, get_client,
-    handle_shared_commands, spawn_clean_up,
+    DelayArgs, ParsedDisconnect, SharedArgs, SharedCommands, SharedPlaybackConfig, create_player,
+    default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
-use disconnect_module::{DisconnectClientConfig, spawn_disconnect};
+use disconnect_module::spawn_disconnect;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
 
@@ -83,7 +83,7 @@ pub async fn run() -> AppResult<()> {
     let (active_device_sender, _) = watch::channel(String::default());
     let (_, active_device_receiver) = mpsc::unbounded_channel();
 
-    let (_, config_rx) = watch::channel(Some(DisconnectClientConfig {
+    let (_, config_rx) = watch::channel(SharedPlaybackConfig::Disconnect(ParsedDisconnect {
         server_url: args.server_url,
         password: args.password,
         device_name: args.device_name,

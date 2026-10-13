@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use cli_module::ParsedDisconnect;
+use cli_module::SharedPlaybackConfig;
 use futures::executor::block_on;
 use gtk::gio;
 use gtk::prelude::*;
@@ -10,7 +12,6 @@ use gtk4 as gtk;
 use adw::prelude::*;
 use controls_module::ExitSender;
 use controls_module::controls::Controls;
-use disconnect_module::DisconnectClientConfig;
 use libadwaita as adw;
 use player_module::AudioQuality;
 use player_module::database::Configuration;
@@ -393,6 +394,7 @@ fn disconnect_group(
     save.set_sensitive(false);
 
     let saved_state = Rc::new(RefCell::new(
+        // TODO: Also Connect
         match (
             configuration.enable_disconnect,
             configuration.disconnect_server_url.as_deref(),
@@ -400,13 +402,13 @@ fn disconnect_group(
             configuration.device_name.as_deref(),
         ) {
             (true, Some(server_url), Some(password), Some(device_name)) => {
-                Some(DisconnectClientConfig {
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
                     server_url: server_url.to_owned(),
                     password: password.to_owned(),
                     device_name: device_name.to_owned(),
                 })
             }
-            _ => None,
+            _ => SharedPlaybackConfig::None,
         },
     ));
 
@@ -426,7 +428,13 @@ fn disconnect_group(
             device_row.set_sensitive(active);
 
             if !active {
-                save.set_sensitive(saved_state.borrow().is_some());
+                // TODO: Fix this
+                let is_disconnect = match *saved_state.borrow() {
+                    SharedPlaybackConfig::Disconnect(_) => true,
+                    SharedPlaybackConfig::Connect(_) | SharedPlaybackConfig::None => false,
+                };
+
+                save.set_sensitive(is_disconnect);
                 return;
             }
 
@@ -455,7 +463,7 @@ fn disconnect_group(
                 return;
             }
 
-            let current = Some(DisconnectClientConfig {
+            let current = SharedPlaybackConfig::Disconnect(ParsedDisconnect {
                 server_url,
                 password,
                 device_name,
@@ -498,20 +506,21 @@ fn disconnect_group(
             let password = password_row.text().to_string();
             let device_name = device_row.text().to_string();
 
+            // TODO: Also Config
             let config = if enabled.is_active() {
-                Some(DisconnectClientConfig {
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
                     server_url,
                     password,
                     device_name,
                 })
             } else {
-                None
+                SharedPlaybackConfig::None
             };
 
             saved_state.borrow_mut().clone_from(&config);
 
             if let Err(error) =
-                ui_event_sender.send(crate::UiEvent::DisconnectClientConfig(config.clone()))
+                ui_event_sender.send(crate::UiEvent::SharedPlaybackConfig(config.clone()))
             {
                 tracing::error!("Failed to send disconnect configuration: {error}");
             }
@@ -521,7 +530,8 @@ fn disconnect_group(
 
                 async move {
                     // TODO: Show notification.
-                    if let Some(config) = config {
+                    // TODO: Also handle Connect
+                    if let SharedPlaybackConfig::Disconnect(config) = config {
                         if let Err(error) = database
                             .set_disconnect_config(
                                 &config.server_url,

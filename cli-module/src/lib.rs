@@ -96,6 +96,7 @@ pub struct DisconnectArgs {
     disconnect_server_url: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ParsedDisconnect {
     pub device_name: String,
     pub password: String,
@@ -329,4 +330,11 @@ pub async fn create_player(
     )?;
 
     Ok(player)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SharedPlaybackConfig {
+    Connect(String),
+    Disconnect(ParsedDisconnect),
+    None,
 }

@@ -1,11 +1,11 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use adw::{Application, prelude::*};
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls, tracklist::Tracklist,
 };
-use disconnect_module::DisconnectClientConfig;
 use libadwaita::{self as adw, ApplicationWindow};
 use player_module::{
     AppResult,
@@ -43,7 +43,7 @@ pub fn init(
     connect_available_devices: watch::Receiver<Vec<String>>,
     connect_active_device: watch::Receiver<String>,
     set_connect_active_device: mpsc::UnboundedSender<String>,
-    disconnect_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    disconnect_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) -> AppResult<()> {
     libadwaita::init().map_err(|err| PlayerError::Gtk {
         message: err.to_string(),
@@ -177,7 +177,7 @@ fn build_ui(
     connect_available_devices: watch::Receiver<Vec<String>>,
     connect_active_device: watch::Receiver<String>,
     set_connect_active_device: mpsc::UnboundedSender<String>,
-    disconnect_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    disconnect_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -286,7 +286,7 @@ fn setup_listener(
     mut status_receiver: StatusReceiver,
     mut position_receiver: PositionReceiver,
     mut volume_receiver: VolumeReceiver,
-    disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
     mut connect_available_devices: watch::Receiver<Vec<String>>,
     mut connect_active_device: watch::Receiver<String>,
     broadcast: &NotificationBroadcast,
@@ -415,8 +415,8 @@ fn setup_listener(
                     window.close();
                     break;
                 }
-                UiEvent::DisconnectClientConfig(disconnect_client_config) => {
-                    _ = disconnect_client_config_sender.send(disconnect_client_config);
+                UiEvent::SharedPlaybackConfig(shared_playback_config) => {
+                    _ = shared_playback_config_sender.send(shared_playback_config);
                 }
                 UiEvent::Connect(devices) => {
                     now_playing_bar.set_output_devices(devices.0, devices.1);
@@ -435,7 +435,7 @@ enum UiEvent {
     FavoritesChanged,
     Exit,
     Toast(String),
-    DisconnectClientConfig(Option<DisconnectClientConfig>),
+    SharedPlaybackConfig(SharedPlaybackConfig),
     Connect((Vec<String>, String)),
 }
 

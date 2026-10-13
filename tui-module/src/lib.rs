@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use app::{App, create_now_playing_state};
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver,
     controls::{ConnectDevice, Controls},
 };
-use disconnect_module::DisconnectClientConfig;
 use favorites::FavoritesState;
 use player_module::{
     AppResult, client::StreamClient, database::Database, error::PlayerError,
@@ -52,7 +52,7 @@ pub async fn init(
     set_connect_active_device: mpsc::UnboundedSender<String>,
     connect_devices: watch::Receiver<Vec<ConnectDevice>>,
     activate_connect_device: mpsc::UnboundedSender<i32>,
-    disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) -> AppResult<()> {
     let mut terminal = ratatui::init();
 
@@ -109,7 +109,7 @@ pub async fn init(
         set_connect_active_device,
         connect_devices,
         activate_connect_device,
-        disconnect_client_config_sender,
+        shared_playback_config_sender,
     };
 
     app.update_favorites().await;

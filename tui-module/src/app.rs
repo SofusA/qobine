@@ -9,6 +9,7 @@ use crate::{
     queue::QueueState,
     search::SearchState,
 };
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver,
     controls::{ConnectDevice, Controls},
@@ -17,7 +18,6 @@ use controls_module::{
 };
 use core::fmt;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
-use disconnect_module::DisconnectClientConfig;
 use futures::StreamExt;
 use num_traits::ToPrimitive;
 use player_module::{
@@ -158,7 +158,7 @@ pub struct App {
     pub set_connect_active_device: mpsc::UnboundedSender<String>,
     pub connect_devices: watch::Receiver<Vec<ConnectDevice>>,
     pub activate_connect_device: mpsc::UnboundedSender<i32>,
-    pub disconnect_client_config_sender: watch::Sender<Option<DisconnectClientConfig>>,
+    pub shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 }
 
 #[derive(Default)]
@@ -644,7 +644,7 @@ impl App {
                             event,
                             &self.controls,
                             &self.database,
-                            &self.disconnect_client_config_sender,
+                            &self.shared_playback_config_sender,
                         )
                         .await),
                 };
