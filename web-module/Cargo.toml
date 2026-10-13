@@ -14,7 +14,7 @@ name = "qobine-web"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["connect"]
 gpio = ["gpio-module/gpio"]
 connect = ["dep:connect-module"]
 

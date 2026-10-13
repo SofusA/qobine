@@ -14,7 +14,7 @@ name = "qobine-tui"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["connect"]
 connect = ["dep:connect-module"]
 
 [dependencies]
