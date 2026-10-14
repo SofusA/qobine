@@ -864,10 +864,18 @@ impl PreferencesState {
                     )
                     .await;
 
+                let _ = database.set_connect_enabled(false).await;
                 let _ = database.set_disconnect_enabled(true).await;
             }
 
-            SharedPlaybackConfig::Connect(_) | SharedPlaybackConfig::None => {
+            SharedPlaybackConfig::Connect(device_name) => {
+                let _ = database.set_device_name(device_name).await;
+                let _ = database.set_connect_enabled(true).await;
+                let _ = database.set_disconnect_enabled(false).await;
+            }
+
+            SharedPlaybackConfig::None => {
+                let _ = database.set_connect_enabled(false).await;
                 let _ = database.set_disconnect_enabled(false).await;
             }
         }
