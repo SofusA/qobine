@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE configuration\n        SET enable_connect= ?\n        WHERE rowid = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "67939a244efec124125b76469b864d22ce6f3e560cd3736d5e3d81796963068d"
+}
