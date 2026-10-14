@@ -23,7 +23,7 @@ enum PreferencesTab {
     #[default]
     Cache,
     Audio,
-    Disconnect,
+    SharedPlayback,
     Logout,
 }
 
@@ -31,8 +31,8 @@ impl PreferencesTab {
     fn next(self) -> Self {
         match self {
             Self::Cache => Self::Audio,
-            Self::Audio => Self::Disconnect,
-            Self::Disconnect => Self::Logout,
+            Self::Audio => Self::SharedPlayback,
+            Self::SharedPlayback => Self::Logout,
             Self::Logout => Self::Cache,
         }
     }
@@ -41,21 +41,55 @@ impl PreferencesTab {
         match self {
             Self::Cache => Self::Logout,
             Self::Audio => Self::Cache,
-            Self::Disconnect => Self::Audio,
-            Self::Logout => Self::Disconnect,
+            Self::SharedPlayback => Self::Audio,
+            Self::Logout => Self::SharedPlayback,
         }
     }
 
     const fn labels() -> [&'static str; 4] {
-        ["Cache", "Audio", "Disconnect", "Logout"]
+        ["Cache", "Audio", "Shared playback", "Logout"]
     }
 
     const fn index(self) -> usize {
         match self {
             Self::Cache => 0,
             Self::Audio => 1,
-            Self::Disconnect => 2,
+            Self::SharedPlayback => 2,
             Self::Logout => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum SharedPlaybackMode {
+    #[default]
+    None,
+    Connect,
+    Disconnect,
+}
+
+impl SharedPlaybackMode {
+    const fn next(self) -> Self {
+        match self {
+            Self::None => Self::Connect,
+            Self::Connect => Self::Disconnect,
+            Self::Disconnect => Self::None,
+        }
+    }
+
+    const fn previous(self) -> Self {
+        match self {
+            Self::None => Self::Disconnect,
+            Self::Connect => Self::None,
+            Self::Disconnect => Self::Connect,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::None => "disabled",
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
         }
     }
 }
@@ -75,7 +109,8 @@ enum PreferenceFocus {
     AudioQuality,
     FileBasedStreaming,
     AutoPlay,
-    DisconnectEnabled,
+    SharedPlaybackMode,
+    ConnectDeviceName,
     DisconnectServerUrl,
     DisconnectPassword,
     DisconnectDeviceName,
@@ -98,7 +133,8 @@ pub struct PreferencesState {
     use_file_based_streaming: bool,
     auto_play: bool,
 
-    disconnect_enabled: bool,
+    shared_playback_mode: SharedPlaybackMode,
+    connect_device_name: Input,
     disconnect_server_url: Input,
     disconnect_password: Input,
     disconnect_device_name: Input,
@@ -142,6 +178,12 @@ impl PreferencesState {
             SharedPlaybackConfig::None
         };
 
+        let shared_playback_mode = match &shared_playback_saved_config {
+            SharedPlaybackConfig::Connect(_) => SharedPlaybackMode::Connect,
+            SharedPlaybackConfig::Disconnect(_) => SharedPlaybackMode::Disconnect,
+            SharedPlaybackConfig::None => SharedPlaybackMode::None,
+        };
+
         Self {
             exit_sender,
             audio_cache_ttl_sender,
@@ -151,7 +193,8 @@ impl PreferencesState {
             audio_quality,
             use_file_based_streaming,
             auto_play,
-            disconnect_enabled,
+            shared_playback_mode,
+            connect_device_name: Input::default(),
             disconnect_server_url: Input::default().with_value(disconnect_server_url_value),
             disconnect_password: Input::default().with_value(disconnect_password_value),
             disconnect_device_name: Input::default().with_value(disconnect_device_name_value),
@@ -186,7 +229,9 @@ impl PreferencesState {
         match self.tab {
             PreferencesTab::Cache => self.render_cache(frame, content_area),
             PreferencesTab::Audio => self.render_audio(frame, content_area),
-            PreferencesTab::Disconnect => self.render_disconnect(frame, content_area),
+            PreferencesTab::SharedPlayback => {
+                self.render_shared_playback(frame, content_area);
+            }
             PreferencesTab::Logout => {
                 frame.render_widget(
                     Paragraph::new("Enter to logout").alignment(Alignment::Center),
@@ -370,7 +415,7 @@ impl PreferencesState {
         frame.render_widget(paragraph, area);
     }
 
-    fn render_disconnect_input(
+    fn render_shared_playback_input(
         &self,
         frame: &mut Frame,
         area: Rect,
@@ -380,31 +425,27 @@ impl PreferencesState {
     ) {
         let focused = self.pane == PreferencesPane::Content && self.field == field;
 
-        let mut style = if focused {
-            HIGHLIGHT_TEXT_STYLE
-        } else {
-            Style::default()
-        };
-
-        if !self.disconnect_enabled {
-            style = style.add_modifier(Modifier::DIM);
-        }
-
         let mut block = Block::default().borders(Borders::ALL).title(title);
 
-        if self.disconnect_enabled && Self::disconnect_field_error(input) && !focused {
+        if Self::shared_playback_field_error(input) && !focused {
             block = block.border_style(Style::default().fg(Color::Red));
         }
 
         frame.render_widget(
-            Paragraph::new(input.value()).style(style).block(block),
+            Paragraph::new(input.value())
+                .style(if focused {
+                    HIGHLIGHT_TEXT_STYLE
+                } else {
+                    Style::default()
+                })
+                .block(block),
             area,
         );
 
         if focused && self.editing {
             let cursor_y = area.y.saturating_add(1);
 
-            if let Ok(cursor_offset) = u16::try_from(self.cache_path_input.visual_cursor())
+            if let Ok(cursor_offset) = u16::try_from(input.visual_cursor())
                 && let Some(cursor_x) = area
                     .x
                     .checked_add(1)
@@ -415,65 +456,93 @@ impl PreferencesState {
         }
     }
 
-    fn render_disconnect(&mut self, frame: &mut Frame, area: Rect) {
-        let [enabled_area, server_url_area, password_area, name_area] = Layout::vertical([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-        ])
-        .areas(area);
-
+    fn render_shared_playback(&mut self, frame: &mut Frame, area: Rect) {
         let focused = self.pane == PreferencesPane::Content
-            && self.field == PreferenceFocus::DisconnectEnabled;
+            && self.field == PreferenceFocus::SharedPlaybackMode;
+
+        let [mode_area, remaining_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).areas(area);
 
         frame.render_widget(
-            Paragraph::new(if self.disconnect_enabled {
-                "[ enabled ]"
-            } else {
-                "[ disabled ]"
-            })
-            .style(if focused {
-                HIGHLIGHT_TEXT_STYLE
-            } else {
-                Style::default()
-            })
-            .block(Block::default().borders(Borders::ALL).title("Disconnect")),
-            enabled_area,
+            Paragraph::new(format!("< {} >", self.shared_playback_mode.label()))
+                .style(if focused {
+                    HIGHLIGHT_TEXT_STYLE
+                } else {
+                    Style::default()
+                })
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Shared playback"),
+                ),
+            mode_area,
         );
 
-        self.render_disconnect_input(
-            frame,
-            server_url_area,
-            "Server URL",
-            &self.disconnect_server_url,
-            PreferenceFocus::DisconnectServerUrl,
-        );
+        match self.shared_playback_mode {
+            SharedPlaybackMode::None => {}
 
-        self.render_disconnect_input(
-            frame,
-            password_area,
-            "Password",
-            &self.disconnect_password,
-            PreferenceFocus::DisconnectPassword,
-        );
+            SharedPlaybackMode::Connect => {
+                let [name_area, _] = Layout::vertical([Constraint::Length(3), Constraint::Min(0)])
+                    .areas(remaining_area);
 
-        self.render_disconnect_input(
-            frame,
-            name_area,
-            "Device name",
-            &self.disconnect_device_name,
-            PreferenceFocus::DisconnectDeviceName,
-        );
+                self.render_shared_playback_input(
+                    frame,
+                    name_area,
+                    "Connect name",
+                    &self.connect_device_name,
+                    PreferenceFocus::ConnectDeviceName,
+                );
+            }
+
+            SharedPlaybackMode::Disconnect => {
+                let [server_url_area, password_area, name_area, _] = Layout::vertical([
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                ])
+                .areas(remaining_area);
+
+                self.render_shared_playback_input(
+                    frame,
+                    server_url_area,
+                    "Server URL",
+                    &self.disconnect_server_url,
+                    PreferenceFocus::DisconnectServerUrl,
+                );
+
+                self.render_shared_playback_input(
+                    frame,
+                    password_area,
+                    "Password",
+                    &self.disconnect_password,
+                    PreferenceFocus::DisconnectPassword,
+                );
+
+                self.render_shared_playback_input(
+                    frame,
+                    name_area,
+                    "Device name",
+                    &self.disconnect_device_name,
+                    PreferenceFocus::DisconnectDeviceName,
+                );
+            }
+        }
     }
 
     const fn field_is_input(&self) -> bool {
         match self.field {
             PreferenceFocus::CacheDirectory | PreferenceFocus::CacheTimeToLive => true,
 
+            PreferenceFocus::ConnectDeviceName => {
+                matches!(self.shared_playback_mode, SharedPlaybackMode::Connect)
+            }
+
             PreferenceFocus::DisconnectServerUrl
             | PreferenceFocus::DisconnectPassword
-            | PreferenceFocus::DisconnectDeviceName => self.disconnect_enabled,
+            | PreferenceFocus::DisconnectDeviceName => {
+                matches!(self.shared_playback_mode, SharedPlaybackMode::Disconnect)
+            }
 
             _ => false,
         }
@@ -563,8 +632,8 @@ impl PreferencesState {
                 self.auto_play = !self.auto_play;
             }
 
-            PreferenceFocus::DisconnectEnabled => {
-                self.disconnect_enabled = !self.disconnect_enabled;
+            PreferenceFocus::SharedPlaybackMode => {
+                self.shared_playback_mode = self.shared_playback_mode.previous();
                 self.editing = false;
             }
 
@@ -591,8 +660,8 @@ impl PreferencesState {
                 self.auto_play = !self.auto_play;
             }
 
-            PreferenceFocus::DisconnectEnabled => {
-                self.disconnect_enabled = !self.disconnect_enabled;
+            PreferenceFocus::SharedPlaybackMode => {
+                self.shared_playback_mode = self.shared_playback_mode.next();
                 self.editing = false;
             }
 
@@ -606,7 +675,7 @@ impl PreferencesState {
         self.field = match self.tab {
             PreferencesTab::Cache => PreferenceFocus::CacheDirectory,
             PreferencesTab::Audio => PreferenceFocus::AudioQuality,
-            PreferencesTab::Disconnect => PreferenceFocus::DisconnectEnabled,
+            PreferencesTab::SharedPlayback => PreferenceFocus::SharedPlaybackMode,
             PreferencesTab::Logout => PreferenceFocus::Logout,
         };
     }
@@ -626,20 +695,21 @@ impl PreferencesState {
                 _ => PreferenceFocus::AudioQuality,
             },
 
-            PreferencesTab::Disconnect => {
-                if self.disconnect_enabled {
-                    match self.field {
-                        PreferenceFocus::DisconnectEnabled => PreferenceFocus::DisconnectServerUrl,
-                        PreferenceFocus::DisconnectServerUrl => PreferenceFocus::DisconnectPassword,
-                        PreferenceFocus::DisconnectPassword => {
-                            PreferenceFocus::DisconnectDeviceName
-                        }
-                        _ => PreferenceFocus::DisconnectEnabled,
-                    }
-                } else {
-                    PreferenceFocus::DisconnectEnabled
-                }
-            }
+            PreferencesTab::SharedPlayback => match self.shared_playback_mode {
+                SharedPlaybackMode::None => PreferenceFocus::SharedPlaybackMode,
+
+                SharedPlaybackMode::Connect => match self.field {
+                    PreferenceFocus::SharedPlaybackMode => PreferenceFocus::ConnectDeviceName,
+                    _ => PreferenceFocus::SharedPlaybackMode,
+                },
+
+                SharedPlaybackMode::Disconnect => match self.field {
+                    PreferenceFocus::SharedPlaybackMode => PreferenceFocus::DisconnectServerUrl,
+                    PreferenceFocus::DisconnectServerUrl => PreferenceFocus::DisconnectPassword,
+                    PreferenceFocus::DisconnectPassword => PreferenceFocus::DisconnectDeviceName,
+                    _ => PreferenceFocus::SharedPlaybackMode,
+                },
+            },
 
             PreferencesTab::Logout => PreferenceFocus::Logout,
         };
@@ -660,18 +730,21 @@ impl PreferencesState {
                 _ => PreferenceFocus::FileBasedStreaming,
             },
 
-            PreferencesTab::Disconnect => {
-                if self.disconnect_enabled {
-                    match self.field {
-                        PreferenceFocus::DisconnectEnabled => PreferenceFocus::DisconnectDeviceName,
-                        PreferenceFocus::DisconnectServerUrl => PreferenceFocus::DisconnectEnabled,
-                        PreferenceFocus::DisconnectPassword => PreferenceFocus::DisconnectServerUrl,
-                        _ => PreferenceFocus::DisconnectPassword,
-                    }
-                } else {
-                    PreferenceFocus::DisconnectEnabled
-                }
-            }
+            PreferencesTab::SharedPlayback => match self.shared_playback_mode {
+                SharedPlaybackMode::None => PreferenceFocus::SharedPlaybackMode,
+
+                SharedPlaybackMode::Connect => match self.field {
+                    PreferenceFocus::SharedPlaybackMode => PreferenceFocus::ConnectDeviceName,
+                    _ => PreferenceFocus::SharedPlaybackMode,
+                },
+
+                SharedPlaybackMode::Disconnect => match self.field {
+                    PreferenceFocus::SharedPlaybackMode => PreferenceFocus::DisconnectDeviceName,
+                    PreferenceFocus::DisconnectServerUrl => PreferenceFocus::SharedPlaybackMode,
+                    PreferenceFocus::DisconnectPassword => PreferenceFocus::DisconnectServerUrl,
+                    _ => PreferenceFocus::DisconnectPassword,
+                },
+            },
 
             PreferencesTab::Logout => PreferenceFocus::Logout,
         };
@@ -710,15 +783,27 @@ impl PreferencesState {
                 }
             }
 
-            PreferenceFocus::DisconnectServerUrl if self.disconnect_enabled => {
+            PreferenceFocus::ConnectDeviceName
+                if self.shared_playback_mode == SharedPlaybackMode::Connect =>
+            {
+                self.connect_device_name.handle_event(event);
+            }
+
+            PreferenceFocus::DisconnectServerUrl
+                if self.shared_playback_mode == SharedPlaybackMode::Disconnect =>
+            {
                 self.disconnect_server_url.handle_event(event);
             }
 
-            PreferenceFocus::DisconnectPassword if self.disconnect_enabled => {
+            PreferenceFocus::DisconnectPassword
+                if self.shared_playback_mode == SharedPlaybackMode::Disconnect =>
+            {
                 self.disconnect_password.handle_event(event);
             }
 
-            PreferenceFocus::DisconnectDeviceName if self.disconnect_enabled => {
+            PreferenceFocus::DisconnectDeviceName
+                if self.shared_playback_mode == SharedPlaybackMode::Disconnect =>
+            {
                 self.disconnect_device_name.handle_event(event);
             }
 
@@ -757,23 +842,34 @@ impl PreferencesState {
         let shared_playback_config = self.shared_playback_config();
 
         let _ = shared_playback_config_sender.send(shared_playback_config.clone());
+
         self.shared_playback_saved_config = shared_playback_config.clone();
 
-        self.configuration.enable_disconnect = self.disconnect_enabled;
+        let disconnect_enabled =
+            matches!(shared_playback_config, SharedPlaybackConfig::Disconnect(_));
+
+        self.configuration.enable_disconnect = disconnect_enabled;
         self.configuration.disconnect_server_url =
             trimmed_optional_value(&self.disconnect_server_url);
         self.configuration.disconnect_password = trimmed_optional_value(&self.disconnect_password);
         self.configuration.device_name = trimmed_optional_value(&self.disconnect_device_name);
 
-        // TODO: Also Connect
-        if let SharedPlaybackConfig::Disconnect(config) = shared_playback_config {
-            let _ = database
-                .set_disconnect_config(&config.server_url, &config.password, &config.device_name)
-                .await;
+        match &shared_playback_config {
+            SharedPlaybackConfig::Disconnect(config) => {
+                let _ = database
+                    .set_disconnect_config(
+                        &config.server_url,
+                        &config.password,
+                        &config.device_name,
+                    )
+                    .await;
 
-            let _ = database.set_disconnect_enabled(true).await;
-        } else {
-            let _ = database.set_disconnect_enabled(false).await;
+                let _ = database.set_disconnect_enabled(true).await;
+            }
+
+            SharedPlaybackConfig::Connect(_) | SharedPlaybackConfig::None => {
+                let _ = database.set_disconnect_enabled(false).await;
+            }
         }
     }
 
@@ -795,7 +891,7 @@ impl PreferencesState {
             || self.audio_quality != self.configuration.max_audio_quality
             || self.use_file_based_streaming != self.configuration.use_file_based_streaming
             || self.auto_play != self.configuration.auto_play
-            || self.disconnect_has_unsaved_changes()
+            || self.shared_playback_config() != self.shared_playback_saved_config
     }
 
     fn cache_directory_has_unsaved_changes(&self) -> bool {
@@ -807,36 +903,38 @@ impl PreferencesState {
     }
 
     fn shared_playback_config(&self) -> SharedPlaybackConfig {
-        let server_url = self.disconnect_server_url.value().trim();
-        let password = self.disconnect_password.value().trim();
-        let device_name = self.disconnect_device_name.value().trim();
+        match self.shared_playback_mode {
+            SharedPlaybackMode::None => SharedPlaybackConfig::None,
 
-        if !self.disconnect_enabled {
-            return SharedPlaybackConfig::None;
+            SharedPlaybackMode::Connect => {
+                let name = self.connect_device_name.value().trim();
+
+                if name.is_empty() {
+                    SharedPlaybackConfig::None
+                } else {
+                    SharedPlaybackConfig::Connect(name.to_string())
+                }
+            }
+
+            SharedPlaybackMode::Disconnect => {
+                let server_url = self.disconnect_server_url.value().trim();
+                let password = self.disconnect_password.value().trim();
+                let device_name = self.disconnect_device_name.value().trim();
+
+                if server_url.is_empty() || password.is_empty() || device_name.is_empty() {
+                    return SharedPlaybackConfig::None;
+                }
+
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+                    server_url: server_url.to_string(),
+                    password: password.to_string(),
+                    device_name: device_name.to_string(),
+                })
+            }
         }
-
-        if server_url.is_empty() || password.is_empty() || device_name.is_empty() {
-            return SharedPlaybackConfig::None;
-        }
-
-        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-            server_url: server_url.to_string(),
-            password: password.to_string(),
-            device_name: device_name.to_string(),
-        })
     }
 
-    fn disconnect_has_unsaved_changes(&self) -> bool {
-        self.disconnect_enabled != self.configuration.enable_disconnect
-            || trimmed_optional_value(&self.disconnect_server_url)
-                != self.configuration.disconnect_server_url
-            || trimmed_optional_value(&self.disconnect_password)
-                != self.configuration.disconnect_password
-            || trimmed_optional_value(&self.disconnect_device_name)
-                != self.configuration.device_name
-    }
-
-    fn disconnect_field_error(value: &Input) -> bool {
+    fn shared_playback_field_error(value: &Input) -> bool {
         value.value().trim().is_empty()
     }
 }
