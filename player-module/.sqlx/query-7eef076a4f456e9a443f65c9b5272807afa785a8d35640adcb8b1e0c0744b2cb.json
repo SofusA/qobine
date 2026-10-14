@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n             select\n                 cache_directory,\n                 cache_ttl_hours,\n                 volume,\n                 max_audio_quality,\n                 use_file_based_streaming,\n                 disconnect_server_url,\n                 disconnect_password,\n                 device_name,\n                 enable_disconnect,\n                 auto_play\n             from configuration where rowid = 1",
+  "query": "\n             select\n                 cache_directory,\n                 cache_ttl_hours,\n                 volume,\n                 max_audio_quality,\n                 use_file_based_streaming,\n                 disconnect_server_url,\n                 disconnect_password,\n                 device_name,\n                 enable_disconnect,\n                 enable_connect,\n                 auto_play\n             from configuration where rowid = 1",
   "describe": {
     "columns": [
       {
@@ -49,8 +49,13 @@
         "type_info": "Bool"
       },
       {
-        "name": "auto_play",
+        "name": "enable_connect",
         "ordinal": 9,
+        "type_info": "Bool"
+      },
+      {
+        "name": "auto_play",
+        "ordinal": 10,
         "type_info": "Bool"
       }
     ],
@@ -67,8 +72,9 @@
       true,
       true,
       false,
+      false,
       true
     ]
   },
-  "hash": "75718f77687d644d08e41cd56753a25cf4db0408e68686258e8addf0fd0ea438"
+  "hash": "7eef076a4f456e9a443f65c9b5272807afa785a8d35640adcb8b1e0c0744b2cb"
 }
