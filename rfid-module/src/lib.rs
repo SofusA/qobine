@@ -1,3 +1,4 @@
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     ExitSender, TracklistReceiver, controls::Controls, tracklist::TracklistType,
 };
@@ -15,6 +16,7 @@ use tokio::{
     sync::{
         Mutex,
         mpsc::{self, UnboundedSender},
+        watch,
     },
 };
 
@@ -28,7 +30,7 @@ pub fn spawn_rfid(
     exit_sender: ExitSender,
     database: Arc<Database>,
     broadcast: Arc<NotificationBroadcast>,
-    connect_device_name: Option<String>,
+    shared_playback_config: watch::Receiver<SharedPlaybackConfig>,
     rfid_server_base_address: Option<String>,
     rfid_server_secret: Option<String>,
     state: RfidState,
@@ -46,7 +48,7 @@ pub fn spawn_rfid(
             broadcast,
             rfid_server_base_address,
             rfid_server_secret,
-            connect_device_name,
+            shared_playback_config,
             set_active_device_tx,
         )
         .await
@@ -65,7 +67,7 @@ async fn init(
     broadcast: Arc<NotificationBroadcast>,
     rfid_server_base_address: Option<String>,
     rfid_server_secret: Option<String>,
-    connect_device_name: Option<String>,
+    shared_playback_config: watch::Receiver<SharedPlaybackConfig>,
     connect_set_device: Option<mpsc::UnboundedSender<String>>,
 ) -> AppResult<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
@@ -121,6 +123,14 @@ async fn init(
                 .await;
             }
             None => {
+                let device_name = match shared_playback_config.borrow().clone() {
+                    SharedPlaybackConfig::Connect(connect_name) => Some(connect_name),
+                    SharedPlaybackConfig::Disconnect(parsed_disconnect) => {
+                        Some(parsed_disconnect.device_name)
+                    }
+                    SharedPlaybackConfig::None => None,
+                };
+
                 handle_play_scan(
                     &database,
                     &controls,
@@ -129,7 +139,7 @@ async fn init(
                     &tracklist_receiver,
                     rfid_server_base_address.as_deref(),
                     rfid_server_secret.as_deref(),
-                    connect_device_name.as_deref(),
+                    device_name.as_deref(),
                     connect_set_device.clone(),
                 )
                 .await;

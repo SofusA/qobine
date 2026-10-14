@@ -1,8 +1,8 @@
 #[cfg(feature = "gpio")]
 use cli_module::GpioArgs;
 use cli_module::{
-    ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, create_player, default_audio_quality,
-    get_client, handle_shared_commands, spawn_clean_up,
+    ConnectNameArgs, DelayArgs, SharedArgs, SharedCommands, SharedPlaybackConfig, create_player,
+    default_audio_quality, get_client, handle_shared_commands, spawn_clean_up,
 };
 use player_module::{
     AppResult, client::StreamClient, database::Database, notification::NotificationBroadcast,
@@ -119,11 +119,13 @@ pub async fn run() -> AppResult<()> {
         let controls = player.controls();
         let (connect_devices, _) = tokio::sync::watch::channel(Vec::new());
         let (_activate, activations) = tokio::sync::mpsc::unbounded_channel();
+        let config = SharedPlaybackConfig::Connect(args.connect.connect_name);
+        let (_, shared_playback_rx) = tokio::sync::watch::channel(config);
 
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
                 client,
-                args.connect.connect_name,
+                shared_playback_rx,
                 controls,
                 position_receiver,
                 tracklist_receiver,

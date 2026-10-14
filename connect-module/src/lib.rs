@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use cli_module::SharedPlaybackConfig;
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::{ConnectDevice, Controls, NewQueueItem},
@@ -77,6 +78,154 @@ type LocalItem = (u64, Option<i32>, u32);
 
 pub async fn init(
     client: Arc<StreamClient>,
+    mut client_config: watch::Receiver<SharedPlaybackConfig>,
+    controls: Controls,
+    position_receiver: PositionReceiver,
+    tracklist_receiver: TracklistReceiver,
+    status_receiver: StatusReceiver,
+    volume_receiver: VolumeReceiver,
+    max_audio_quality: AudioQuality,
+    devices: watch::Sender<Vec<ConnectDevice>>,
+    mut activations: mpsc::UnboundedReceiver<i32>,
+    port: u16,
+) -> AppResult<()> {
+    let mut activations_open = true;
+
+    loop {
+        let config = client_config.borrow_and_update().clone();
+
+        let SharedPlaybackConfig::Connect(connect_name) = config else {
+            tracing::info!("Qobuz Connect disabled");
+
+            tokio::select! {
+                changed = client_config.changed() => {
+                    if changed.is_err() {
+                        return Ok(());
+                    }
+                }
+
+                activation = activations.recv(), if activations_open => {
+                    if activation.is_none() {
+                        activations_open = false;
+                    }
+                }
+            }
+
+            continue;
+        };
+
+        tracing::info!("Starting Qobuz Connect as {connect_name}");
+
+        /*
+         * run_connect owns its activation receiver. We therefore create a
+         * temporary channel for this particular Connect lifetime and forward
+         * activations from the persistent receiver.
+         */
+        let (activation_sender, activation_receiver) = mpsc::unbounded_channel();
+
+        let should_restart = {
+            let connect_future = run_connect(
+                client.clone(),
+                connect_name.clone(),
+                controls.clone(),
+                position_receiver.clone(),
+                tracklist_receiver.clone(),
+                status_receiver.clone(),
+                volume_receiver.clone(),
+                max_audio_quality,
+                devices.clone(),
+                activation_receiver,
+                port,
+            );
+
+            tokio::pin!(connect_future);
+
+            loop {
+                tokio::select! {
+                    result = &mut connect_future => {
+                        /*
+                         * A normal Connect shutdown is not currently expected.
+                         * Errors are returned to the caller as before.
+                         */
+                        return result;
+                    }
+
+                    changed = client_config.changed() => {
+                        if changed.is_err() {
+                            tracing::info!(
+                                "Shared playback configuration channel closed"
+                            );
+
+                            break false;
+                        }
+
+                        let next_config =
+                            client_config.borrow_and_update().clone();
+
+                        if next_config
+                            == SharedPlaybackConfig::Connect(connect_name.clone())
+                        {
+                            /*
+                             * The watch channel was updated, but the effective
+                             * Connect configuration did not change.
+                             */
+                            continue;
+                        }
+
+                        tracing::info!(
+                            "Qobuz Connect configuration changed"
+                        );
+
+                        break true;
+                    }
+
+                    activation = activations.recv(), if activations_open => {
+                        match activation {
+                            Some(renderer_id) => {
+                                if activation_sender
+                                    .send(renderer_id)
+                                    .is_err()
+                                {
+                                    tracing::debug!(
+                                        "Qobuz Connect activation receiver closed"
+                                    );
+                                }
+                            }
+
+                            None => {
+                                activations_open = false;
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        /*
+         * connect_future has now been dropped. This also drops Session,
+         * Discovery and the temporary activation receiver before another
+         * instance attempts to bind the same discovery port.
+         */
+        devices.send_replace(Vec::new());
+
+        if !should_restart {
+            return Ok(());
+        }
+
+        match client_config.borrow().clone() {
+            SharedPlaybackConfig::Connect(ref new_name) => {
+                tracing::info!("Restarting Qobuz Connect as {new_name}");
+            }
+
+            _ => {
+                tracing::info!("Stopping Qobuz Connect");
+            }
+        }
+    }
+}
+
+async fn run_connect(
+    client: Arc<StreamClient>,
     connect_name: String,
     controls: Controls,
     position_receiver: PositionReceiver,
@@ -91,6 +240,7 @@ pub async fn init(
     let device = device(connect_name, max_audio_quality);
     let delegated = !client.credentials_is_set()?;
     let app_id = client.app_id().await?;
+
     let (discovery, handovers) = Discovery::start(&device, &app_id, port)
         .await
         .map_err(|err| map_err(&err))?;
@@ -127,20 +277,24 @@ pub async fn init(
         discovery,
         handovers,
     };
+
     let mut session = if connect.delegated {
         next_session(&mut connect, None).await
     } else {
         own_session(&connect.client, &connect.device).await
     }
     .map_err(|err| map_err(&err))?;
+
     loop {
         let handover = connect
             .run(&mut session)
             .await
             .map_err(|err| map_err(&err))?;
+
         session = next_session(&mut connect, handover)
             .await
             .map_err(|err| map_err(&err))?;
+
         connect.reset();
     }
 }

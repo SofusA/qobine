@@ -88,34 +88,46 @@ pub async fn run() -> AppResult<()> {
     .await?;
 
     let disconnect_args = parse_disconnect_args(args.disconnect);
-    let (
-        available_devices_tx,
-        active_device_tx,
-        set_active_device_tx,
-        set_active_device_rx,
-        config_rx,
-    ) = if let Some(disconnect_args) = disconnect_args.as_ref() {
-        let (available_devices_tx, _) = watch::channel(Vec::default());
-        let (active_device_tx, _) = watch::channel(String::default());
-        let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
-        // TODO: Also fix Connect
-        let (_, config_rx) = watch::channel(SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-            server_url: disconnect_args.server_url.clone(),
-            password: disconnect_args.password.clone(),
-            device_name: disconnect_args.device_name.clone(),
-        }));
-
-        (
-            Some(available_devices_tx),
-            Some(active_device_tx),
-            Some(set_active_device_tx),
-            Some(set_active_device_rx),
-            Some(config_rx),
-        )
+    let shared_playback_config = if let Some(disconnect) = disconnect_args.as_ref() {
+        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+            server_url: disconnect.server_url.clone(),
+            password: disconnect.password.clone(),
+            device_name: disconnect.device_name.clone(),
+        })
     } else {
-        (None, None, None, None, None)
+        #[cfg(feature = "connect")]
+        {
+            if args.connect.connect {
+                SharedPlaybackConfig::Connect(args.connect.name_args.connect_name.clone())
+            } else {
+                SharedPlaybackConfig::None
+            }
+        }
+
+        #[cfg(not(feature = "connect"))]
+        {
+            SharedPlaybackConfig::None
+        }
     };
+
+    let (_, shared_playback_config_rx) = watch::channel(shared_playback_config.clone());
+
+    let (available_devices_tx, active_device_tx, set_active_device_tx, set_active_device_rx) =
+        if matches!(&shared_playback_config, SharedPlaybackConfig::Disconnect(_)) {
+            let (available_devices_tx, _) = watch::channel(Vec::new());
+            let (active_device_tx, _) = watch::channel(String::new());
+            let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+
+            (
+                Some(available_devices_tx),
+                Some(active_device_tx),
+                Some(set_active_device_tx),
+                Some(set_active_device_rx),
+            )
+        } else {
+            (None, None, None, None)
+        };
 
     #[cfg(feature = "gpio")]
     if args.gpio.gpio {
@@ -133,28 +145,20 @@ pub async fn run() -> AppResult<()> {
         exit_sender.clone(),
         database.clone(),
         broadcast,
-        disconnect_args.as_ref().map(|x| x.device_name.clone()),
+        shared_playback_config_rx.clone(),
         args.rfid_config.rfid_server_base_address,
         args.rfid_config.rfid_server_secret,
         RfidState::default(),
         set_active_device_tx,
     );
 
-    if let (
-        Some(config_rx),
-        Some(available_devices_tx),
-        Some(active_device_tx),
-        Some(set_active_device_rx),
-    ) = (
-        config_rx,
-        available_devices_tx,
-        active_device_tx,
-        set_active_device_rx,
-    ) {
+    if let (Some(available_devices_tx), Some(active_device_tx), Some(set_active_device_rx)) =
+        (available_devices_tx, active_device_tx, set_active_device_rx)
+    {
         spawn_disconnect(
             &player,
             exit_sender,
-            config_rx,
+            shared_playback_config_rx.clone(),
             available_devices_tx,
             active_device_tx,
             set_active_device_rx,
@@ -175,7 +179,7 @@ pub async fn run() -> AppResult<()> {
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
                 client,
-                args.connect.name_args.connect_name,
+                shared_playback_config_rx,
                 controls,
                 position_receiver,
                 tracklist_receiver,

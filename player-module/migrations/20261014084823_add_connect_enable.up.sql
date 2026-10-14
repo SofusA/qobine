@@ -1,0 +1,1 @@
+ALTER TABLE configuration ADD COLUMN enable_connect BOOLEAN NOT NULL DEFAULT 0;

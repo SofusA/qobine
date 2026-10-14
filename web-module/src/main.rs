@@ -109,6 +109,32 @@ pub async fn run() -> AppResult<()> {
     let rfid_state = args.rfid.then(RfidState::default);
 
     let disconnect_args = parse_disconnect_args(args.disconnect);
+    let mut device_name = disconnect_args.clone().map(|x| x.device_name);
+
+    let shared_playback_config = if let Some(disconnect) = disconnect_args.as_ref() {
+        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+            server_url: disconnect.server_url.clone(),
+            password: disconnect.password.clone(),
+            device_name: disconnect.device_name.clone(),
+        })
+    } else {
+        #[cfg(feature = "connect")]
+        {
+            if args.connect.connect {
+                device_name = Some(args.connect.name_args.connect_name.clone());
+                SharedPlaybackConfig::Connect(args.connect.name_args.connect_name.clone())
+            } else {
+                SharedPlaybackConfig::None
+            }
+        }
+
+        #[cfg(not(feature = "connect"))]
+        {
+            SharedPlaybackConfig::None
+        }
+    };
+
+    let (_config_tx, shared_playback_config_rx) = watch::channel(shared_playback_config.clone());
 
     let (
         available_devices_tx,
@@ -117,18 +143,12 @@ pub async fn run() -> AppResult<()> {
         active_device_rx,
         set_active_device_tx,
         set_active_device_rx,
-        config_rx,
-    ) = if let Some(disconnect_args) = disconnect_args.as_ref() {
-        let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
-        let (active_device_tx, active_device_rx) = watch::channel(String::default());
-        let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+    ) = if matches!(&shared_playback_config, SharedPlaybackConfig::Disconnect(_)) {
+        let (available_devices_tx, available_devices_rx) = watch::channel(Vec::new());
 
-        // TODO: Also fix Connect
-        let (_, config_rx) = watch::channel(SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-            server_url: disconnect_args.server_url.clone(),
-            password: disconnect_args.password.clone(),
-            device_name: disconnect_args.device_name.clone(),
-        }));
+        let (active_device_tx, active_device_rx) = watch::channel(String::new());
+
+        let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
 
         (
             Some(available_devices_tx),
@@ -137,10 +157,9 @@ pub async fn run() -> AppResult<()> {
             Some(active_device_rx),
             Some(set_active_device_tx),
             Some(set_active_device_rx),
-            Some(config_rx),
         )
     } else {
-        (None, None, None, None, None, None, None)
+        (None, None, None, None, None, None)
     };
 
     {
@@ -154,7 +173,6 @@ pub async fn run() -> AppResult<()> {
         let database = database.clone();
         let rfid_state = rfid_state.clone();
         let active_device_rx = active_device_rx.clone();
-        let connect_device_name = disconnect_args.as_ref().map(|x| x.device_name.clone());
         let set_active_device_tx = set_active_device_tx.clone();
         let auto_play = player.auto_play();
         let exit_sender = exit_sender.clone();
@@ -173,7 +191,7 @@ pub async fn run() -> AppResult<()> {
                 broadcast,
                 client,
                 database,
-                connect_device_name,
+                device_name,
                 available_devices_rx,
                 active_device_rx,
                 set_active_device_tx,
@@ -203,7 +221,7 @@ pub async fn run() -> AppResult<()> {
             exit_sender.clone(),
             database.clone(),
             broadcast,
-            disconnect_args.as_ref().map(|x| x.device_name.clone()),
+            shared_playback_config_rx.clone(),
             args.rfid_config.rfid_server_base_address,
             args.rfid_config.rfid_server_secret,
             rfid_state,
@@ -212,12 +230,12 @@ pub async fn run() -> AppResult<()> {
     }
 
     if let (
-        Some(config_rx),
+        SharedPlaybackConfig::Disconnect(_),
         Some(available_devices_tx),
         Some(active_device_tx),
         Some(set_active_device_rx),
     ) = (
-        config_rx,
+        &shared_playback_config,
         available_devices_tx,
         active_device_tx,
         set_active_device_rx,
@@ -225,7 +243,7 @@ pub async fn run() -> AppResult<()> {
         spawn_disconnect(
             &player,
             exit_sender.clone(),
-            config_rx,
+            shared_playback_config_rx.clone(),
             available_devices_tx,
             active_device_tx,
             set_active_device_rx,
@@ -246,7 +264,7 @@ pub async fn run() -> AppResult<()> {
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
                 client,
-                args.connect.name_args.connect_name,
+                shared_playback_config_rx,
                 controls,
                 position_receiver,
                 tracklist_receiver,

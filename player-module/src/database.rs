@@ -313,6 +313,7 @@ impl Database {
                  disconnect_password,
                  device_name,
                  enable_disconnect,
+                 enable_connect,
                  auto_play
              from configuration where rowid = 1"#
         )
@@ -349,6 +350,7 @@ impl Database {
             volume,
             enable_disconnect: configuration.enable_disconnect,
             device_name: configuration.device_name,
+            enable_connect: configuration.enable_connect,
             disconnect_server_url: configuration.disconnect_server_url,
             disconnect_password: configuration.disconnect_password,
             auto_play,
@@ -536,6 +538,7 @@ struct DatabaseConfiguration {
     enable_disconnect: bool,
     disconnect_server_url: Option<String>,
     disconnect_password: Option<String>,
+    enable_connect: bool,
     device_name: Option<String>,
     auto_play: Option<bool>,
 }
@@ -550,6 +553,7 @@ pub struct Configuration {
     pub enable_disconnect: bool,
     pub disconnect_server_url: Option<String>,
     pub disconnect_password: Option<String>,
+    pub enable_connect: bool,
     pub device_name: Option<String>,
     pub auto_play: bool,
 }

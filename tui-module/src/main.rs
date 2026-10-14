@@ -1,5 +1,3 @@
-#[cfg(feature = "connect")]
-use cli_module::ConnectArgs;
 use cli_module::{
     ParsedDisconnect, SharedArgs, SharedCommands, SharedPlaybackConfig, create_player,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up_mut,
@@ -21,10 +19,6 @@ use player_module::{AppResult, database::Database, notification::NotificationBro
 struct Arguments {
     #[clap(flatten)]
     shared: SharedArgs,
-
-    #[cfg(feature = "connect")]
-    #[clap(flatten)]
-    connect: ConnectArgs,
 
     #[clap(subcommand)]
     command: Option<SharedCommands>,
@@ -89,6 +83,32 @@ pub async fn run() -> AppResult<()> {
     )
     .await?;
 
+    let shared_playback_config = if configuration.enable_connect {
+        match configuration.device_name.clone() {
+            Some(device_name) => SharedPlaybackConfig::Connect(device_name),
+            None => SharedPlaybackConfig::None,
+        }
+    } else if configuration.enable_disconnect {
+        match (
+            configuration.disconnect_server_url.clone(),
+            configuration.disconnect_password.clone(),
+            configuration.device_name.clone(),
+        ) {
+            (Some(server_url), Some(password), Some(device_name)) => {
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+                    server_url,
+                    password,
+                    device_name,
+                })
+            }
+            _ => SharedPlaybackConfig::None,
+        }
+    } else {
+        SharedPlaybackConfig::None
+    };
+
+    let (config_tx, config_rx) = watch::channel(shared_playback_config);
+
     #[cfg(target_os = "linux")]
     spawn_mpris(&player, &exit_sender, "qobine".to_string());
 
@@ -101,6 +121,9 @@ pub async fn run() -> AppResult<()> {
         sleep_inhibitor(status_receiver);
     }
 
+    let client = client.clone();
+    let broadcast = broadcast.clone();
+
     let position_receiver = player.position();
     let tracklist_receiver = player.tracklist();
     let status_receiver = player.status();
@@ -108,24 +131,51 @@ pub async fn run() -> AppResult<()> {
     let client = client.clone();
     let broadcast = broadcast.clone();
 
+    /*
+     * UI channels for Disconnect.
+     *
+     * These remain alive even while Disconnect is disabled, allowing the TUI to
+     * enable Disconnect later by updating config_tx.
+     */
+    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::new());
+
+    let (active_device_tx, active_device_rx) = watch::channel(String::new());
+
+    let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+
+    /*
+     * Start the Disconnect supervisor unconditionally.
+     *
+     * It waits while the configuration is Connect or None and starts its client
+     * when the configuration becomes Disconnect.
+     */
+    spawn_disconnect(
+        &player,
+        exit_sender.clone(),
+        config_rx.clone(),
+        available_devices_tx.clone(),
+        active_device_tx.clone(),
+        set_active_device_rx,
+    );
+
     let (connect_devices_tx, connect_devices_rx) = watch::channel(Vec::new());
+
     let (activate_connect_device_tx, activate_connect_device_rx) = mpsc::unbounded_channel();
-    #[cfg(not(feature = "connect"))]
-    drop((connect_devices_tx, activate_connect_device_rx));
 
     #[cfg(feature = "connect")]
-    if args.connect.connect {
+    {
         let client = client.clone();
         let position_receiver = player.position();
         let tracklist_receiver = player.tracklist();
         let volume_receiver = player.volume();
         let status_receiver = player.status();
         let controls = player.controls();
+        let connect_config_rx = config_rx.clone();
 
         tokio::spawn(async move {
             if let Err(err) = connect_module::init(
                 client,
-                args.connect.name_args.connect_name,
+                connect_config_rx,
                 controls,
                 position_receiver,
                 tracklist_receiver,
@@ -134,7 +184,7 @@ pub async fn run() -> AppResult<()> {
                 max_audio_quality,
                 connect_devices_tx,
                 activate_connect_device_rx,
-                args.connect.name_args.connect_port,
+                39621,
             )
             .await
             {
@@ -143,41 +193,19 @@ pub async fn run() -> AppResult<()> {
         });
     }
 
+    /*
+     * Without the Connect feature, drop the receiving side used by the Connect
+     * service. The UI still receives an empty device list and can retain the same
+     * interface.
+     */
+    #[cfg(not(feature = "connect"))]
+    drop((connect_devices_tx, activate_connect_device_rx));
+
     let (ttl_tx, ttl_rx) = mpsc::unbounded_channel::<u32>();
     spawn_clean_up_mut(
         database.clone(),
         Some(configuration.cache_ttl_hours),
         ttl_rx,
-    );
-
-    // TODO: Also look for Connect
-    let shared_playback_config = if configuration.enable_disconnect
-        && let Some(server_url) = configuration.disconnect_server_url
-        && let Some(password) = configuration.disconnect_password
-        && let Some(device_name) = configuration.device_name
-    {
-        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-            server_url,
-            password,
-            device_name,
-        })
-    } else {
-        SharedPlaybackConfig::None
-    };
-
-    let (config_tx, config_rx) = watch::channel(shared_playback_config);
-
-    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
-    let (active_device_tx, active_device_rx) = watch::channel(String::default());
-    let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
-
-    spawn_disconnect(
-        &player,
-        exit_sender.clone(),
-        config_rx,
-        available_devices_tx,
-        active_device_tx,
-        set_active_device_rx,
     );
 
     tokio::spawn(async move {
