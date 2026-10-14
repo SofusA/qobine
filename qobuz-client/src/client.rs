@@ -7,7 +7,7 @@ use crate::{
         artist::ArtistsResponse,
         artist_page::ArtistPage,
         discover::Discover,
-        favorites::Favorites,
+        favorites::{FavoriteIds, Favorites},
         genre::{GenreFeaturedPlaylists, GenreResponse},
         playlist::{Playlist, UserPlaylistsResult},
         search_results::SearchAllResults,
@@ -15,6 +15,7 @@ use crate::{
             SuggestTrackInput, SuggestTrackRequest, Track, TrackListRequest, TrackListResponse,
             TrackSuggestionResponse,
         },
+        user::{LastUpdate, LastUpdateResponse},
     },
     stream::{
         cmaf, crypto, fetch_segment, file_based,
@@ -44,6 +45,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 const RNG_INIT: &str = "abb21364945c0583309667d13ca3d93a";
 const API_URL: &str = "https://www.qobuz.com/api.json/0.2/";
 const PLAY_URL: &str = "https://play.qobuz.com";
+/// The most items the API answers per call, whatever `limit` asks.
+const API_PAGE: usize = 500;
 
 #[derive(Debug)]
 pub struct QobuzClient {
@@ -163,6 +166,8 @@ enum Endpoint {
     Search,
     SessionStart,
     Favorites,
+    FavoriteIds,
+    LastUpdate,
     FavoriteAdd,
     FavoriteRemove,
     FavoritePlaylistAdd,
@@ -197,6 +202,8 @@ impl Display for Endpoint {
             Self::TrackURL => "track/getFileUrl",
             Self::UserPlaylist => "playlist/getUserPlaylists",
             Self::Favorites => "favorite/getUserFavorites",
+            Self::FavoriteIds => "favorite/getUserFavoriteIds",
+            Self::LastUpdate => "user/lastUpdate",
             Self::FavoriteAdd => "favorite/create",
             Self::FavoriteRemove => "favorite/delete",
             Self::FavoritePlaylistAdd => "playlist/subscribe",
@@ -466,17 +473,36 @@ impl QobuzClient {
         self.get(&endpoint, Some(&params)).await
     }
 
-    pub async fn playlist(&self, playlist_id: u32) -> Result<Playlist> {
+    async fn playlist_page(&self, playlist_id: &str, offset: usize) -> Result<Playlist> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::Playlist);
-        let id_string = playlist_id.to_string();
-        let params = vec![
-            ("limit", "500"),
+        let (limit, offset) = (API_PAGE.to_string(), offset.to_string());
+        let params = [
+            ("limit", limit.as_str()),
             ("extra", "tracks"),
-            ("playlist_id", id_string.as_str()),
-            ("offset", "0"),
+            ("playlist_id", playlist_id),
+            ("offset", offset.as_str()),
         ];
-
         self.get(&endpoint, Some(&params)).await
+    }
+
+    /// A playlist with its tracks, paged the same way: at most 500 come back per call.
+    pub async fn playlist(&self, playlist_id: u32) -> Result<Playlist> {
+        let playlist_id = playlist_id.to_string();
+        let mut playlist = self.playlist_page(&playlist_id, 0).await?;
+        let mut offset = API_PAGE;
+        while let Some(tracks) = &mut playlist.tracks {
+            let full = tracks.items.len() == offset
+                && i64::try_from(tracks.items.len()).is_ok_and(|len| len < tracks.total);
+            if !full {
+                break;
+            }
+            let page = self.playlist_page(&playlist_id, offset).await?;
+            tracks
+                .items
+                .extend(page.tracks.into_iter().flat_map(|more| more.items));
+            offset = offset.saturating_add(API_PAGE);
+        }
+        Ok(playlist)
     }
 
     pub async fn create_playlist(
@@ -809,13 +835,45 @@ impl QobuzClient {
         file_based::stream_track_file_based(url, cache_path).await
     }
 
-    pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
+    /// Every favorite. The API answers at most 500 of each kind per call, so the lists are paged
+    /// while one came back full and short of its total. `limit` and `offset` are those of the first page.
+    pub async fn favorites(&self) -> Result<Favorites> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::Favorites);
+        let limit = API_PAGE.to_string();
+        let mut favorites: Favorites = self.get(&endpoint, Some(&[("limit", &limit)])).await?;
+        let mut offset = API_PAGE;
+        loop {
+            let lists = [
+                (favorites.albums.items.len(), favorites.albums.total),
+                (favorites.artists.items.len(), favorites.artists.total),
+                (favorites.tracks.items.len(), favorites.tracks.total),
+            ];
+            let full = lists.iter().any(|&(len, total)| {
+                len == offset && i64::try_from(len).is_ok_and(|len| len < total)
+            });
+            if !full {
+                return Ok(favorites);
+            }
+            let params = [("limit", limit.as_str()), ("offset", &offset.to_string())];
+            let page: Favorites = self.get(&endpoint, Some(&params)).await?;
+            favorites.albums.items.extend(page.albums.items);
+            favorites.artists.items.extend(page.artists.items);
+            favorites.tracks.items.extend(page.tracks.items);
+            offset = offset.saturating_add(API_PAGE);
+        }
+    }
 
-        let limit = limit.to_string();
-        let params = vec![("limit", limit.as_str())];
+    /// The ids of every favorite, the few kilobytes the flags need.
+    pub async fn favorite_ids(&self) -> Result<FavoriteIds> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::FavoriteIds);
+        self.get(&endpoint, None).await
+    }
 
-        self.get(&endpoint, Some(&params)).await
+    /// When the library last changed, the web player's cue to reload its lists.
+    pub async fn last_update(&self) -> Result<LastUpdate> {
+        let endpoint = format!("{}{}", self.base_url, Endpoint::LastUpdate);
+        let response: LastUpdateResponse = self.get(&endpoint, None).await?;
+        Ok(response.last_update)
     }
 
     pub async fn add_favorite_track(&self, id: u32) -> Result<SuccessfulResponse> {

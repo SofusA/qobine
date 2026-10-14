@@ -1,5 +1,5 @@
 use controls_module::controls::Controls;
-use controls_module::models::{AlbumSimple, PlaylistSimple};
+use controls_module::models::{AlbumSimple, FavoriteIds, PlaylistSimple};
 use futures::future::try_join_all;
 use player_module::AppResult;
 use player_module::client::{GenrePlaylistSlug, StreamClient};
@@ -10,7 +10,6 @@ use ratatui::{
     widgets::ListState,
 };
 
-use crate::app::FavoriteIds;
 use crate::image_cache::ImageManager;
 use crate::ui::{Pane, leaves_content, sidebar};
 use crate::widgets::grid::Grid;
@@ -114,7 +113,7 @@ impl DiscoverState {
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.albums(),
+                &favorites.albums,
                 image_cache,
             );
         } else if let Some((_, list)) = self.selected_playlist_mut() {
@@ -122,7 +121,7 @@ impl DiscoverState {
                 content_area,
                 frame.buffer_mut(),
                 content_focused,
-                favorites.playlists(),
+                &favorites.playlists,
                 image_cache,
             );
         }

@@ -176,8 +176,7 @@ impl AppState {
     }
 
     pub async fn is_album_favorite(&self, id: &str) -> AppResult<bool> {
-        let favorites = self.get_favorites().await?;
-        Ok(favorites.albums.iter().any(|album| album.id == id))
+        Ok(self.client.favorite_ids().await?.albums.contains(id))
     }
 }
 

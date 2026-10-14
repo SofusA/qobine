@@ -90,7 +90,7 @@ async fn user_playlists() {
 #[tokio::test]
 async fn favorites() {
     let client = get_client().await.unwrap();
-    client.favorites(3).await.unwrap();
+    client.favorites().await.unwrap();
 }
 
 #[tokio::test]

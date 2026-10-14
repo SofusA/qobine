@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use controls_module::{
     controls::Controls,
-    models::{AlbumSimple, Artist, PlaylistSimple},
+    models::{AlbumSimple, Artist, Favorites, PlaylistSimple},
 };
 use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::ListState,
+    widgets::{ListState, Paragraph},
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
@@ -39,6 +39,7 @@ impl FavoritesSort {
     }
 }
 
+#[derive(Default)]
 pub struct FavoritesState {
     filter: Input,
     sort: FavoritesSort,
@@ -49,29 +50,24 @@ pub struct FavoritesState {
     editing: bool,
     sub_tab: SubTab,
     focus: Pane,
+    loaded: bool,
 }
 
 impl FavoritesState {
-    pub async fn new(client: &StreamClient) -> AppResult<Self> {
-        let favorites = client.favorites().await?;
-
-        Ok(Self {
-            editing: bool::default(),
-            filter: Input::default(),
-            sort: FavoritesSort::default(),
-            albums: Grid::new(favorites.albums),
-            artists: Grid::new(favorites.artists),
-            playlists: Grid::new(
-                favorites
-                    .playlists
-                    .into_iter()
-                    .map(std::convert::Into::into)
-                    .collect(),
-            ),
-            tracks: TrackList::new(favorites.tracks),
-            sub_tab: SubTab::default(),
-            focus: Pane::default(),
-        })
+    /// Replaces the lists, keeping the sub tab, the filter and the sort.
+    pub fn load(&mut self, favorites: Favorites) {
+        self.albums = Grid::new(favorites.albums);
+        self.artists = Grid::new(favorites.artists);
+        self.playlists = Grid::new(
+            favorites
+                .playlists
+                .into_iter()
+                .map(std::convert::Into::into)
+                .collect(),
+        );
+        self.tracks = TrackList::new(favorites.tracks);
+        self.loaded = true;
+        self.apply_filter_and_sort();
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, image_cache: &mut ImageManager) {
@@ -92,6 +88,14 @@ impl FavoritesState {
             "Filter",
             Some(sort_title),
         );
+
+        if !self.loaded {
+            frame.render_widget(
+                Paragraph::new("Loading...").block(block(None)),
+                content_area,
+            );
+            return;
+        }
 
         let block = block(None);
         frame.render_widget(block, content_area);

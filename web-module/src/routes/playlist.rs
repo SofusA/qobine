@@ -263,8 +263,8 @@ async fn index(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> impl 
 
 async fn content(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> ResponseResult {
     let playlist = ok_or_send_error_toast(&state, state.client.playlist(id).await)?;
-    let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
-    let is_favorite = favorites.playlists.iter().any(|playlist| playlist.id == id);
+    let favorites = ok_or_send_error_toast(&state, state.client.favorite_ids().await)?;
+    let is_favorite = favorites.playlists.contains(&id);
     let duration = playlist.duration_seconds / 60;
     let click_string = format!("/playlist/{}/play/", playlist.id);
 

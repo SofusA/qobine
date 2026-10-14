@@ -1,4 +1,4 @@
-use controls_module::controls::Controls;
+use controls_module::{controls::Controls, models::FavoriteIds};
 use player_module::{AppResult, client::StreamClient};
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     image_cache::ImageManager,
 };
 

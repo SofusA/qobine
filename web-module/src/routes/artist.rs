@@ -119,8 +119,8 @@ async fn index(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> impl 
 async fn content(State(state): State<Arc<AppState>>, Path(id): Path<u32>) -> ResponseResult {
     let artist = ok_or_send_error_toast(&state, state.client.artist_page(id).await)?;
 
-    let favorites = ok_or_send_error_toast(&state, state.get_favorites().await)?;
-    let is_favorite = favorites.artists.iter().any(|artist| artist.id == id);
+    let favorites = ok_or_send_error_toast(&state, state.client.favorite_ids().await)?;
+    let is_favorite = favorites.artists.contains(&id);
     let click_string = format!("/artist/{}/play-top-track/", artist.id);
     let top_tracks: Vec<_> = artist.top_tracks.iter().take(5).collect();
 

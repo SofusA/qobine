@@ -1,6 +1,6 @@
 use controls_module::{
     controls::Controls,
-    models::{AlbumSimple, Artist},
+    models::{AlbumSimple, Artist, FavoriteIds},
 };
 use num_traits::ToPrimitive;
 use player_module::{AppResult, client::StreamClient};
@@ -13,7 +13,7 @@ use ratatui_image::StatefulImage;
 
 use super::{about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
-    app::{FavoriteIds, NotificationList, Output},
+    app::{NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{Pane, block, leaves_content, mark_as_favorite, sidebar},
     widgets::{
@@ -159,7 +159,7 @@ impl ArtistOverlay {
 
         let name = Line::from(Span::styled(self.artist_name.clone(), Style::new().bold()));
 
-        let name = mark_as_favorite(name, favorites.artists().contains(&self.id));
+        let name = mark_as_favorite(name, favorites.artists.contains(&self.id));
 
         let [name_area, description_area, stats_area, _] = Layout::vertical([
             Constraint::Length(1),
@@ -238,7 +238,7 @@ impl ArtistOverlay {
                                 content_area,
                                 frame.buffer_mut(),
                                 true,
-                                favorites.albums(),
+                                &favorites.albums,
                                 image_cache,
                             );
                         }
@@ -249,7 +249,7 @@ impl ArtistOverlay {
                                 frame.buffer_mut(),
                                 true,
                                 true,
-                                favorites.tracks(),
+                                &favorites.tracks,
                             );
                         }
 
@@ -258,7 +258,7 @@ impl ArtistOverlay {
                                 content_area,
                                 frame.buffer_mut(),
                                 true,
-                                favorites.artists(),
+                                &favorites.artists,
                                 image_cache,
                             );
                         }
