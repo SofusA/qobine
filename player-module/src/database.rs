@@ -135,11 +135,42 @@ impl Database {
         Ok(())
     }
 
+    pub async fn set_device_name(&self, device_name: &str) -> AppResult<()> {
+        sqlx::query!(
+            r#"
+        UPDATE configuration
+        SET
+            device_name = ?
+        WHERE rowid = 1
+        "#,
+            device_name
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn set_disconnect_enabled(&self, enable: bool) -> AppResult<()> {
         sqlx::query!(
             r#"
         UPDATE configuration
         SET enable_disconnect= ?
+        WHERE rowid = 1
+        "#,
+            enable,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_connect_enabled(&self, enable: bool) -> AppResult<()> {
+        sqlx::query!(
+            r#"
+        UPDATE configuration
+        SET enable_connect= ?
         WHERE rowid = 1
         "#,
             enable,

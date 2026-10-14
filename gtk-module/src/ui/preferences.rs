@@ -124,7 +124,7 @@ fn preferences_page(
 
     page.add(&queue_group(controls, &configuration));
 
-    page.add(&disconnect_group(
+    page.add(&shared_playback_group(
         &configuration,
         ui_event_sender,
         database.clone(),
@@ -337,17 +337,17 @@ fn logout_group(exit_sender: ExitSender, database: Arc<Database>) -> adw::Prefer
     group
 }
 
-fn disconnect_group(
+fn shared_playback_group(
     configuration: &Configuration,
     ui_event_sender: &UiEventSender,
     database: Arc<Database>,
 ) -> adw::PreferencesGroup {
     let group = adw::PreferencesGroup::new();
-    group.set_title("Disconnect");
+    group.set_title("Shared playback");
 
     let info = gtk::Button::builder()
         .icon_name("info-outline-symbolic")
-        .tooltip_text("Open information page")
+        .tooltip_text("Open Disconnect information page")
         .css_classes(["flat"])
         .build();
 
@@ -362,9 +362,59 @@ fn disconnect_group(
 
     group.set_header_suffix(Some(&info));
 
-    let enabled = adw::SwitchRow::new();
-    enabled.set_title("Enable disconnect");
-    enabled.set_active(configuration.enable_disconnect);
+    /*
+     * Shared playback type.
+     */
+
+    let playback_type_row = adw::ActionRow::new();
+    playback_type_row.set_title("Shared playback type");
+
+    let playback_type = adw::ToggleGroup::new();
+    playback_type.set_homogeneous(true);
+    playback_type.set_can_shrink(true);
+    playback_type.set_valign(gtk::Align::Center);
+
+    let disabled_toggle = adw::Toggle::builder()
+        .name("disabled")
+        .label("Disabled")
+        .build();
+
+    let connect_toggle = adw::Toggle::builder()
+        .name("connect")
+        .label("Connect")
+        .build();
+
+    let disconnect_toggle = adw::Toggle::builder()
+        .name("disconnect")
+        .label("Disconnect")
+        .build();
+
+    playback_type.add(disabled_toggle);
+    playback_type.add(connect_toggle);
+    playback_type.add(disconnect_toggle);
+
+    let initial_type = if configuration.enable_connect {
+        "connect"
+    } else if configuration.enable_disconnect {
+        "disconnect"
+    } else {
+        "disabled"
+    };
+
+    playback_type.set_active_name(Some(initial_type));
+    playback_type_row.add_suffix(&playback_type);
+
+    /*
+     * Connect configuration.
+     */
+
+    let connect_device_row = adw::EntryRow::new();
+    connect_device_row.set_title("Device name");
+    connect_device_row.set_text(configuration.device_name.as_deref().unwrap_or_default());
+
+    /*
+     * Disconnect configuration.
+     */
 
     let server_row = adw::EntryRow::new();
     server_row.set_title("Server URL");
@@ -375,7 +425,7 @@ fn disconnect_group(
             .unwrap_or_default(),
     );
 
-    let password_row = adw::EntryRow::new();
+    let password_row = adw::PasswordEntryRow::new();
     password_row.set_title("Password");
     password_row.set_text(
         configuration
@@ -384,184 +434,320 @@ fn disconnect_group(
             .unwrap_or_default(),
     );
 
-    let device_row = adw::EntryRow::new();
-    device_row.set_title("Device name");
-    device_row.set_text(configuration.device_name.as_deref().unwrap_or_default());
+    let disconnect_device_row = adw::EntryRow::new();
+    disconnect_device_row.set_title("Device name");
+    disconnect_device_row.set_text(configuration.device_name.as_deref().unwrap_or_default());
+
+    /*
+     * Save button.
+     */
 
     let save = adw::ButtonRow::new();
-    save.set_title("Save disconnect configuration");
+    save.set_title("Save shared playback configuration");
     save.add_css_class("suggested-action");
     save.set_sensitive(false);
 
-    let saved_state = Rc::new(RefCell::new(
-        // TODO: Also Connect
-        match (
-            configuration.enable_disconnect,
-            configuration.disconnect_server_url.as_deref(),
-            configuration.disconnect_password.as_deref(),
-            configuration.device_name.as_deref(),
-        ) {
-            (true, Some(server_url), Some(password), Some(device_name)) => {
-                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-                    server_url: server_url.to_owned(),
-                    password: password.to_owned(),
-                    device_name: device_name.to_owned(),
-                })
-            }
-            _ => SharedPlaybackConfig::None,
-        },
-    ));
+    /*
+     * Capture the initially persisted state.
+     *
+     * All stored values are included, including values belonging to the
+     * inactive implementation.
+     */
 
-    let validate = {
-        let enabled = enabled.clone();
-        let server_row = server_row.clone();
-        let password_row = password_row.clone();
-        let device_row = device_row.clone();
-        let save = save.clone();
-        let saved_state = saved_state.clone();
+    let initial_connect_device_name = configuration.device_name.clone().unwrap_or_default();
 
-        move || {
-            let active = enabled.is_active();
+    let initial_server_url = configuration
+        .disconnect_server_url
+        .clone()
+        .unwrap_or_default();
 
-            server_row.set_sensitive(active);
-            password_row.set_sensitive(active);
-            device_row.set_sensitive(active);
+    let initial_password = configuration
+        .disconnect_password
+        .clone()
+        .unwrap_or_default();
 
-            if !active {
-                // TODO: Fix this
-                let is_disconnect = match *saved_state.borrow() {
-                    SharedPlaybackConfig::Disconnect(_) => true,
-                    SharedPlaybackConfig::Connect(_) | SharedPlaybackConfig::None => false,
-                };
+    let initial_disconnect_device_name = configuration.device_name.clone().unwrap_or_default();
 
-                save.set_sensitive(is_disconnect);
-                return;
-            }
+    let initial_config = match initial_type {
+        "connect" => SharedPlaybackConfig::Connect(initial_connect_device_name.clone()),
 
-            let server_url = server_row.text().to_string();
-            let password = password_row.text().to_string();
-            let device_name = device_row.text().to_string();
+        "disconnect" => SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+            server_url: initial_server_url.clone(),
+            password: initial_password.clone(),
+            device_name: initial_disconnect_device_name.clone(),
+        }),
 
-            let valid = !server_url.is_empty() && !password.is_empty() && !device_name.is_empty();
-
-            server_row.set_css_classes(if server_url.is_empty() {
-                &["error"]
-            } else {
-                &[]
-            });
-
-            password_row.set_css_classes(if password.is_empty() { &["error"] } else { &[] });
-
-            device_row.set_css_classes(if device_name.is_empty() {
-                &["error"]
-            } else {
-                &[]
-            });
-
-            if !valid {
-                save.set_sensitive(false);
-                return;
-            }
-
-            let current = SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-                server_url,
-                password,
-                device_name,
-            });
-
-            save.set_sensitive(*saved_state.borrow() != current);
-        }
+        _ => SharedPlaybackConfig::None,
     };
 
-    enabled.connect_active_notify({
+    let saved_state = Rc::new(RefCell::new((
+        initial_config,
+        initial_connect_device_name,
+        initial_server_url,
+        initial_password,
+        initial_disconnect_device_name,
+    )));
+
+    /*
+     * Read the complete current form state.
+     */
+
+    let current_state = {
+        let playback_type = playback_type.clone();
+        let connect_device_row = connect_device_row.clone();
+        let server_row = server_row.clone();
+        let password_row = password_row.clone();
+        let disconnect_device_row = disconnect_device_row.clone();
+
+        Rc::new(move || {
+            let connect_device_name = connect_device_row.text().trim().to_owned();
+
+            let server_url = server_row.text().trim().to_owned();
+
+            let password = password_row.text().to_string();
+
+            let disconnect_device_name = disconnect_device_row.text().trim().to_owned();
+
+            let config = match playback_type.active_name().as_deref() {
+                Some("connect") => SharedPlaybackConfig::Connect(connect_device_name.clone()),
+
+                Some("disconnect") => SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+                    server_url: server_url.clone(),
+                    password: password.clone(),
+                    device_name: disconnect_device_name.clone(),
+                }),
+
+                _ => SharedPlaybackConfig::None,
+            };
+
+            (
+                config,
+                connect_device_name,
+                server_url,
+                password,
+                disconnect_device_name,
+            )
+        })
+    };
+
+    /*
+     * Update row visibility, validate visible fields, and update the Save
+     * button.
+     */
+
+    let validate = {
+        let playback_type = playback_type.clone();
+        let connect_device_row = connect_device_row.clone();
+        let server_row = server_row.clone();
+        let password_row = password_row.clone();
+        let disconnect_device_row = disconnect_device_row.clone();
+        let save = save.clone();
+        let saved_state = saved_state.clone();
+        let current_state = current_state.clone();
+
+        Rc::new(move || {
+            let active_name = playback_type.active_name();
+
+            let connect_active = active_name.as_deref() == Some("connect");
+
+            let disconnect_active = active_name.as_deref() == Some("disconnect");
+
+            /*
+             * Only show inputs belonging to the selected implementation.
+             */
+
+            connect_device_row.set_visible(connect_active);
+
+            server_row.set_visible(disconnect_active);
+            password_row.set_visible(disconnect_active);
+            disconnect_device_row.set_visible(disconnect_active);
+
+            /*
+             * Only validate inputs belonging to the selected implementation.
+             */
+
+            let connect_name_valid =
+                !connect_active || !connect_device_row.text().trim().is_empty();
+
+            let server_valid = !disconnect_active || !server_row.text().trim().is_empty();
+
+            let password_valid = !disconnect_active || !password_row.text().is_empty();
+
+            let disconnect_name_valid =
+                !disconnect_active || !disconnect_device_row.text().trim().is_empty();
+
+            connect_device_row.set_css_classes(if connect_name_valid { &[] } else { &["error"] });
+
+            server_row.set_css_classes(if server_valid { &[] } else { &["error"] });
+
+            password_row.set_css_classes(if password_valid { &[] } else { &["error"] });
+
+            disconnect_device_row.set_css_classes(if disconnect_name_valid {
+                &[]
+            } else {
+                &["error"]
+            });
+
+            let valid =
+                connect_name_valid && server_valid && password_valid && disconnect_name_valid;
+
+            let changed = *saved_state.borrow() != current_state();
+
+            save.set_sensitive(valid && changed);
+        })
+    };
+
+    playback_type.connect_active_name_notify({
         let validate = validate.clone();
-        move |_| validate()
+
+        move |_| {
+            validate();
+        }
+    });
+
+    connect_device_row.connect_changed({
+        let validate = validate.clone();
+
+        move |_| {
+            validate();
+        }
     });
 
     server_row.connect_changed({
         let validate = validate.clone();
-        move |_| validate()
+
+        move |_| {
+            validate();
+        }
     });
 
     password_row.connect_changed({
         let validate = validate.clone();
-        move |_| validate()
+
+        move |_| {
+            validate();
+        }
     });
 
-    device_row.connect_changed({
+    disconnect_device_row.connect_changed({
         let validate = validate.clone();
-        move |_| validate()
+
+        move |_| {
+            validate();
+        }
     });
+
+    /*
+     * Apply and persist the configuration.
+     */
 
     save.connect_activated({
-        let enabled = enabled.clone();
-        let server_row = server_row.clone();
-        let password_row = password_row.clone();
-        let device_row = device_row.clone();
+        let playback_type = playback_type.clone();
         let saved_state = saved_state.clone();
+        let current_state = current_state.clone();
+        let validate = validate.clone();
         let ui_event_sender = ui_event_sender.clone();
 
         move |_| {
-            let server_url = server_row.text().to_string();
-            let password = password_row.text().to_string();
-            let device_name = device_row.text().to_string();
+            let (config, connect_device_name, server_url, password, disconnect_device_name) =
+                current_state();
 
-            // TODO: Also Config
-            let config = if enabled.is_active() {
-                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-                    server_url,
-                    password,
-                    device_name,
-                })
-            } else {
-                SharedPlaybackConfig::None
-            };
+            let active_name = playback_type.active_name();
 
-            saved_state.borrow_mut().clone_from(&config);
+            let enable_connect = active_name.as_deref() == Some("connect");
+
+            let enable_disconnect = active_name.as_deref() == Some("disconnect");
+
+            /*
+             * Apply the new runtime configuration immediately.
+             */
 
             if let Err(error) =
                 ui_event_sender.send(crate::UiEvent::SharedPlaybackConfig(config.clone()))
             {
-                tracing::error!("Failed to send disconnect configuration: {error}");
+                tracing::error!("Failed to apply shared playback configuration: {error}");
+                return;
             }
 
-            glib::MainContext::default().spawn_local({
-                let database = Arc::clone(&database);
+            saved_state.borrow_mut().clone_from(&(
+                config,
+                connect_device_name.clone(),
+                server_url.clone(),
+                password.clone(),
+                disconnect_device_name.clone(),
+            ));
 
-                async move {
-                    // TODO: Show notification.
-                    // TODO: Also handle Connect
-                    if let SharedPlaybackConfig::Disconnect(config) = config {
-                        if let Err(error) = database
-                            .set_disconnect_config(
-                                &config.server_url,
-                                &config.password,
-                                &config.device_name,
-                            )
-                            .await
-                        {
-                            tracing::error!("Failed to save disconnect configuration: {error}");
-                            return;
-                        }
+            validate();
 
-                        if let Err(error) = database.set_disconnect_enabled(true).await {
-                            tracing::error!("Failed to enable disconnect: {error}");
-                        }
-                    } else if let Err(error) = database.set_disconnect_enabled(false).await {
-                        tracing::error!("Failed to disable disconnect: {error}");
+            /*
+             * Persist the configuration asynchronously.
+             */
+
+            let database = Arc::clone(&database);
+
+            glib::MainContext::default().spawn_local(async move {
+                /*
+                 * Preserve the values for both implementations, even when
+                 * they are not currently selected.
+                 */
+
+                if let Err(error) = database.set_device_name(&connect_device_name).await {
+                    tracing::error!("Failed to save Connect device name: {error}");
+                    return;
+                }
+
+                if let Err(error) = database
+                    .set_disconnect_config(&server_url, &password, &disconnect_device_name)
+                    .await
+                {
+                    tracing::error!("Failed to save Disconnect configuration: {error}");
+                    return;
+                }
+
+                /*
+                 * Disable the inactive implementation before enabling the
+                 * selected implementation.
+                 */
+
+                if enable_connect {
+                    if let Err(error) = database.set_disconnect_enabled(false).await {
+                        tracing::error!("Failed to disable Disconnect: {error}");
+                        return;
+                    }
+
+                    if let Err(error) = database.set_connect_enabled(true).await {
+                        tracing::error!("Failed to enable Connect: {error}");
+                    }
+                } else if enable_disconnect {
+                    if let Err(error) = database.set_connect_enabled(false).await {
+                        tracing::error!("Failed to disable Connect: {error}");
+                        return;
+                    }
+
+                    if let Err(error) = database.set_disconnect_enabled(true).await {
+                        tracing::error!("Failed to enable Disconnect: {error}");
+                    }
+                } else {
+                    if let Err(error) = database.set_connect_enabled(false).await {
+                        tracing::error!("Failed to disable Connect: {error}");
+                    }
+
+                    if let Err(error) = database.set_disconnect_enabled(false).await {
+                        tracing::error!("Failed to disable Disconnect: {error}");
                     }
                 }
             });
         }
     });
 
-    validate();
-
-    group.add(&enabled);
+    group.add(&playback_type_row);
+    group.add(&connect_device_row);
     group.add(&server_row);
     group.add(&password_row);
-    group.add(&device_row);
+    group.add(&disconnect_device_row);
     group.add(&save);
+
+    validate();
 
     group
 }
