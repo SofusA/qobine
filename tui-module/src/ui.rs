@@ -57,19 +57,14 @@ impl App {
             AppState::ConnectOverlay(selected) => {
                 let tab_area =
                     render_now_playing_bar(frame, &self.now_playing, &mut self.image_cache);
-                let active_device = self.connect_active_device.borrow().to_string();
-                let mut devices: Vec<(String, bool)> = self
+
+                let devices: Vec<(String, bool)> = self
                     .connect_available_devices
                     .borrow()
                     .iter()
-                    .map(|device| (device.clone(), *device == active_device))
+                    .map(|device| (device.clone().name, device.active))
                     .collect();
-                devices.extend(
-                    self.connect_devices
-                        .borrow()
-                        .iter()
-                        .map(|device| (device.name.clone(), device.active)),
-                );
+
                 render_connect(frame, tab_area, &devices, *selected);
             }
             AppState::Focus => {

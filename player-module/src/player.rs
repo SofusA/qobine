@@ -33,6 +33,23 @@ use crate::{
 
 const INTERVAL_MS: u64 = 500;
 
+pub struct PlayerBindings {
+    pub controls: Controls,
+
+    pub position_receiver: PositionReceiver,
+    pub tracklist_receiver: TracklistReceiver,
+    pub status_receiver: StatusReceiver,
+    pub volume_receiver: VolumeReceiver,
+    pub auto_play_receiver: AutoPlayReceiver,
+
+    pub tracklist_sender: watch::Sender<Tracklist>,
+    pub position_sender: watch::Sender<Duration>,
+    pub volume_sender: watch::Sender<f32>,
+    pub auto_play_sender: watch::Sender<bool>,
+    pub status_sender: watch::Sender<controls_module::Status>,
+    pub active_sender: watch::Sender<bool>,
+}
+
 pub struct Player {
     broadcast: Arc<NotificationBroadcast>,
     tracklist_tx: Sender<Tracklist>,
@@ -123,6 +140,25 @@ impl Player {
             auto_play_rx,
             reports: Some(reports),
         })
+    }
+
+    pub fn bindings(&self) -> PlayerBindings {
+        PlayerBindings {
+            controls: self.controls(),
+
+            position_receiver: self.position(),
+            tracklist_receiver: self.tracklist(),
+            status_receiver: self.status(),
+            volume_receiver: self.volume(),
+            auto_play_receiver: self.auto_play(),
+
+            tracklist_sender: self.tracklist_sender(),
+            position_sender: self.position_sender(),
+            volume_sender: self.volume_sender(),
+            auto_play_sender: self.auto_play_sender(),
+            status_sender: self.status_sender(),
+            active_sender: self.active_sender(),
+        }
     }
 
     pub fn controls(&self) -> Controls {

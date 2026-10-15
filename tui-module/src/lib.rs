@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
 use app::{App, create_now_playing_state};
-use cli_module::SharedPlaybackConfig;
+use cli_module::{SharedPlaybackConfig, SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
-    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver,
-    controls::{ConnectDevice, Controls},
+    ExitSender, PositionReceiver, StatusReceiver, TracklistReceiver, controls::Controls,
 };
 use favorites::FavoritesState;
 use player_module::{
@@ -47,11 +46,8 @@ pub async fn init(
     exit_sender: ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     database: Arc<Database>,
-    connect_available_devices: watch::Receiver<Vec<String>>,
-    connect_active_device: watch::Receiver<String>,
-    set_connect_active_device: mpsc::UnboundedSender<String>,
-    connect_devices: watch::Receiver<Vec<ConnectDevice>>,
-    activate_connect_device: mpsc::UnboundedSender<i32>,
+    connect_available_devices: watch::Receiver<Vec<SharedPlaybackDevice>>,
+    activate_connect_device: mpsc::UnboundedSender<SharedPlaybackDeviceId>,
     shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) -> AppResult<()> {
     let mut terminal = ratatui::init();
@@ -105,9 +101,6 @@ pub async fn init(
         image_cache,
         image_rx,
         connect_available_devices,
-        connect_active_device,
-        set_connect_active_device,
-        connect_devices,
         activate_connect_device,
         shared_playback_config_sender,
     };

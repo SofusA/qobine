@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use adw::{Application, prelude::*};
-use cli_module::SharedPlaybackConfig;
+use cli_module::{SharedPlaybackConfig, SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     ExitSender, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls, tracklist::Tracklist,
@@ -40,10 +40,9 @@ pub fn init(
     exit_sender: &ExitSender,
     audio_cache_ttl_sender: mpsc::UnboundedSender<u32>,
     broadcast: Arc<NotificationBroadcast>,
-    connect_available_devices: watch::Receiver<Vec<String>>,
-    connect_active_device: watch::Receiver<String>,
-    set_connect_active_device: mpsc::UnboundedSender<String>,
-    disconnect_config_sender: watch::Sender<SharedPlaybackConfig>,
+    shared_devices_rx: watch::Receiver<Vec<SharedPlaybackDevice>>,
+    set_active_device_tx: mpsc::UnboundedSender<SharedPlaybackDeviceId>,
+    shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) -> AppResult<()> {
     libadwaita::init().map_err(|err| PlayerError::Gtk {
         message: err.to_string(),
@@ -107,10 +106,9 @@ pub fn init(
                 ui_sender.clone(),
                 ui_receiver,
                 &broadcast,
-                connect_available_devices.clone(),
-                connect_active_device.clone(),
-                set_connect_active_device.clone(),
-                disconnect_config_sender.clone(),
+                shared_devices_rx.clone(),
+                &set_active_device_tx,
+                shared_playback_config_sender.clone(),
             );
         }
     });
@@ -174,10 +172,9 @@ fn build_ui(
     ui_sender: mpsc::UnboundedSender<UiEvent>,
     ui_receiver: mpsc::UnboundedReceiver<UiEvent>,
     broadcast: &NotificationBroadcast,
-    connect_available_devices: watch::Receiver<Vec<String>>,
-    connect_active_device: watch::Receiver<String>,
-    set_connect_active_device: mpsc::UnboundedSender<String>,
-    disconnect_config_sender: watch::Sender<SharedPlaybackConfig>,
+    shared_devices_rx: watch::Receiver<Vec<SharedPlaybackDevice>>,
+    set_active_device_tx: &mpsc::UnboundedSender<SharedPlaybackDeviceId>,
+    shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 ) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -233,7 +230,7 @@ fn build_ui(
 
     let now_playing = NowPlayingBar::new(
         controls,
-        set_connect_active_device,
+        set_active_device_tx.clone(),
         on_open_album,
         on_open_artist,
         on_open_playlist,
@@ -265,9 +262,8 @@ fn build_ui(
         status_receiver,
         position_receiver,
         volume_receiver,
-        disconnect_config_sender,
-        connect_available_devices,
-        connect_active_device,
+        shared_playback_config_sender,
+        shared_devices_rx,
         broadcast,
         now_playing,
         shell,
@@ -287,8 +283,7 @@ fn setup_listener(
     mut position_receiver: PositionReceiver,
     mut volume_receiver: VolumeReceiver,
     shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
-    mut connect_available_devices: watch::Receiver<Vec<String>>,
-    mut connect_active_device: watch::Receiver<String>,
+    mut shared_devices_rx: watch::Receiver<Vec<SharedPlaybackDevice>>,
     broadcast: &NotificationBroadcast,
     now_playing_bar: NowPlayingBar,
     shell: AppShell,
@@ -335,23 +330,15 @@ fn setup_listener(
                     }
                 }
 
-                Ok(()) = connect_available_devices.changed() => {
-                    let connect_available_devices = connect_available_devices.borrow_and_update().to_vec();
-                    let connect_active_device = connect_active_device.borrow().to_string();
+                Ok(()) = shared_devices_rx.changed() => {
+                    let connect_available_devices = shared_devices_rx.borrow_and_update().to_vec();
 
-                    if let Err(err) =sender.send(UiEvent::Connect((connect_available_devices, connect_active_device )))
+                    if let Err(err) =sender.send(UiEvent::Connect(connect_available_devices))
                     {
                         tracing::error!("{err}");
                     }
                 }
 
-                Ok(()) = connect_active_device.changed() => {
-                    let position = *position_receiver.borrow_and_update();
-                    if let Err(err) =sender.send(UiEvent::Position(position))
-                    {
-                        tracing::error!("{err}");
-                    }
-                }
 
                 Ok(exit) = exit_receiver.recv() => {
                     if exit {
@@ -419,7 +406,7 @@ fn setup_listener(
                     _ = shared_playback_config_sender.send(shared_playback_config);
                 }
                 UiEvent::Connect(devices) => {
-                    now_playing_bar.set_output_devices(devices.0, devices.1);
+                    now_playing_bar.set_output_devices(devices);
                 }
             }
         }
@@ -436,7 +423,7 @@ enum UiEvent {
     Exit,
     Toast(String),
     SharedPlaybackConfig(SharedPlaybackConfig),
-    Connect((Vec<String>, String)),
+    Connect(Vec<SharedPlaybackDevice>),
 }
 
 fn oauth_login_window(

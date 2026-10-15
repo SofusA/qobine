@@ -1,7 +1,6 @@
 use cli_module::{ParsedDisconnect, SharedPlaybackConfig, create_player, spawn_clean_up_mut};
 #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 use controls_module::StatusReceiver;
-use disconnect_module::spawn_disconnect;
 #[cfg(target_os = "linux")]
 use mpris_module::spawn_mpris;
 use std::sync::Arc;
@@ -68,37 +67,57 @@ pub async fn run() -> AppResult<()> {
         ttl_rx,
     );
 
-    // TODO: Also look for Connect
-    let shared_playback_config = if configuration.enable_disconnect
-        && let Some(server_url) = configuration.disconnect_server_url
-        && let Some(password) = configuration.disconnect_password
-        && let Some(device_name) = configuration.device_name
-    {
-        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-            server_url,
-            password,
-            device_name,
-        })
+    let shared_playback_config = if configuration.enable_connect {
+        match configuration.device_name.clone() {
+            Some(device_name) => SharedPlaybackConfig::Connect(device_name),
+            None => SharedPlaybackConfig::None,
+        }
+    } else if configuration.enable_disconnect {
+        match (
+            configuration.disconnect_server_url.clone(),
+            configuration.disconnect_password.clone(),
+            configuration.device_name.clone(),
+        ) {
+            (Some(server_url), Some(password), Some(device_name)) => {
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+                    server_url,
+                    password,
+                    device_name,
+                })
+            }
+            _ => SharedPlaybackConfig::None,
+        }
     } else {
         SharedPlaybackConfig::None
     };
 
-    let (config_tx, config_rx) = watch::channel(shared_playback_config);
-    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::default());
-    let (active_device_tx, active_device_rx) = watch::channel(String::default());
-    let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+    let (shared_playback_config_tx, shared_playback_config_rx) =
+        watch::channel(shared_playback_config);
 
-    spawn_disconnect(
-        &player,
-        exit_sender.clone(),
-        config_rx,
-        available_devices_tx,
-        active_device_tx,
-        set_active_device_rx,
-    );
+    let (shared_devices_tx, shared_devices_rx) = watch::channel(Vec::new());
+    let (activate_shared_device_tx, activate_shared_device_rx) = mpsc::unbounded_channel();
+    let shared_playback_player = player.bindings();
+    let shared_playback_client = client.clone();
+    let shared_playback_exit_sender = exit_sender.clone();
+
+    tokio::spawn(async move {
+        if let Err(err) = shared_playback_module::init(
+            shared_playback_player,
+            shared_playback_client,
+            shared_playback_config_rx,
+            configuration.max_audio_quality,
+            shared_devices_tx,
+            activate_shared_device_rx,
+            39621,
+        )
+        .await
+        {
+            _ = shared_playback_exit_sender.send(true);
+            eprintln!("{err}");
+        }
+    });
 
     let client = client.clone();
-
     let controls = player.controls();
     let tracklist_receiver = player.tracklist();
     let status_receiver = player.status();
@@ -118,10 +137,9 @@ pub async fn run() -> AppResult<()> {
             &exit_sender,
             ttl_tx,
             broadcast,
-            available_devices_rx,
-            active_device_rx,
-            set_active_device_tx,
-            config_tx,
+            shared_devices_rx,
+            activate_shared_device_tx,
+            shared_playback_config_tx,
         ) {
             _ = exit_sender.send(true);
             eprintln!("{err}");

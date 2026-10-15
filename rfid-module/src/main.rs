@@ -1,4 +1,3 @@
-#[cfg(feature = "connect")]
 use cli_module::ConnectArgs;
 #[cfg(feature = "gpio")]
 use cli_module::GpioArgs;
@@ -7,7 +6,6 @@ use cli_module::{
     SharedPlaybackConfig, create_player, default_audio_quality, get_client, handle_shared_commands,
     parse_disconnect_args, spawn_clean_up,
 };
-use disconnect_module::spawn_disconnect;
 use rfid_module::{RfidState, spawn_rfid};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -34,7 +32,6 @@ struct Arguments {
     #[clap(flatten)]
     disconnect: DisconnectArgs,
 
-    #[cfg(feature = "connect")]
     #[clap(flatten)]
     connect: ConnectArgs,
 
@@ -95,107 +92,48 @@ pub async fn run() -> AppResult<()> {
             password: disconnect.password.clone(),
             device_name: disconnect.device_name.clone(),
         })
+    } else if args.connect.connect {
+        SharedPlaybackConfig::Connect(args.connect.name_args.connect_name.clone())
     } else {
-        #[cfg(feature = "connect")]
-        {
-            if args.connect.connect {
-                SharedPlaybackConfig::Connect(args.connect.name_args.connect_name.clone())
-            } else {
-                SharedPlaybackConfig::None
-            }
-        }
-
-        #[cfg(not(feature = "connect"))]
-        {
-            SharedPlaybackConfig::None
-        }
+        SharedPlaybackConfig::None
     };
 
-    let (_, shared_playback_config_rx) = watch::channel(shared_playback_config.clone());
+    let (_, shared_playback_config_rx) = watch::channel(shared_playback_config);
 
-    let (available_devices_tx, active_device_tx, set_active_device_tx, set_active_device_rx) =
-        if matches!(&shared_playback_config, SharedPlaybackConfig::Disconnect(_)) {
-            let (available_devices_tx, _) = watch::channel(Vec::new());
-            let (active_device_tx, _) = watch::channel(String::new());
-            let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
+    let (shared_devices_tx, shared_devices_rx) = watch::channel(Vec::new());
+    let (activate_shared_device_tx, activate_shared_device_rx) = mpsc::unbounded_channel();
+    let shared_playback_player = player.bindings();
+    let shared_playback_client = client.clone();
+    let shared_playback_exit_sender = exit_sender.clone();
 
-            (
-                Some(available_devices_tx),
-                Some(active_device_tx),
-                Some(set_active_device_tx),
-                Some(set_active_device_rx),
-            )
-        } else {
-            (None, None, None, None)
-        };
-
-    #[cfg(feature = "gpio")]
-    if args.gpio.gpio {
-        let status_receiver = player.status();
-        let active_receiver = player.active();
-        tokio::spawn(async move {
-            if let Err(err) = gpio_module::init(status_receiver, active_receiver).await {
-                eprintln!("{err}");
-            }
-        });
-    }
+    tokio::spawn(async move {
+        if let Err(err) = shared_playback_module::init(
+            shared_playback_player,
+            shared_playback_client,
+            shared_playback_config_rx,
+            max_audio_quality,
+            shared_devices_tx,
+            activate_shared_device_rx,
+            39621,
+        )
+        .await
+        {
+            _ = shared_playback_exit_sender.send(true);
+            eprintln!("{err}");
+        }
+    });
 
     spawn_rfid(
         &player,
         exit_sender.clone(),
         database.clone(),
         broadcast,
-        shared_playback_config_rx.clone(),
         args.rfid_config.rfid_server_base_address,
         args.rfid_config.rfid_server_secret,
         RfidState::default(),
-        set_active_device_tx,
+        Some(shared_devices_rx), // TODO: Only some if cli either enables Connect or Disconnect
+        Some(activate_shared_device_tx), // TODO: Only some if cli either enables Connect or Disconnect
     );
-
-    if let (Some(available_devices_tx), Some(active_device_tx), Some(set_active_device_rx)) =
-        (available_devices_tx, active_device_tx, set_active_device_rx)
-    {
-        spawn_disconnect(
-            &player,
-            exit_sender,
-            shared_playback_config_rx.clone(),
-            available_devices_tx,
-            active_device_tx,
-            set_active_device_rx,
-        );
-    }
-
-    #[cfg(feature = "connect")]
-    if args.connect.connect {
-        let client = client.clone();
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let controls = player.controls();
-        let (connect_devices, _) = tokio::sync::watch::channel(Vec::new());
-        let (_activate, activations) = tokio::sync::mpsc::unbounded_channel();
-
-        tokio::spawn(async move {
-            if let Err(err) = connect_module::init(
-                client,
-                shared_playback_config_rx,
-                controls,
-                position_receiver,
-                tracklist_receiver,
-                status_receiver,
-                volume_receiver,
-                max_audio_quality,
-                connect_devices,
-                activations,
-                args.connect.name_args.connect_port,
-            )
-            .await
-            {
-                eprintln!("{err}");
-            }
-        });
-    }
 
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);
     player.player_loop(exit_receiver).await?;

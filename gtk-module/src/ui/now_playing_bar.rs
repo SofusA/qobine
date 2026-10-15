@@ -5,6 +5,7 @@ use std::{
 };
 
 use adw::prelude::*;
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use gtk4 as gtk;
 use libadwaita as adw;
 
@@ -36,8 +37,7 @@ pub struct NowPlayingBar {
     progress_total_label: gtk::Label,
 
     connect_button: gtk::MenuButton,
-    available_devices: Rc<RefCell<Vec<String>>>,
-    active_device: Rc<RefCell<String>>,
+    available_devices: Rc<RefCell<Vec<SharedPlaybackDevice>>>,
 
     on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
     on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
@@ -49,15 +49,14 @@ pub struct NowPlayingBar {
 impl NowPlayingBar {
     pub fn new(
         controls: Controls,
-        set_connect_active_device: UnboundedSender<String>,
+        set_connect_active_device: UnboundedSender<SharedPlaybackDeviceId>,
         on_open_album: Rc<dyn Fn(AlbumHeaderInfo)>,
         on_open_artist: Rc<dyn Fn(ArtistHeaderInfo)>,
         on_open_playlist: Rc<dyn Fn(PlaylistHeaderInfo)>,
         volume: f32,
     ) -> Self {
         let setting_volume_from_backend = Rc::new(Cell::new(false));
-        let available_devices = Rc::new(RefCell::new(Vec::<String>::new()));
-        let active_device = Rc::new(RefCell::new(String::new()));
+        let available_devices = Rc::new(RefCell::new(Vec::<SharedPlaybackDevice>::new()));
 
         let title_label = gtk::Label::builder()
             .halign(gtk::Align::Fill)
@@ -125,7 +124,6 @@ impl NowPlayingBar {
         connect_popover.connect_show({
             let connect_list = connect_list;
             let available_devices = available_devices.clone();
-            let active_device = active_device.clone();
             let sender = set_connect_active_device;
             let popover = connect_popover.clone();
 
@@ -135,28 +133,24 @@ impl NowPlayingBar {
                 }
 
                 let devices = available_devices.borrow().clone();
-                let active = active_device.borrow().clone();
 
                 for device in devices {
                     let row = adw::ActionRow::builder()
-                        .title(&device)
+                        .title(&device.name)
                         .activatable(true)
                         .build();
 
-                    if device == active {
+                    if device.active {
                         let check = gtk::Image::from_icon_name("object-select-symbolic");
                         row.add_suffix(&check);
                     }
 
                     let row_device = device.clone();
-                    let row_active_device = active_device.clone();
                     let row_sender = sender.clone();
                     let row_popover = popover.clone();
 
                     row.connect_activated(move |_| {
-                        row_active_device.borrow_mut().clone_from(&row_device);
-                        let _ = row_sender.send(row_device.clone());
-
+                        let _ = row_sender.send(row_device.id.clone());
                         row_popover.popdown();
                     });
 
@@ -384,7 +378,6 @@ impl NowPlayingBar {
             progress_total_label,
             connect_button,
             available_devices,
-            active_device,
             on_open_album,
             on_open_artist,
             on_open_playlist,
@@ -405,12 +398,10 @@ impl NowPlayingBar {
         self.setting_volume_from_backend.set(false);
     }
 
-    pub fn set_output_devices(&self, available_devices: Vec<String>, active_device: String) {
+    pub fn set_output_devices(&self, available_devices: Vec<SharedPlaybackDevice>) {
         let has_devices = !available_devices.is_empty();
 
         *self.available_devices.borrow_mut() = available_devices;
-        *self.active_device.borrow_mut() = active_device;
-
         self.connect_button.set_visible(has_devices);
     }
 

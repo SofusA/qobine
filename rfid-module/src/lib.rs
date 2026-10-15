@@ -1,4 +1,4 @@
-use cli_module::SharedPlaybackConfig;
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     ExitSender, TracklistReceiver, controls::Controls, tracklist::TracklistType,
 };
@@ -30,11 +30,11 @@ pub fn spawn_rfid(
     exit_sender: ExitSender,
     database: Arc<Database>,
     broadcast: Arc<NotificationBroadcast>,
-    shared_playback_config: watch::Receiver<SharedPlaybackConfig>,
     rfid_server_base_address: Option<String>,
     rfid_server_secret: Option<String>,
     state: RfidState,
-    set_active_device_tx: Option<UnboundedSender<String>>,
+    shared_devices_rx: Option<watch::Receiver<Vec<SharedPlaybackDevice>>>,
+    set_active_device_tx: Option<UnboundedSender<SharedPlaybackDeviceId>>,
 ) {
     let controls = player.controls();
     let tracklist_receiver = player.tracklist();
@@ -48,7 +48,7 @@ pub fn spawn_rfid(
             broadcast,
             rfid_server_base_address,
             rfid_server_secret,
-            shared_playback_config,
+            shared_devices_rx,
             set_active_device_tx,
         )
         .await
@@ -67,8 +67,8 @@ async fn init(
     broadcast: Arc<NotificationBroadcast>,
     rfid_server_base_address: Option<String>,
     rfid_server_secret: Option<String>,
-    shared_playback_config: watch::Receiver<SharedPlaybackConfig>,
-    connect_set_device: Option<mpsc::UnboundedSender<String>>,
+    shared_devices_rx: Option<watch::Receiver<Vec<SharedPlaybackDevice>>>,
+    activate_shared_device: Option<mpsc::UnboundedSender<SharedPlaybackDeviceId>>,
 ) -> AppResult<()> {
     let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
     let mut out = tokio::io::stdout();
@@ -123,13 +123,10 @@ async fn init(
                 .await;
             }
             None => {
-                let device_name = match shared_playback_config.borrow().clone() {
-                    SharedPlaybackConfig::Connect(connect_name) => Some(connect_name),
-                    SharedPlaybackConfig::Disconnect(parsed_disconnect) => {
-                        Some(parsed_disconnect.device_name)
-                    }
-                    SharedPlaybackConfig::None => None,
-                };
+                let device = shared_devices_rx
+                    .as_ref()
+                    .map(|x| x.borrow())
+                    .and_then(|x| x.iter().find(|y| y.is_self).cloned());
 
                 handle_play_scan(
                     &database,
@@ -139,8 +136,8 @@ async fn init(
                     &tracklist_receiver,
                     rfid_server_base_address.as_deref(),
                     rfid_server_secret.as_deref(),
-                    device_name.as_deref(),
-                    connect_set_device.clone(),
+                    device,
+                    activate_shared_device.clone(),
                 )
                 .await;
             }
@@ -156,8 +153,8 @@ pub async fn handle_play_scan(
     tracklist_receiver: &TracklistReceiver,
     rfid_server_base_address: Option<&str>,
     rfid_server_secret: Option<&str>,
-    connect_device_name: Option<&str>,
-    connect_set_device: Option<mpsc::UnboundedSender<String>>,
+    shared_device: Option<SharedPlaybackDevice>,
+    activate_shared_device: Option<mpsc::UnboundedSender<SharedPlaybackDeviceId>>,
 ) {
     let reference = match rfid_server_base_address {
         Some(server) => {
@@ -202,10 +199,10 @@ pub async fn handle_play_scan(
 
     match reference {
         ReferenceType::Album(id) => {
-            if let Some(connect_set_device) = connect_set_device
-                && let Some(connect_device_name) = connect_device_name
+            if let Some(activate_shared_device) = activate_shared_device
+                && let Some(shared_device) = shared_device
             {
-                _ = connect_set_device.send(connect_device_name.to_string());
+                _ = activate_shared_device.send(shared_device.id);
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
 
@@ -220,10 +217,10 @@ pub async fn handle_play_scan(
         }
 
         ReferenceType::Playlist(id) => {
-            if let Some(connect_set_device) = connect_set_device
-                && let Some(connect_device_name) = connect_device_name
+            if let Some(activate_shared_device) = activate_shared_device
+                && let Some(shared_device) = shared_device
             {
-                _ = connect_set_device.send(connect_device_name.to_string());
+                _ = activate_shared_device.send(shared_device.id);
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
 

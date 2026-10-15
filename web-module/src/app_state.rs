@@ -1,4 +1,5 @@
 use axum::response::{Html, IntoResponse, Response};
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
@@ -35,26 +36,23 @@ pub struct AppState {
     pub auto_play_receiver: AutoPlayReceiver,
     pub templates: watch::Receiver<Templates>,
     pub database: Arc<Database>,
-    pub connect_device_name: Option<String>,
-    pub connect_available_devices: Option<watch::Receiver<Vec<String>>>,
-    pub connect_active_device: Option<watch::Receiver<String>>,
-    pub set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
+    pub shared_devices_rx: Option<watch::Receiver<Vec<SharedPlaybackDevice>>>,
+    pub set_active_device_tx: Option<mpsc::UnboundedSender<SharedPlaybackDeviceId>>,
 }
 
 impl AppState {
     pub fn playing_info(&self) -> PlayingInfo {
         let available_devices = {
-            self.connect_available_devices
+            self.shared_devices_rx
                 .as_ref()
                 .map(|x| x.borrow().to_vec())
                 .unwrap_or_default()
         };
 
-        let active_device = {
-            self.connect_active_device
-                .as_ref()
-                .map(|x| x.borrow().to_string())
-        };
+        let active_device = available_devices.iter().find(|x| x.active);
+
+        let available_devices = available_devices.iter().map(|x| x.name.clone()).collect();
+        let active_device = active_device.map(|x| x.name.clone());
 
         let current_volume = self.volume_receiver.borrow();
         let current_volume = (*current_volume * 100.0).to_u32().unwrap_or_default();

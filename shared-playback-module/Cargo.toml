@@ -1,0 +1,20 @@
+[package]
+name = "shared-playback-module"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[dependencies]
+disconnect-module = { version = "*", path = "../disconnect-module" }
+connect-module = { version = "*", path = "../connect-module" }
+controls-module = { version = "*", path = "../controls-module" }
+player-module = { version = "*", path = "../player-module" }
+cli-module = { version = "*", path = "../cli-module" }
+
+tokio.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

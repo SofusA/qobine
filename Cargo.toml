@@ -14,7 +14,7 @@ members = [
   "disconnect-module",
   "player-module",
   "macos-module"
-]
+, "shared-playback-module"]
 resolver = "2"
 
 [workspace.package]

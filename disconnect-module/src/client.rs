@@ -1,5 +1,9 @@
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex, PoisonError},
+    time::Duration,
+};
 
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     Status,
     controls::{ControlCommand, Controls},
@@ -11,6 +15,12 @@ use futures::StreamExt;
 use player_module::AppResult;
 use reqwest::Client;
 use tokio::sync::{mpsc, watch};
+
+#[derive(Debug, Default)]
+struct DeviceState {
+    available: Vec<String>,
+    active: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct DisconnectClient {
@@ -25,8 +35,8 @@ pub struct DisconnectClient {
     auto_play_sender: watch::Sender<bool>,
     status_sender: watch::Sender<Status>,
     active_sender: watch::Sender<bool>,
-    available_devices_sender: watch::Sender<Vec<String>>,
-    active_device_sender: watch::Sender<String>,
+    devices_sender: watch::Sender<Vec<SharedPlaybackDevice>>,
+    device_state: Arc<Mutex<DeviceState>>,
 }
 
 impl DisconnectClient {
@@ -41,8 +51,7 @@ impl DisconnectClient {
         auto_play_sender: watch::Sender<bool>,
         status_sender: watch::Sender<Status>,
         active_sender: watch::Sender<bool>,
-        available_devices_sender: watch::Sender<Vec<String>>,
-        active_device_sender: watch::Sender<String>,
+        devices_sender: watch::Sender<Vec<SharedPlaybackDevice>>,
     ) -> Self {
         Self {
             client: Client::new(),
@@ -56,9 +65,60 @@ impl DisconnectClient {
             auto_play_sender,
             status_sender,
             active_sender,
-            available_devices_sender,
-            active_device_sender,
+            devices_sender,
+            device_state: Arc::new(Mutex::new(DeviceState::default())),
         }
+    }
+
+    pub fn clear_devices(&self) {
+        let mut state = self
+            .device_state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+
+        *state = DeviceState::default();
+        self.devices_sender.send_replace(Vec::new());
+    }
+
+    fn update_available_devices(&self, available: Vec<String>) {
+        let devices = {
+            let mut state = self
+                .device_state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+
+            state.available = available;
+            self.shared_devices(&state)
+        };
+
+        self.devices_sender.send_replace(devices);
+    }
+
+    fn update_active_device(&self, active: String) {
+        let devices = {
+            let mut state = self
+                .device_state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+
+            state.active = Some(active);
+            self.shared_devices(&state)
+        };
+
+        self.devices_sender.send_replace(devices);
+    }
+
+    fn shared_devices(&self, state: &DeviceState) -> Vec<SharedPlaybackDevice> {
+        state
+            .available
+            .iter()
+            .map(|name| SharedPlaybackDevice {
+                id: SharedPlaybackDeviceId::Disconnect(name.clone()),
+                name: name.clone(),
+                active: state.active.as_deref() == Some(name.as_str()),
+                is_self: name == &self.device_name,
+            })
+            .collect()
     }
 
     fn url(&self, path: &str) -> String {
@@ -175,7 +235,7 @@ impl DisconnectClient {
             }
         });
 
-        _ = self.active_device_sender.send(initial_state.active_device);
+        self.update_active_device(initial_state.active_device);
         _ = self.tracklist_sender.send(initial_state.tracklist);
         _ = self.status_sender.send(initial_state.playback_status);
         _ = self.volume_sender.send(initial_state.volume);
@@ -231,7 +291,7 @@ impl DisconnectClient {
                                     let is_active = device == self.device_name;
 
                                     tracing::info!(
-                                        "New active device: {:?}. I am {}, and therefore i am active: {}",
+                                        "New active device: {:?}. I am {}, and therefore I am active: {}",
                                         device,
                                         self.device_name,
                                         is_active
@@ -245,7 +305,8 @@ impl DisconnectClient {
                                             true
                                         }
                                     });
-                                    _ = self.active_device_sender.send(device);
+
+                                    self.update_active_device(device);
                                 }
 
                                 DisconnectServerEvent::Volume(volume) => {
@@ -265,7 +326,7 @@ impl DisconnectClient {
 
                                 DisconnectServerEvent::AvailableDevices(devices) => {
                                     tracing::info!("New available devices: {:?}", devices);
-                                    _ = self.available_devices_sender.send(devices);
+                                    self.update_available_devices(devices);
                                 }
                             }
                         }
