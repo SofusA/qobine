@@ -18,7 +18,7 @@ controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
 mpris-module = { version = "*", path = "../mpris-module" }
 cli-module = { version = "*", path = "../cli-module" }
-disconnect-module = { version = "*", path = "../disconnect-module" }
+shared-playback-module = { version = "*", path = "../shared-playback-module" }
 
 gtk4 = { version = "0.11", features = ["gnome_50"] }
 libadwaita = {version = "0.9" , features = ["v1_9"] }

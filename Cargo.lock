@@ -1469,7 +1469,6 @@ dependencies = [
 name = "disconnect-module"
 version = "1.0.0"
 dependencies = [
- "clap",
  "cli-module",
  "controls-module",
  "disconnect-server-module",
@@ -2333,7 +2332,6 @@ version = "1.0.0"
 dependencies = [
  "cli-module",
  "controls-module",
- "disconnect-module",
  "futures",
  "futures-util",
  "glib",
@@ -2343,6 +2341,7 @@ dependencies = [
  "mpris-module",
  "num-traits",
  "player-module",
+ "shared-playback-module",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -5072,14 +5071,13 @@ version = "1.0.0"
 dependencies = [
  "clap",
  "cli-module",
- "connect-module",
  "controls-module",
- "disconnect-module",
  "gpio-module",
  "player-module",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "shared-playback-module",
  "tokio",
 ]
 
@@ -5555,6 +5553,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared-playback-module"
+version = "1.0.0"
+dependencies = [
+ "cli-module",
+ "connect-module",
+ "controls-module",
+ "disconnect-module",
+ "player-module",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6804,10 +6815,8 @@ version = "1.0.0"
 dependencies = [
  "clap",
  "cli-module",
- "connect-module",
  "controls-module",
  "crossterm",
- "disconnect-module",
  "futures",
  "image",
  "keepawake",
@@ -6818,6 +6827,7 @@ dependencies = [
  "ratatui",
  "ratatui-image",
  "reqwest 0.12.28",
+ "shared-playback-module",
  "tokio",
  "tui-big-text",
  "tui-input",
@@ -7193,9 +7203,7 @@ dependencies = [
  "axum-extra",
  "clap",
  "cli-module",
- "connect-module",
  "controls-module",
- "disconnect-module",
  "filesentry",
  "futures",
  "gpio-module",
@@ -7208,6 +7216,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "shared-playback-module",
  "skabelon",
  "time",
  "tokio",

@@ -287,6 +287,11 @@ async fn rfid_reference(
 }
 
 async fn play_rfid_reference(State(state): State<Arc<AppState>>, Path(reference): Path<String>) {
+    let connect_device = state.shared_devices_rx.as_ref().and_then(|rx| {
+        let devices = rx.borrow();
+        devices.iter().find(|d| d.is_self).cloned()
+    });
+
     handle_play_scan(
         &state.database,
         &state.controls,
@@ -295,8 +300,8 @@ async fn play_rfid_reference(State(state): State<Arc<AppState>>, Path(reference)
         &state.tracklist_receiver,
         None,
         None,
-        state.connect_device_name.as_deref(),
-        state.set_connect_active_device.clone(),
+        connect_device,
+        state.set_active_device_tx.clone(),
     )
     .await;
 }
@@ -339,8 +344,15 @@ async fn set_active_device(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<String>,
 ) -> impl IntoResponse {
-    if let Some(sender) = &state.set_connect_active_device {
-        _ = sender.send(device_id);
+    let device = state.shared_devices_rx.as_ref().and_then(|rx| {
+        let devices = rx.borrow();
+        devices.iter().find(|d| d.name == device_id).cloned()
+    });
+
+    if let Some(sender) = &state.set_active_device_tx
+        && let Some(device) = device
+    {
+        _ = sender.send(device.id);
     }
 }
 

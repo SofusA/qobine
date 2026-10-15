@@ -6,6 +6,7 @@ use axum::{
     response::{Html, IntoResponse, Response, Sse, sse::Event},
     routing::get,
 };
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     AutoPlayReceiver, PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
     controls::Controls,
@@ -58,10 +59,8 @@ pub async fn init(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<StreamClient>,
     database: Arc<Database>,
-    connect_device_name: Option<String>,
-    connect_available_devices: Option<watch::Receiver<Vec<String>>>,
-    connect_active_device: Option<watch::Receiver<String>>,
-    set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
+    shared_devices_rx: Option<watch::Receiver<Vec<SharedPlaybackDevice>>>,
+    set_active_device_tx: Option<mpsc::UnboundedSender<SharedPlaybackDeviceId>>,
 ) -> AppResult<()> {
     let interface = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&interface)
@@ -80,10 +79,8 @@ pub async fn init(
         broadcast,
         client,
         database,
-        connect_device_name,
-        connect_available_devices,
-        connect_active_device,
-        set_connect_active_device,
+        shared_devices_rx.as_ref(),
+        set_active_device_tx,
     );
 
     tracing::info!("Listening on {interface}");
@@ -108,10 +105,8 @@ fn create_router(
     broadcast: Arc<NotificationBroadcast>,
     client: Arc<StreamClient>,
     database: Arc<Database>,
-    connect_device_name: Option<String>,
-    connect_available_devices: Option<watch::Receiver<Vec<String>>>,
-    connect_active_device: Option<watch::Receiver<String>>,
-    set_connect_active_device: Option<mpsc::UnboundedSender<String>>,
+    shared_devices_rx: Option<&watch::Receiver<Vec<SharedPlaybackDevice>>>,
+    set_active_device_tx: Option<mpsc::UnboundedSender<SharedPlaybackDeviceId>>,
 ) -> Router {
     let (tx, _rx) = broadcast::channel::<ServerSentEvent>(100);
     let broadcast_subscribe = broadcast.subscribe();
@@ -170,10 +165,8 @@ fn create_router(
         status_receiver: status_receiver.clone(),
         templates: templates_rx.clone(),
         database,
-        connect_device_name,
-        connect_available_devices: connect_available_devices.clone(),
-        connect_active_device: connect_active_device.clone(),
-        set_connect_active_device,
+        shared_devices_rx: shared_devices_rx.cloned(),
+        set_active_device_tx,
     });
 
     tokio::spawn(background_task(
@@ -184,8 +177,7 @@ fn create_router(
         volume_receiver,
         auto_play_receiver,
         status_receiver,
-        connect_available_devices,
-        connect_active_device,
+        shared_devices_rx.cloned(),
         templates_rx,
     ));
 
@@ -218,8 +210,7 @@ async fn background_task(
     mut volume: VolumeReceiver,
     mut auto_play: AutoPlayReceiver,
     mut status: StatusReceiver,
-    mut available_devices: Option<watch::Receiver<Vec<String>>>,
-    mut active_device: Option<watch::Receiver<String>>,
+    mut shared_devices_rx: Option<watch::Receiver<Vec<SharedPlaybackDevice>>>,
     templates: watch::Receiver<Templates>,
 ) {
     loop {
@@ -275,37 +266,18 @@ async fn background_task(
             }
 
             Ok(()) = async {
-                match &mut available_devices {
+                match &mut shared_devices_rx {
                     Some(devices) => devices.changed().await,
                     None => pending().await,
                 }
             } => {
                 tracing::info!("New available_devices event");
-                if let Some(devices) = &mut available_devices {
-                    let devices = devices.borrow_and_update();
+                if let Some(devices) = &mut shared_devices_rx{
+                    let devices: Vec<_> = devices.borrow_and_update().iter().map(|x| x.name.clone()).collect();
 
                     let event = ServerSentEvent {
                         event_name: "available-devices".into(),
                         event_data: serde_json::to_string(&*devices).unwrap_or_default(),
-                    };
-
-                    _ = tx.send(event);
-                }
-            },
-
-            Ok(()) = async {
-                match &mut active_device {
-                    Some(device) => device.changed().await,
-                    None => pending().await,
-                }
-            } => {
-                tracing::info!("New active device event");
-                if let Some(device) = &mut active_device {
-                    let device = device.borrow_and_update();
-
-                    let event = ServerSentEvent {
-                        event_name: "active-device".into(),
-                        event_data: serde_json::to_string(&*device).unwrap_or_default(),
                     };
 
                     _ = tx.send(event);

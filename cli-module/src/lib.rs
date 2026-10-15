@@ -338,3 +338,17 @@ pub enum SharedPlaybackConfig {
     Disconnect(ParsedDisconnect),
     None,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SharedPlaybackDeviceId {
+    Connect(i32),
+    Disconnect(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedPlaybackDevice {
+    pub id: SharedPlaybackDeviceId,
+    pub name: String,
+    pub active: bool,
+    pub is_self: bool,
+}

@@ -2,7 +2,6 @@ use cli_module::{
     ParsedDisconnect, SharedArgs, SharedCommands, SharedPlaybackConfig, create_player,
     default_audio_quality, get_client, handle_shared_commands, spawn_clean_up_mut,
 };
-use disconnect_module::spawn_disconnect;
 use futures::executor::block_on;
 #[cfg(target_os = "linux")]
 use mpris_module::spawn_mpris;
@@ -107,7 +106,31 @@ pub async fn run() -> AppResult<()> {
         SharedPlaybackConfig::None
     };
 
-    let (config_tx, config_rx) = watch::channel(shared_playback_config);
+    let (shared_playback_config_tx, shared_playback_config_rx) =
+        watch::channel(shared_playback_config);
+
+    let (shared_devices_tx, shared_devices_rx) = watch::channel(Vec::new());
+    let (activate_shared_device_tx, activate_shared_device_rx) = mpsc::unbounded_channel();
+    let shared_playback_player = player.bindings();
+    let shared_playback_client = client.clone();
+    let shared_playback_exit_sender = exit_sender.clone();
+
+    tokio::spawn(async move {
+        if let Err(err) = shared_playback_module::init(
+            shared_playback_player,
+            shared_playback_client,
+            shared_playback_config_rx,
+            max_audio_quality,
+            shared_devices_tx,
+            activate_shared_device_rx,
+            39621,
+        )
+        .await
+        {
+            _ = shared_playback_exit_sender.send(true);
+            eprintln!("{err}");
+        }
+    });
 
     #[cfg(target_os = "linux")]
     spawn_mpris(&player, &exit_sender, "qobine".to_string());
@@ -131,76 +154,6 @@ pub async fn run() -> AppResult<()> {
     let client = client.clone();
     let broadcast = broadcast.clone();
 
-    /*
-     * UI channels for Disconnect.
-     *
-     * These remain alive even while Disconnect is disabled, allowing the TUI to
-     * enable Disconnect later by updating config_tx.
-     */
-    let (available_devices_tx, available_devices_rx) = watch::channel(Vec::new());
-
-    let (active_device_tx, active_device_rx) = watch::channel(String::new());
-
-    let (set_active_device_tx, set_active_device_rx) = mpsc::unbounded_channel();
-
-    /*
-     * Start the Disconnect supervisor unconditionally.
-     *
-     * It waits while the configuration is Connect or None and starts its client
-     * when the configuration becomes Disconnect.
-     */
-    spawn_disconnect(
-        &player,
-        exit_sender.clone(),
-        config_rx.clone(),
-        available_devices_tx.clone(),
-        active_device_tx.clone(),
-        set_active_device_rx,
-    );
-
-    let (connect_devices_tx, connect_devices_rx) = watch::channel(Vec::new());
-
-    let (activate_connect_device_tx, activate_connect_device_rx) = mpsc::unbounded_channel();
-
-    #[cfg(feature = "connect")]
-    {
-        let client = client.clone();
-        let position_receiver = player.position();
-        let tracklist_receiver = player.tracklist();
-        let volume_receiver = player.volume();
-        let status_receiver = player.status();
-        let controls = player.controls();
-        let connect_config_rx = config_rx.clone();
-
-        tokio::spawn(async move {
-            if let Err(err) = connect_module::init(
-                client,
-                connect_config_rx,
-                controls,
-                position_receiver,
-                tracklist_receiver,
-                status_receiver,
-                volume_receiver,
-                max_audio_quality,
-                connect_devices_tx,
-                activate_connect_device_rx,
-                39621,
-            )
-            .await
-            {
-                eprintln!("{err}");
-            }
-        });
-    }
-
-    /*
-     * Without the Connect feature, drop the receiving side used by the Connect
-     * service. The UI still receives an empty device list and can retain the same
-     * interface.
-     */
-    #[cfg(not(feature = "connect"))]
-    drop((connect_devices_tx, activate_connect_device_rx));
-
     let (ttl_tx, ttl_rx) = mpsc::unbounded_channel::<u32>();
     spawn_clean_up_mut(
         database.clone(),
@@ -219,12 +172,9 @@ pub async fn run() -> AppResult<()> {
             exit_sender.clone(),
             ttl_tx,
             database,
-            available_devices_rx,
-            active_device_rx,
-            set_active_device_tx,
-            connect_devices_rx,
-            activate_connect_device_tx,
-            config_tx,
+            shared_devices_rx,
+            activate_shared_device_tx,
+            shared_playback_config_tx,
         )
         .await
         {

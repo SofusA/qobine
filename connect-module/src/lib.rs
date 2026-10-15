@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cli_module::SharedPlaybackConfig;
+use cli_module::{SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver, VolumeReceiver,
-    controls::{ConnectDevice, Controls, NewQueueItem},
+    controls::{Controls, NewQueueItem},
 };
 use num_traits::ToPrimitive;
 use player_module::{AppResult, AudioQuality, client::StreamClient, error::PlayerError};
@@ -25,6 +25,14 @@ const REFRESH_LEAD: Duration = Duration::from_secs(300);
 const REFRESH_RETRY: Duration = Duration::from_secs(60);
 const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A device of the Qobuz Connect session, by its renderer id in that session.
+struct ConnectDevice {
+    pub id: i32,
+    pub name: String,
+    pub active: bool,
+}
+
 struct Connect {
     controls: Controls,
     position_receiver: PositionReceiver,
@@ -41,7 +49,8 @@ struct Connect {
     pending: Option<Pending>,
     refused: bool,
     deferred: Option<Deferred>,
-    devices: watch::Sender<Vec<ConnectDevice>>,
+    devices: watch::Sender<Vec<SharedPlaybackDevice>>,
+    renderer_id: Option<i32>,
     activations: mpsc::UnboundedReceiver<i32>,
     renderers: Vec<ConnectDevice>,
     taking_over: bool,
@@ -76,155 +85,7 @@ struct Remote {
 
 type LocalItem = (u64, Option<i32>, u32);
 
-pub async fn init(
-    client: Arc<StreamClient>,
-    mut client_config: watch::Receiver<SharedPlaybackConfig>,
-    controls: Controls,
-    position_receiver: PositionReceiver,
-    tracklist_receiver: TracklistReceiver,
-    status_receiver: StatusReceiver,
-    volume_receiver: VolumeReceiver,
-    max_audio_quality: AudioQuality,
-    devices: watch::Sender<Vec<ConnectDevice>>,
-    mut activations: mpsc::UnboundedReceiver<i32>,
-    port: u16,
-) -> AppResult<()> {
-    let mut activations_open = true;
-
-    loop {
-        let config = client_config.borrow_and_update().clone();
-
-        let SharedPlaybackConfig::Connect(connect_name) = config else {
-            tracing::info!("Qobuz Connect disabled");
-
-            tokio::select! {
-                changed = client_config.changed() => {
-                    if changed.is_err() {
-                        return Ok(());
-                    }
-                }
-
-                activation = activations.recv(), if activations_open => {
-                    if activation.is_none() {
-                        activations_open = false;
-                    }
-                }
-            }
-
-            continue;
-        };
-
-        tracing::info!("Starting Qobuz Connect as {connect_name}");
-
-        /*
-         * run_connect owns its activation receiver. We therefore create a
-         * temporary channel for this particular Connect lifetime and forward
-         * activations from the persistent receiver.
-         */
-        let (activation_sender, activation_receiver) = mpsc::unbounded_channel();
-
-        let should_restart = {
-            let connect_future = run_connect(
-                client.clone(),
-                connect_name.clone(),
-                controls.clone(),
-                position_receiver.clone(),
-                tracklist_receiver.clone(),
-                status_receiver.clone(),
-                volume_receiver.clone(),
-                max_audio_quality,
-                devices.clone(),
-                activation_receiver,
-                port,
-            );
-
-            tokio::pin!(connect_future);
-
-            loop {
-                tokio::select! {
-                    result = &mut connect_future => {
-                        /*
-                         * A normal Connect shutdown is not currently expected.
-                         * Errors are returned to the caller as before.
-                         */
-                        return result;
-                    }
-
-                    changed = client_config.changed() => {
-                        if changed.is_err() {
-                            tracing::info!(
-                                "Shared playback configuration channel closed"
-                            );
-
-                            break false;
-                        }
-
-                        let next_config =
-                            client_config.borrow_and_update().clone();
-
-                        if next_config
-                            == SharedPlaybackConfig::Connect(connect_name.clone())
-                        {
-                            /*
-                             * The watch channel was updated, but the effective
-                             * Connect configuration did not change.
-                             */
-                            continue;
-                        }
-
-                        tracing::info!(
-                            "Qobuz Connect configuration changed"
-                        );
-
-                        break true;
-                    }
-
-                    activation = activations.recv(), if activations_open => {
-                        match activation {
-                            Some(renderer_id) => {
-                                if activation_sender
-                                    .send(renderer_id)
-                                    .is_err()
-                                {
-                                    tracing::debug!(
-                                        "Qobuz Connect activation receiver closed"
-                                    );
-                                }
-                            }
-
-                            None => {
-                                activations_open = false;
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        /*
-         * connect_future has now been dropped. This also drops Session,
-         * Discovery and the temporary activation receiver before another
-         * instance attempts to bind the same discovery port.
-         */
-        devices.send_replace(Vec::new());
-
-        if !should_restart {
-            return Ok(());
-        }
-
-        match client_config.borrow().clone() {
-            SharedPlaybackConfig::Connect(ref new_name) => {
-                tracing::info!("Restarting Qobuz Connect as {new_name}");
-            }
-
-            _ => {
-                tracing::info!("Stopping Qobuz Connect");
-            }
-        }
-    }
-}
-
-async fn run_connect(
+pub async fn run_connect(
     client: Arc<StreamClient>,
     connect_name: String,
     controls: Controls,
@@ -233,7 +94,7 @@ async fn run_connect(
     status_receiver: StatusReceiver,
     volume_receiver: VolumeReceiver,
     max_audio_quality: AudioQuality,
-    devices: watch::Sender<Vec<ConnectDevice>>,
+    devices: watch::Sender<Vec<SharedPlaybackDevice>>,
     activations: mpsc::UnboundedReceiver<i32>,
     port: u16,
 ) -> AppResult<()> {
@@ -276,6 +137,7 @@ async fn run_connect(
         refresh_at: None,
         discovery,
         handovers,
+        renderer_id: None,
     };
 
     let mut session = if connect.delegated {
@@ -532,6 +394,7 @@ impl Connect {
             Event::Registered { renderer_id } => {
                 tracing::info!("Registered as Qobuz Connect renderer {renderer_id}");
                 let device = session.device().clone();
+                self.renderer_id = Some(renderer_id);
                 update(
                     &mut self.renderers,
                     RendererEvent::Added {
@@ -916,10 +779,22 @@ impl Connect {
         self.remote = None;
         self.publish();
         self.discovery.set_session(None);
+        self.renderer_id = None;
     }
 
     fn publish(&self) {
-        self.devices.send_replace(self.renderers.clone());
+        let devices = self
+            .renderers
+            .iter()
+            .map(|renderer| SharedPlaybackDevice {
+                id: SharedPlaybackDeviceId::Connect(renderer.id),
+                name: renderer.name.clone(),
+                active: renderer.active,
+                is_self: Some(renderer.id) == self.renderer_id,
+            })
+            .collect();
+
+        self.devices.send_replace(devices);
     }
 
     fn player_state(&self) -> Option<PlayerState> {

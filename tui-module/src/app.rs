@@ -9,10 +9,10 @@ use crate::{
     queue::QueueState,
     search::SearchState,
 };
-use cli_module::SharedPlaybackConfig;
+use cli_module::{SharedPlaybackConfig, SharedPlaybackDevice, SharedPlaybackDeviceId};
 use controls_module::{
     PositionReceiver, Status, StatusReceiver, TracklistReceiver,
-    controls::{ConnectDevice, Controls},
+    controls::Controls,
     models::{Artist, Track},
     tracklist::{Tracklist, TracklistType},
 };
@@ -153,11 +153,8 @@ pub struct App {
     pub preferences: PreferencesState,
     pub broadcast: Arc<NotificationBroadcast>,
     pub notifications: NotificationList,
-    pub connect_available_devices: watch::Receiver<Vec<String>>,
-    pub connect_active_device: watch::Receiver<String>,
-    pub set_connect_active_device: mpsc::UnboundedSender<String>,
-    pub connect_devices: watch::Receiver<Vec<ConnectDevice>>,
-    pub activate_connect_device: mpsc::UnboundedSender<i32>,
+    pub connect_available_devices: watch::Receiver<Vec<SharedPlaybackDevice>>,
+    pub activate_connect_device: mpsc::UnboundedSender<SharedPlaybackDeviceId>,
     pub shared_playback_config_sender: watch::Sender<SharedPlaybackConfig>,
 }
 
@@ -225,7 +222,7 @@ impl App {
                     self.should_draw = true;
                 }
 
-                Ok(()) = self.connect_devices.changed() => {
+                Ok(()) = self.connect_available_devices.changed() => {
                     self.should_draw = true;
                 }
 
@@ -323,9 +320,9 @@ impl App {
                         .database
                         .get_configuration()
                         .await
-                        .is_ok_and(|x| x.enable_disconnect);
+                        .is_ok_and(|x| x.enable_disconnect || x.enable_connect);
 
-                    if enable_connect || !self.connect_devices.borrow().is_empty() {
+                    if enable_connect || !self.connect_available_devices.borrow().is_empty() {
                         self.state = AppState::ConnectOverlay(0);
                         self.should_draw = true;
                     }
@@ -512,25 +509,15 @@ impl App {
                     AppState::ConnectOverlay(selected_device) => {
                         match key_event.code {
                             KeyCode::Enter => {
-                                let available_devices = self.connect_available_devices.borrow();
-                                let connect_devices = self.connect_devices.borrow();
-                                let sent = match available_devices.get(*selected_device) {
-                                    Some(device) => self
-                                        .set_connect_active_device
-                                        .send(device.clone())
-                                        .map_err(|err| err.to_string()),
-                                    None => connect_devices
-                                        .get(
-                                            selected_device.saturating_sub(available_devices.len()),
-                                        )
-                                        .map_or(Ok(()), |device| {
-                                            self.activate_connect_device
-                                                .send(device.id)
-                                                .map_err(|err| err.to_string())
-                                        }),
-                                };
+                                let devices = self.connect_available_devices.borrow();
 
-                                if let Err(err) = sent {
+                                if let Err(err) =
+                                    devices.get(*selected_device).map_or(Ok(()), |device| {
+                                        self.activate_connect_device
+                                            .send(device.id.clone())
+                                            .map_err(|err| err.to_string())
+                                    })
+                                {
                                     self.broadcast
                                         .send_error(format!("Unable to select device: {err}"));
                                 }
@@ -547,7 +534,7 @@ impl App {
                                     .connect_available_devices
                                     .borrow()
                                     .len()
-                                    .saturating_add(self.connect_devices.borrow().len());
+                                    .saturating_add(self.connect_available_devices.borrow().len());
 
                                 if *selected_device < available_devices.saturating_sub(1) {
                                     *selected_device = selected_device.saturating_add(1);

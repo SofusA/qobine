@@ -9,10 +9,6 @@ license-file.workspace = true
 repository.workspace = true
 description.workspace = true
 
-[[bin]]
-name = "qobine-disconnect"
-path = "src/main.rs"
-
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
@@ -27,5 +23,3 @@ futures.workspace = true
 md5.workspace = true
 eventsource-stream.workspace = true
 
-# binary dependencies
-clap.workspace = true
