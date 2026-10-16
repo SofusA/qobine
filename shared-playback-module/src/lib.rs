@@ -42,6 +42,7 @@ pub async fn init(
             }
 
             SharedPlaybackConfig::Connect(connect_name) => {
+                devices.send_replace(Vec::new());
                 tracing::info!("Starting Qobuz Connect as {connect_name}");
 
                 let (activation_sender, activation_receiver) = mpsc::unbounded_channel();
@@ -129,6 +130,8 @@ pub async fn init(
             }
 
             SharedPlaybackConfig::Disconnect(disconnect_config) => {
+                devices.send_replace(Vec::new());
+
                 tracing::info!(
                     "Starting Disconnect client for {}",
                     disconnect_config.server_url

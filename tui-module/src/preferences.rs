@@ -153,30 +153,37 @@ impl PreferencesState {
         let use_file_based_streaming = configuration.use_file_based_streaming;
         let auto_play = configuration.auto_play;
 
+        let connect_enabled = configuration.enable_connect;
         let disconnect_enabled = configuration.enable_disconnect;
+
+        let device_name_value = configuration.device_name.clone().unwrap_or_default();
+
         let disconnect_server_url_value = configuration
             .disconnect_server_url
             .clone()
             .unwrap_or_default();
+
         let disconnect_password_value = configuration
             .disconnect_password
             .clone()
             .unwrap_or_default();
-        let disconnect_device_name_value = configuration.device_name.clone().unwrap_or_default();
 
-        let shared_playback_saved_config = if disconnect_enabled
-            && !disconnect_server_url_value.trim().is_empty()
-            && !disconnect_password_value.trim().is_empty()
-            && !disconnect_device_name_value.trim().is_empty()
-        {
-            SharedPlaybackConfig::Disconnect(ParsedDisconnect {
-                server_url: disconnect_server_url_value.trim().to_string(),
-                password: disconnect_password_value.trim().to_string(),
-                device_name: disconnect_device_name_value.trim().to_string(),
-            })
-        } else {
-            SharedPlaybackConfig::None
-        };
+        let shared_playback_saved_config =
+            if connect_enabled && !device_name_value.trim().is_empty() {
+                SharedPlaybackConfig::Connect(device_name_value.trim().to_string())
+            } else if disconnect_enabled
+                && !disconnect_server_url_value.trim().is_empty()
+                && !disconnect_password_value.trim().is_empty()
+                && !device_name_value.trim().is_empty()
+            {
+                SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+                    server_url: disconnect_server_url_value.trim().to_string(),
+                    password: disconnect_password_value.trim().to_string(),
+                    device_name: device_name_value.trim().to_string(),
+                })
+            } else {
+                SharedPlaybackConfig::None
+            };
 
         let shared_playback_mode = match &shared_playback_saved_config {
             SharedPlaybackConfig::Connect(_) => SharedPlaybackMode::Connect,
@@ -194,10 +201,10 @@ impl PreferencesState {
             use_file_based_streaming,
             auto_play,
             shared_playback_mode,
-            connect_device_name: Input::default(),
+            connect_device_name: Input::default().with_value(device_name_value.clone()),
             disconnect_server_url: Input::default().with_value(disconnect_server_url_value),
             disconnect_password: Input::default().with_value(disconnect_password_value),
-            disconnect_device_name: Input::default().with_value(disconnect_device_name_value),
+            disconnect_device_name: Input::default().with_value(device_name_value),
             shared_playback_saved_config,
             tab: PreferencesTab::default(),
             pane: PreferencesPane::default(),
@@ -852,10 +859,13 @@ impl PreferencesState {
         self.configuration.disconnect_server_url =
             trimmed_optional_value(&self.disconnect_server_url);
         self.configuration.disconnect_password = trimmed_optional_value(&self.disconnect_password);
-        self.configuration.device_name = trimmed_optional_value(&self.disconnect_device_name);
 
         match &shared_playback_config {
             SharedPlaybackConfig::Disconnect(config) => {
+                self.configuration.enable_connect = false;
+                self.configuration.enable_disconnect = true;
+                self.configuration.device_name = Some(config.device_name.clone());
+
                 let _ = database
                     .set_disconnect_config(
                         &config.server_url,
@@ -869,12 +879,19 @@ impl PreferencesState {
             }
 
             SharedPlaybackConfig::Connect(device_name) => {
+                self.configuration.enable_connect = true;
+                self.configuration.enable_disconnect = false;
+                self.configuration.device_name = Some(device_name.clone());
+
                 let _ = database.set_device_name(device_name).await;
                 let _ = database.set_connect_enabled(true).await;
                 let _ = database.set_disconnect_enabled(false).await;
             }
 
             SharedPlaybackConfig::None => {
+                self.configuration.enable_connect = false;
+                self.configuration.enable_disconnect = false;
+
                 let _ = database.set_connect_enabled(false).await;
                 let _ = database.set_disconnect_enabled(false).await;
             }
