@@ -34,7 +34,8 @@ pub struct SharedArgs {
 
 #[derive(Args, Debug)]
 pub struct ConnectArgs {
-    #[clap(long)]
+    /// Enable Qobuz connect
+    #[clap(long, conflicts_with = "disconnect_device_name")]
     pub connect: bool,
 
     #[clap(flatten)]
