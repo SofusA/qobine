@@ -76,7 +76,7 @@ eventsource-stream = "0.2"
 async-stream = "0.3"
 tower-http = { version = "0.7", features = ["limit"] }
 futures-util = "0.3"
-html-escape = "0.2"
+html-escape = "0.3"
 num-traits = "0.2"
 uuid = { version = "1", features = ["v5"] }
 
