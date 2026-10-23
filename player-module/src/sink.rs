@@ -3,6 +3,7 @@ use std::io::{Read, Seek};
 use std::num::NonZero;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use controls_module::VolumeReceiver;
@@ -31,18 +32,21 @@ pub struct Sink {
     track_finished: Sender<()>,
     track_handle: Option<JoinHandle<()>>,
     duration_played: Arc<Mutex<Duration>>,
+    playback_generation: Arc<AtomicUsize>,
     preferred_device_id: Option<String>,
 }
 
 impl Sink {
     pub fn new(volume: VolumeReceiver, preferred_device_id: Option<String>) -> Self {
         let (track_finished, _) = watch::channel(());
+
         Self {
             playback: None,
             volume,
             track_finished,
-            track_handle: Option::default(),
+            track_handle: None,
             duration_played: Arc::default(),
+            playback_generation: Arc::new(AtomicUsize::new(0)),
             preferred_device_id,
         }
     }
@@ -112,8 +116,10 @@ impl Sink {
 
     pub fn clear(&mut self) {
         tracing::info!("Clearing sink");
-        self.clear_queue();
 
+        self.playback_generation.fetch_add(1, Ordering::SeqCst);
+
+        self.clear_queue();
         self.playback = None;
 
         *self.duration_played.lock() = Duration::default();
@@ -209,13 +215,23 @@ impl Sink {
 
         let track_finished = self.track_finished.clone();
         let track_duration = source.total_duration().unwrap_or_default();
-
         let duration_played = self.duration_played.clone();
+
+        let playback_generation = self.playback_generation.clone();
+        let expected_generation = playback_generation.load(Ordering::SeqCst);
+
         let signal = playback.sender.append_with_signal(source);
 
         let track_handle = tokio::spawn(async move {
             loop {
                 if signal.try_recv().is_ok() {
+                    if playback_generation.load(Ordering::SeqCst) != expected_generation {
+                        tracing::debug!(
+                            "Ignoring track-finished signal from obsolete playback generation"
+                        );
+                        break;
+                    }
+
                     {
                         let mut duration_played = duration_played.lock();
                         *duration_played = duration_played.saturating_add(track_duration);
