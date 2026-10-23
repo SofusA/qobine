@@ -9,6 +9,7 @@ use std::time::Duration;
 use controls_module::VolumeReceiver;
 use parking_lot::Mutex;
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
+use rodio::cpal::BufferSize;
 use rodio::cpal::traits::HostTrait;
 use rodio::queue::queue;
 use rodio::{Decoder, DeviceTrait, Player, Source};
@@ -19,6 +20,8 @@ use tokio::time::sleep;
 use crate::AppResult;
 use crate::error::PlayerError;
 use crate::stderr_redirect::silence_stderr;
+
+const BUFFER_DURATION_MS: u32 = 100;
 
 struct Playback {
     player: Player,
@@ -263,15 +266,25 @@ fn set_volume(sink: &rodio::Player, volume: f32) {
 }
 
 fn open_default_stream(sample_rate: NonZero<u32>) -> AppResult<rodio::MixerDeviceSink> {
+    let buffer_size = output_buffer_size(sample_rate);
+
     rodio::DeviceSinkBuilder::from_default_device()
-        .and_then(|x| x.with_sample_rate(sample_rate).open_stream())
+        .and_then(|x| {
+            x.with_sample_rate(sample_rate)
+                .with_buffer_size(buffer_size)
+                .open_stream()
+        })
         .or_else(|original_err| {
             let mut devices = rodio::cpal::default_host().output_devices()?;
 
             Ok(devices
                 .find_map(|d| {
                     rodio::DeviceSinkBuilder::from_device(d)
-                        .and_then(|x| x.with_sample_rate(sample_rate).open_sink_or_fallback())
+                        .and_then(|x| {
+                            x.with_sample_rate(sample_rate)
+                                .with_buffer_size(buffer_size)
+                                .open_sink_or_fallback()
+                        })
                         .ok()
                 })
                 .ok_or(original_err)?)
@@ -283,14 +296,17 @@ fn open_preferred_stream(
     preferred_device_name: &str,
 ) -> AppResult<rodio::MixerDeviceSink> {
     let devices = rodio::cpal::default_host().output_devices()?;
+    let buffer_size = output_buffer_size(sample_rate);
 
     for device in devices {
         if device.description().map(|x| x.to_string()).ok().as_deref()
             == Some(preferred_device_name)
         {
-            let Ok(stream) = rodio::DeviceSinkBuilder::from_device(device)
-                .and_then(|x| x.with_sample_rate(sample_rate).open_sink_or_fallback())
-            else {
+            let Ok(stream) = rodio::DeviceSinkBuilder::from_device(device).and_then(|x| {
+                x.with_sample_rate(sample_rate)
+                    .with_buffer_size(buffer_size)
+                    .open_sink_or_fallback()
+            }) else {
                 break;
             };
 
@@ -318,4 +334,13 @@ impl Drop for Sink {
     fn drop(&mut self) {
         self.clear();
     }
+}
+
+fn output_buffer_size(sample_rate: NonZero<u32>) -> BufferSize {
+    BufferSize::Fixed(
+        sample_rate
+            .get()
+            .saturating_mul(BUFFER_DURATION_MS)
+            .div_ceil(1000),
+    )
 }
