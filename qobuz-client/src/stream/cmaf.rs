@@ -224,24 +224,7 @@ fn parse_init_uuid_payload(payload: &[u8]) -> Result<InitInfo, Error> {
             message: "init UUID payload: fLaC magic not found".into(),
         })?;
 
-    let header_len = 42;
-    let flac_end = flac_pos
-        .checked_add(header_len)
-        .ok_or_else(|| Error::Stream {
-            message: "init UUID payload: STREAMINFO truncated".into(),
-        })?;
-
-    let flac_slice = raw_data
-        .get(flac_pos..flac_end)
-        .ok_or_else(|| Error::Stream {
-            message: "init UUID payload: STREAMINFO truncated".into(),
-        })?;
-
-    let mut flac_header = flac_slice.to_vec();
-    let flag = flac_header.get_mut(4).ok_or_else(|| Error::Stream {
-        message: "init UUID payload: invalid STREAMINFO header".into(),
-    })?;
-    *flag |= 0x80;
+    let flac_header = raw_data.get(flac_pos..).unwrap_or_default().to_vec();
 
     let Some(key_id_len) = c.take_u8().map(usize::from) else {
         return Ok(InitInfo {
