@@ -4431,7 +4431,6 @@ dependencies = [
  "clap",
  "controls-module",
  "ctr",
- "futures",
  "hkdf 0.13.0",
  "hostname",
  "md5",

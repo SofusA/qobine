@@ -19,7 +19,7 @@ use crate::{
     stream::{
         cmaf, crypto, fetch_segment, file_based,
         flac_source_stream::{
-            FlacSourceParams, FlacSourceStream, SeekableStreamReader, SegmentByteInfo,
+            FlacSourceParams, SeekableStreamReader, SegmentByteInfo, SegmentReader,
         },
     },
 };
@@ -38,7 +38,6 @@ use std::{
     path::PathBuf,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use stream_download::{Settings, StreamDownload, storage::temp::TempStorageProvider};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 const RNG_INIT: &str = "abb21364945c0583309667d13ca3d93a";
@@ -693,15 +692,6 @@ impl QobuzClient {
                 message: "total FLAC size overflow".to_string(),
             })?;
 
-        // +1 for init segment
-        let n_segments_to_download =
-            audio_segments
-                .checked_add(1)
-                .ok_or_else(|| Error::NumberConversion {
-                    message: "audio segment overflow".to_string(),
-                })?;
-        let n_segments_to_download = u32::try_from(n_segments_to_download)?;
-
         tracing::info!(
             "Segment map: {} audio segments, total FLAC size: {} bytes",
             audio_segments,
@@ -710,24 +700,16 @@ impl QobuzClient {
 
         let params = FlacSourceParams {
             url_template: track_info.url_template,
-            n_segments: n_segments_to_download,
             content_key,
             flac_header: init_info.flac_header,
             cache_path,
-            segment_map: segment_map.clone(),
+            segment_map,
         };
 
-        let reader = StreamDownload::new::<FlacSourceStream>(
-            params,
-            TempStorageProvider::default(),
-            Settings::default().prefetch_bytes(4096),
-        )
-        .await
-        .map_err(|e| Error::Stream {
-            message: format!("Failed to create stream: {e}"),
-        })?;
-
-        Ok(SeekableStreamReader::new(reader, total_byte_len))
+        Ok(SeekableStreamReader::new(
+            SegmentReader::new(params),
+            total_byte_len,
+        ))
     }
 
     pub async fn get_streaming_info(
