@@ -30,7 +30,6 @@ hkdf.workspace = true
 sha2.workspace = true
 stream-download.workspace = true
 bytes.workspace = true
-futures.workspace = true
 parking_lot.workspace = true
 hostname.workspace = true
 
