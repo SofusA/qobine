@@ -19,6 +19,7 @@ use tokio::time::sleep;
 
 use crate::AppResult;
 use crate::error::PlayerError;
+use crate::prefetch::Prefetch;
 use crate::stderr_redirect::silence_stderr;
 
 const BUFFER_DURATION_MS: u32 = 100;
@@ -223,7 +224,7 @@ impl Sink {
         let playback_generation = self.playback_generation.clone();
         let expected_generation = playback_generation.load(Ordering::SeqCst);
 
-        let signal = playback.sender.append_with_signal(source);
+        let signal = playback.sender.append_with_signal(Prefetch::new(source));
 
         let track_handle = tokio::spawn(async move {
             loop {
@@ -272,6 +273,7 @@ fn open_default_stream(sample_rate: NonZero<u32>) -> AppResult<rodio::MixerDevic
         .and_then(|x| {
             x.with_sample_rate(sample_rate)
                 .with_buffer_size(buffer_size)
+                .with_error_callback(|err| tracing::warn!("Audio stream error: {err}"))
                 .open_stream()
         })
         .or_else(|original_err| {
@@ -283,6 +285,9 @@ fn open_default_stream(sample_rate: NonZero<u32>) -> AppResult<rodio::MixerDevic
                         .and_then(|x| {
                             x.with_sample_rate(sample_rate)
                                 .with_buffer_size(buffer_size)
+                                .with_error_callback(|err| {
+                                    tracing::warn!("Audio stream error: {err}");
+                                })
                                 .open_sink_or_fallback()
                         })
                         .ok()
@@ -305,6 +310,7 @@ fn open_preferred_stream(
             let Ok(stream) = rodio::DeviceSinkBuilder::from_device(device).and_then(|x| {
                 x.with_sample_rate(sample_rate)
                     .with_buffer_size(buffer_size)
+                    .with_error_callback(|err| tracing::warn!("Audio stream error: {err}"))
                     .open_sink_or_fallback()
             }) else {
                 break;

@@ -10,6 +10,7 @@ mod downloader;
 pub mod error;
 pub mod notification;
 pub mod player;
+mod prefetch;
 mod report;
 mod simple_cache;
 mod sink;
