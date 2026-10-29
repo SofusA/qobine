@@ -149,7 +149,6 @@ impl FavoriteTracksPage {
         root.append(&empty_label);
 
         let original_tracks = Rc::new(RefCell::new(Vec::new()));
-        let tracks = Rc::new(RefCell::new(Vec::new()));
         let owned_playlists = Rc::new(RefCell::new(Vec::new()));
         let query = Rc::new(RefCell::new(String::new()));
         let sort = Rc::new(RefCell::new(FavoriteSort::DateAdded));
