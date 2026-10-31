@@ -98,7 +98,7 @@ pub async fn run() -> AppResult<()> {
         SharedPlaybackConfig::None
     };
 
-    let (_, shared_playback_config_rx) = watch::channel(shared_playback_config);
+    let (_config_tx, shared_playback_config_rx) = watch::channel(shared_playback_config.clone());
 
     let (shared_devices_tx, shared_devices_rx) = watch::channel(Vec::new());
     let (activate_shared_device_tx, activate_shared_device_rx) = mpsc::unbounded_channel();
