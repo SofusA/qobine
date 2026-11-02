@@ -3,7 +3,6 @@
 >
   <a
     href="/"
-    hx-preload="mouseover"
     class="@if (active_page == 'NowPlaying') {text-blue-500} @else {text-gray-500}"
   >
     @defer (icons/play-circle.html) {}
@@ -19,7 +18,6 @@
   </a>
   <a
     href="/discover"
-    hx-preload="mouseover"
     class="@if (active_page == 'Discover') {text-blue-500} @else {text-gray-500}"
   >
     @defer (icons/megaphone.html) {}
@@ -27,7 +25,6 @@
   </a>
   <a
     href="/favorites/albums"
-    hx-preload="mouseover"
     class="@if (active_page == 'Favorites') {text-blue-500} @else {text-gray-500}"
   >
     @defer (icons/star-solid.html) {}

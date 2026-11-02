@@ -1,10 +1,6 @@
 <div class="flex w-full gap-4 overflow-scroll p-2">
   @for (artist in artists) {
-    <a
-      href="/artist/{{ artist.id }}"
-      class="size-32 h-full text-center"
-      hx-preload="mousedown"
-    >
+    <a href="/artist/{{ artist.id }}" class="size-32 h-full text-center">
       @if (artist.image) {
         <div
           class="aspect-square size-32 rounded-full bg-gray-800 bg-cover bg-center bg-no-repeat"
