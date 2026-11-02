@@ -18,7 +18,6 @@ function initSse() {
   });
 
   evtSource.addEventListener("autoplay", () => {
-    console.warn("auto play");
     for (const el of document.querySelectorAll("[data-sse=autoplay]")) {
       htmx.trigger(el, "autoplay");
     }
@@ -44,7 +43,17 @@ function initSse() {
 
   for (const level of ["error", "warn", "success", "info"]) {
     evtSource.addEventListener(level, (event) => {
-      htmx.swap("#toast-container", event.data, { swapStyle: "afterbegin" });
+      const container = document.getElementById("toast-container");
+
+      if (container) {
+        container.insertAdjacentHTML("afterbegin", event.data);
+
+        const notification = container.firstElementChild;
+
+        if (notification) {
+          parseNotification(notification);
+        }
+      }
     });
   }
 
@@ -167,3 +176,17 @@ function initSortable(root = document) {
 htmx.onLoad(function (content) {
   initSortable(content);
 });
+
+htmx.onLoad(function (content) {
+  parseNotification(content);
+});
+
+function parseNotification(content) {
+  if (content.hasAttribute?.("notification")) {
+    setTimeout(() => content.remove(), 3000);
+  }
+
+  content.querySelectorAll("[notification]").forEach((elt) => {
+    setTimeout(() => elt.remove(), 3000);
+  });
+}
