@@ -135,6 +135,18 @@ pub async fn run() -> AppResult<()> {
         Some(activate_shared_device_tx), // TODO: Only some if cli either enables Connect or Disconnect
     );
 
+    #[cfg(feature = "gpio")]
+    if args.gpio.gpio {
+        let status_receiver = player.status();
+        let active_receiver = player.active();
+
+        tokio::spawn(async move {
+            if let Err(err) = gpio_module::init(status_receiver, active_receiver).await {
+                eprintln!("{err}");
+            }
+        });
+    }
+
     spawn_clean_up(database, args.shared.audio_cache_time_to_live);
     player.player_loop(exit_receiver).await?;
 
