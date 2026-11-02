@@ -8,13 +8,13 @@
     @defer (list-item.html) {
       <div
         class="flex scroll-m-48 justify-between bg-black"
-        id="@if(track.status == 'Playing') {playing} @else {{{track.id}}}"
+        id="@if(index == currently_playing_position){playing} @else {{{track.id}}}"
       >
         <button
           hx-target="unset"
           hx-swap="none"
           hx-put="/api/skip-to/{{ index }}"
-          class="@if(track.status != 'Unplayed' && track.status != 'Playing'){opacity-40} flex w-full cursor-pointer items-center gap-4 overflow-hidden text-left disabled:cursor-default disabled:text-gray-500"
+          class="@if(index < currently_playing_position){opacity-40} flex w-full cursor-pointer items-center gap-4 overflow-hidden text-left disabled:cursor-default disabled:text-gray-500"
           @if(!track.available){disabled}
         >
           <div class="flex size-12 items-center justify-center">
