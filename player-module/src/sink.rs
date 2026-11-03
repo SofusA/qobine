@@ -421,11 +421,14 @@ fn preferred_host() -> cpal::Host {
     })
 }
 
-#[cfg(any(
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "dragonfly",
-    target_os = "netbsd"
+#[cfg(all(
+    feature = "pipewire",
+    any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd"
+    )
 ))]
 fn pipewire_host() -> Option<cpal::Host> {
     if !cpal::available_hosts().contains(&cpal::HostId::PipeWire) {
@@ -451,11 +454,14 @@ fn pipewire_host() -> Option<cpal::Host> {
     }
 }
 
-#[cfg(not(any(
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "dragonfly",
-    target_os = "netbsd"
+#[cfg(not(all(
+    feature = "pipewire",
+    any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "dragonfly",
+        target_os = "netbsd"
+    )
 )))]
 fn pipewire_host() -> Option<cpal::Host> {
     None

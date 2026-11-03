@@ -13,6 +13,10 @@ repository.workspace = true
 name = "qobine-tui"
 path = "src/main.rs"
 
+[features]
+default = []
+pipewire = ["player-module/pipewire"]
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }

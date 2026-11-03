@@ -9,6 +9,10 @@ edition.workspace = true
 license-file.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+pipewire = ["cpal/pipewire"]
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 qobuz-client = { version = "*", path = "../qobuz-client" }
