@@ -33,11 +33,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: 'latest'
+          node-version: "latest"
           cache: npm
           cache-dependency-path: web-module/package-lock.json
 
-      - name: Web install dependencies 
+      - name: Web install dependencies
         working-directory: web-module
         run: npm i
 
@@ -82,9 +82,9 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev
 
-      - name: Test 
+      - name: Test
         run: cargo test --workspace --exclude qobuz-client --exclude gtk-module
 
       - name: Clippy
@@ -108,7 +108,7 @@ jobs:
     runs-on: ${{ matrix.variant.runner }}
 
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
       options: --privileged
 
     strategy:

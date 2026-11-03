@@ -52,7 +52,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev
 
       - name: Build and upload tui
         uses: taiki-e/upload-rust-binary-action@v1
@@ -98,7 +98,7 @@ jobs:
     runs-on: ${{ matrix.variant.runner }}
 
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
       options: --privileged
 
     strategy:

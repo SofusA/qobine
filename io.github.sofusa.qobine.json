@@ -3,7 +3,10 @@
   "runtime": "org.gnome.Platform",
   "runtime-version": "51",
   "sdk": "org.gnome.Sdk",
-  "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable",
+    "org.freedesktop.Sdk.Extension.llvm22"
+  ],
   "command": "qobine-gtk",
 
   "finish-args": [
@@ -22,10 +25,11 @@
       "buildsystem": "simple",
 
       "build-options": {
-        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "append-path": "/usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin",
         "build-args": ["--share=network"],
 
         "env": {
+          "LIBCLANG_PATH": "/usr/lib/sdk/llvm22/lib",
           "CARGO_HOME": "/run/build/gtk-module/cargo"
         }
       },
