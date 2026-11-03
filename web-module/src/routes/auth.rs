@@ -15,6 +15,8 @@ use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
+const COOKIE: &str = "__Host-secret";
+
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/auth", get(index))
@@ -46,7 +48,7 @@ pub async fn auth_middleware(
     )
         .into_response();
 
-    let secret = jar.get("secret");
+    let secret = jar.get(COOKIE);
 
     match secret {
         Some(result_secret) => {
@@ -61,10 +63,14 @@ pub async fn auth_middleware(
 }
 
 fn set_auth_cookie(jar: CookieJar, secret: String) -> CookieJar {
-    let mut cookie = Cookie::new("secret", secret);
-    cookie.set_same_site(SameSite::Strict);
+    let mut cookie = Cookie::new(COOKIE, secret);
+
     cookie.set_path("/");
-    cookie.set_max_age(time::Duration::weeks(1));
+    cookie.set_same_site(SameSite::Lax);
+    cookie.set_http_only(true);
+    cookie.set_secure(true); // Requires HTTPS
+    cookie.set_max_age(time::Duration::days(40));
+
     jar.add(cookie)
 }
 
