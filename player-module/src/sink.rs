@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{Read, Seek};
 use std::num::NonZero;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -9,9 +10,10 @@ use std::time::Duration;
 use controls_module::VolumeReceiver;
 use parking_lot::Mutex;
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
-use rodio::cpal::traits::HostTrait;
+use rodio::cpal;
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use rodio::queue::queue;
-use rodio::{Decoder, DeviceTrait, Player, Source};
+use rodio::{Decoder, Player, Source};
 use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -60,7 +62,7 @@ impl Sink {
         let position = self
             .playback
             .as_ref()
-            .map(|x| &x.player)
+            .map(|playback| &playback.player)
             .map(rodio::Player::get_pos)
             .unwrap_or_default();
 
@@ -165,8 +167,8 @@ impl Sink {
             .with_byte_len(byte_len)
             .with_seekable(true)
             .build()
-            .map_err(|e| PlayerError::StreamError {
-                message: format!("Failed to decode streaming FLAC: {e}"),
+            .map_err(|err| PlayerError::StreamError {
+                message: format!("Failed to decode streaming FLAC: {err}"),
             })?;
 
         self.queue_decoder(source)
@@ -188,9 +190,8 @@ impl Sink {
         }
 
         if self.playback.is_none() {
-            let mut mixer = if let Some(preferred_device_name) = self.preferred_device_id.as_deref()
-            {
-                silence_stderr(|| open_preferred_stream(sample_rate, preferred_device_name))?
+            let mut mixer = if let Some(preferred_device_id) = self.preferred_device_id.as_deref() {
+                silence_stderr(|| open_preferred_stream(sample_rate, preferred_device_id))?
             } else {
                 open_default_stream(sample_rate)?
             };
@@ -258,68 +259,206 @@ impl Sink {
     }
 }
 
-fn set_volume(sink: &rodio::Player, volume: f32) {
+fn set_volume(player: &rodio::Player, volume: f32) {
     let volume = volume.clamp(0.0, 1.0).powi(3);
-    sink.set_volume(volume);
-}
-
-fn open_default_stream(sample_rate: NonZero<u32>) -> AppResult<rodio::MixerDeviceSink> {
-    rodio::DeviceSinkBuilder::from_default_device()
-        .and_then(|x| {
-            x.with_sample_rate(sample_rate)
-                .with_error_callback(|err| tracing::warn!("Audio stream error: {err}"))
-                .open_stream()
-        })
-        .or_else(|original_err| {
-            let mut devices = rodio::cpal::default_host().output_devices()?;
-
-            Ok(devices
-                .find_map(|d| {
-                    rodio::DeviceSinkBuilder::from_device(d)
-                        .and_then(|x| {
-                            x.with_sample_rate(sample_rate)
-                                .with_error_callback(|err| {
-                                    tracing::warn!("Audio stream error: {err}");
-                                })
-                                .open_sink_or_fallback()
-                        })
-                        .ok()
-                })
-                .ok_or(original_err)?)
-        })
+    player.set_volume(volume);
 }
 
 fn open_preferred_stream(
     sample_rate: NonZero<u32>,
-    preferred_device_name: &str,
+    preferred_device_id: &str,
 ) -> AppResult<rodio::MixerDeviceSink> {
-    let devices = rodio::cpal::default_host().output_devices()?;
+    let device_id = cpal::DeviceId::from_str(preferred_device_id).map_err(|err| {
+        PlayerError::SinkDeviceError {
+            message: format!(
+                "Invalid preferred audio device ID \
+                     '{preferred_device_id}': {err}"
+            ),
+        }
+    })?;
 
-    for device in devices {
-        if device.description().map(|x| x.to_string()).ok().as_deref()
-            == Some(preferred_device_name)
-        {
-            let Ok(stream) = rodio::DeviceSinkBuilder::from_device(device).and_then(|x| {
-                x.with_sample_rate(sample_rate)
-                    .with_error_callback(|err| tracing::warn!("Audio stream error: {err}"))
-                    .open_sink_or_fallback()
-            }) else {
-                break;
-            };
+    let host_id = device_id.host();
 
-            return Ok(stream);
+    let host = cpal::host_from_id(host_id).map_err(|err| PlayerError::SinkDeviceError {
+        message: format!(
+            "Unable to initialize audio host '{host_id}' for preferred \
+                 device '{preferred_device_id}': {err}"
+        ),
+    })?;
+
+    let device = host
+        .device_by_id(&device_id)
+        .ok_or_else(|| PlayerError::SinkDeviceError {
+            message: format!(
+                "Preferred audio device '{preferred_device_id}' is not \
+                 available through host '{host_id}'"
+            ),
+        })?;
+
+    let description = device_description(&device);
+
+    tracing::info!(
+        host = %host_id,
+        device_id = %preferred_device_id,
+        device = %description,
+        sample_rate = sample_rate.get(),
+        "Opening preferred audio output"
+    );
+
+    open_device_stream(device, sample_rate)
+}
+
+fn open_default_stream(sample_rate: NonZero<u32>) -> AppResult<rodio::MixerDeviceSink> {
+    let host = preferred_host();
+
+    tracing::info!(
+        host = %host.id(),
+        sample_rate = sample_rate.get(),
+        "Opening automatically selected audio output"
+    );
+
+    let default_device =
+        host.default_output_device()
+            .ok_or_else(|| PlayerError::SinkDeviceError {
+                message: format!("Audio host '{}' has no default output device", host.id()),
+            })?;
+
+    let default_device_id = device_id_string(&default_device);
+    let default_description = device_description(&default_device);
+
+    tracing::info!(
+        host = %host.id(),
+        device_id = %default_device_id,
+        device = %default_description,
+        sample_rate = sample_rate.get(),
+        "Trying default audio output device"
+    );
+
+    match open_device_stream(default_device, sample_rate) {
+        Ok(stream) => Ok(stream),
+
+        Err(original_err) => {
+            tracing::warn!(
+                host = %host.id(),
+                sample_rate = sample_rate.get(),
+                "Unable to open default audio output: {original_err}; \
+                 trying the remaining devices"
+            );
+
+            for device in host.output_devices()? {
+                let device_id = device_id_string(&device);
+                let description = device_description(&device);
+
+                match open_device_stream(device, sample_rate) {
+                    Ok(stream) => {
+                        tracing::info!(
+                            host = %host.id(),
+                            device_id = %device_id,
+                            device = %description,
+                            sample_rate = sample_rate.get(),
+                            "Opened fallback audio output device"
+                        );
+
+                        return Ok(stream);
+                    }
+
+                    Err(err) => {
+                        tracing::debug!(
+                            host = %host.id(),
+                            device_id = %device_id,
+                            device = %description,
+                            sample_rate = sample_rate.get(),
+                            "Unable to open audio output device: {err}"
+                        );
+                    }
+                }
+            }
+
+            Err(original_err)
         }
     }
+}
 
-    let devices = rodio::cpal::default_host().output_devices()?;
-    let available_devices: Vec<String> = devices
-        .flat_map(|x| x.description().map(|x| x.to_string()))
-        .collect();
-    let available_devices = available_devices.join(", ");
+fn open_device_stream(
+    device: cpal::Device,
+    sample_rate: NonZero<u32>,
+) -> AppResult<rodio::MixerDeviceSink> {
+    let stream = rodio::DeviceSinkBuilder::from_device(device).and_then(|builder| {
+        builder
+            .with_sample_rate(sample_rate)
+            .with_error_callback(|err| {
+                tracing::warn!("Audio stream error: {err}");
+            })
+            .open_sink_or_fallback()
+    })?;
 
-    Err(PlayerError::SinkDeviceError {
-        message: format!("Unable to find device. Available devices: {available_devices}"),
+    Ok(stream)
+}
+
+fn device_id_string(device: &cpal::Device) -> String {
+    device
+        .id()
+        .map_or_else(|_| "<unknown>".to_string(), |id| id.to_string())
+}
+
+fn device_description(device: &cpal::Device) -> String {
+    device.description().map_or_else(
+        |_| "<unknown>".to_string(),
+        |description| description.to_string(),
+    )
+}
+
+fn preferred_host() -> cpal::Host {
+    pipewire_host().unwrap_or_else(|| {
+        let host = cpal::default_host();
+
+        tracing::info!(
+            host = %host.id(),
+            "Using platform-default audio host"
+        );
+
+        host
     })
+}
+
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "netbsd"
+))]
+fn pipewire_host() -> Option<cpal::Host> {
+    if !cpal::available_hosts().contains(&cpal::HostId::PipeWire) {
+        tracing::debug!("Native PipeWire audio host was not compiled in or is unavailable");
+
+        return None;
+    }
+
+    match cpal::host_from_id(cpal::HostId::PipeWire) {
+        Ok(host) => {
+            tracing::info!("Using native PipeWire audio host");
+            Some(host)
+        }
+
+        Err(err) => {
+            tracing::warn!(
+                "Unable to initialize native PipeWire audio host: {err}; \
+                 using platform-default host"
+            );
+
+            None
+        }
+    }
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "netbsd"
+)))]
+fn pipewire_host() -> Option<cpal::Host> {
+    None
 }
 
 pub enum QueryTrackResult {

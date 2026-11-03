@@ -51,6 +51,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 moka = { version = "0.12", features = ["future"]}
 rodio = "0.23.0"
+cpal = { version = "0.18.2", features = ["pipewire"] }
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 tokio_schedule = "0.3"

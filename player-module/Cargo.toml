@@ -21,6 +21,7 @@ serde.workspace = true
 moka.workspace = true
 time.workspace = true
 rodio.workspace = true
+cpal.workspace = true
 reqwest.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true
