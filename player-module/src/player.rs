@@ -74,6 +74,12 @@ pub struct Player {
     auto_play: Sender<bool>,
     auto_play_rx: Receiver<bool>,
     reports: Option<Reports>,
+
+    #[cfg(feature = "mpv")]
+    download_finished_tx: mpsc::UnboundedSender<CompletedDownload>,
+
+    #[cfg(feature = "mpv")]
+    download_finished_rx: mpsc::UnboundedReceiver<CompletedDownload>,
 }
 
 impl Player {
@@ -114,6 +120,9 @@ impl Player {
             tracklist_tx.subscribe(),
         );
 
+        #[cfg(feature = "mpv")]
+        let (download_finished_tx, download_finished_rx) = mpsc::unbounded_channel();
+
         Ok(Self {
             broadcast,
             tracklist_tx,
@@ -138,9 +147,16 @@ impl Player {
             auto_play,
             auto_play_rx,
             reports: Some(reports),
+
+            #[cfg(feature = "mpv")]
+            download_finished_tx,
+
+            #[cfg(feature = "mpv")]
+            download_finished_rx,
         })
     }
 
+    #[must_use]
     pub fn bindings(&self) -> PlayerBindings {
         PlayerBindings {
             controls: self.controls(),
@@ -160,54 +176,67 @@ impl Player {
         }
     }
 
+    #[must_use]
     pub fn controls(&self) -> Controls {
         self.controls.clone()
     }
 
+    #[must_use]
     pub fn status(&self) -> StatusReceiver {
         self.target_status.subscribe()
     }
 
+    #[must_use]
     pub fn volume(&self) -> VolumeReceiver {
         self.volume.subscribe()
     }
 
+    #[must_use]
     pub fn auto_play(&self) -> AutoPlayReceiver {
         self.auto_play_rx.clone()
     }
 
+    #[must_use]
     pub fn position(&self) -> PositionReceiver {
         self.position.subscribe()
     }
 
+    #[must_use]
     pub fn tracklist(&self) -> TracklistReceiver {
         self.tracklist_tx.subscribe()
     }
 
+    #[must_use]
     pub fn status_sender(&self) -> watch::Sender<Status> {
         self.target_status.clone()
     }
 
+    #[must_use]
     pub fn volume_sender(&self) -> watch::Sender<f32> {
         self.volume.clone()
     }
 
+    #[must_use]
     pub fn auto_play_sender(&self) -> watch::Sender<bool> {
         self.auto_play.clone()
     }
 
+    #[must_use]
     pub fn position_sender(&self) -> watch::Sender<Duration> {
         self.position.clone()
     }
 
+    #[must_use]
     pub fn tracklist_sender(&self) -> watch::Sender<Tracklist> {
         self.tracklist_tx.clone()
     }
 
+    #[must_use]
     pub fn active(&self) -> watch::Receiver<bool> {
         self.active.subscribe()
     }
 
+    #[must_use]
     pub fn active_sender(&self) -> watch::Sender<bool> {
         self.active.clone()
     }
@@ -275,11 +304,42 @@ impl Player {
 
         let query_result = match download_result {
             DownloadResult::Cached(track_path) => {
-                self.sink.query_track(&track_path, item.queue_id)?
+                Some(self.sink.query_track(&track_path, item.queue_id)?)
             }
+
+            #[cfg(feature = "rodio")]
             DownloadResult::Streaming(reader) => {
-                self.sink.query_track_stream(reader, item.queue_id)?
+                Some(self.sink.query_track_stream(reader, item.queue_id)?)
             }
+
+            #[cfg(feature = "mpv")]
+            DownloadResult::Downloading(handle) => {
+                let tx = self.download_finished_tx.clone();
+                let queue_id = item.queue_id;
+                let track_id = track.id;
+
+                tokio::spawn(async move {
+                    let result = match handle.await {
+                        Ok(result) => result,
+                        Err(err) => Err(PlayerError::StreamError {
+                            message: format!("Download task failed: {err}"),
+                        }),
+                    };
+
+                    let _ = tx.send(CompletedDownload {
+                        result,
+                        queue_id,
+                        track_id,
+                        next_track,
+                    });
+                });
+
+                None
+            }
+        };
+
+        let Some(query_result) = query_result else {
+            return Ok(());
         };
 
         if next_track {
@@ -1083,4 +1143,12 @@ fn tracks_to_queue_items(tracks: Vec<Track>) -> Vec<QueueItem> {
             connect_id: None,
         })
         .collect()
+}
+
+#[cfg(feature = "mpv")]
+struct CompletedDownload {
+    result: AppResult<std::path::PathBuf>,
+    queue_id: u64,
+    track_id: u32,
+    next_track: bool,
 }

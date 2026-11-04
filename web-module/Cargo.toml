@@ -19,7 +19,7 @@ gpio = ["gpio-module/gpio"]
 
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
-player-module = { version = "*", path = "../player-module" }
+player-module = { version = "*", path = "../player-module", features = ["rodio"] }
 rfid-module = { version = "*", path = "../rfid-module" }
 mpris-module = { version = "*", path = "../mpris-module" }
 gpio-module = { version = "*", path = "../gpio-module", optional = true }

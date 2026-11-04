@@ -1,5 +1,7 @@
+#[cfg(feature = "rodio")]
 pub use stderr_redirect_impl::silence_stderr;
 
+#[cfg(feature = "rodio")]
 #[cfg(unix)]
 mod stderr_redirect_impl {
     use std::{

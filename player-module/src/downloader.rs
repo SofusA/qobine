@@ -5,13 +5,21 @@ use std::{
 
 use controls_module::models::Track;
 use num_traits::ToPrimitive;
+
+#[cfg(feature = "rodio")]
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 
 use crate::{AppResult, client::StreamClient, database::Database};
 
+#[cfg(feature = "mpv")]
+use tokio::task::JoinHandle;
+
 pub enum DownloadResult {
     Cached(PathBuf),
+    #[cfg(feature = "rodio")]
     Streaming(SeekableStreamReader),
+    #[cfg(feature = "mpv")]
+    Downloading(JoinHandle<AppResult<PathBuf>>),
 }
 
 pub struct Downloader {
@@ -53,9 +61,41 @@ impl Downloader {
             return Ok(DownloadResult::Cached(cache_path));
         }
 
-        let stream = self.client.stream_track(cache_path, track_info).await?;
+        let stream = self
+            .client
+            .stream_track(cache_path.clone(), track_info)
+            .await?;
 
-        Ok(DownloadResult::Streaming(stream))
+        #[cfg(feature = "rodio")]
+        return Ok(DownloadResult::Streaming(stream));
+
+        #[cfg(feature = "mpv")]
+        {
+            Ok(DownloadResult::Downloading(tokio::task::spawn_blocking(
+                move || {
+                    let mut reader = stream;
+
+                    std::io::copy(&mut reader, &mut std::io::sink()).map_err(|err| {
+                        crate::error::PlayerError::StreamError {
+                            message: format!("Failed to finish download: {err}"),
+                        }
+                    })?;
+
+                    drop(reader);
+
+                    if !cache_path.is_file() {
+                        return Err(crate::error::PlayerError::StreamError {
+                            message: format!(
+                                "Downloaded file was not created: {}",
+                                cache_path.display()
+                            ),
+                        });
+                    }
+
+                    Ok(cache_path)
+                },
+            )))
+        }
     }
 
     /// File based path: cheap cpu as no crypto ops
@@ -83,7 +123,37 @@ impl Downloader {
             .client
             .stream_track_file_based(&track_url.url, &cache_path)
             .await?;
-        Ok(DownloadResult::Streaming(stream))
+
+        #[cfg(feature = "rodio")]
+        return Ok(DownloadResult::Streaming(stream));
+
+        #[cfg(feature = "mpv")]
+        {
+            Ok(DownloadResult::Downloading(tokio::task::spawn_blocking(
+                move || {
+                    let mut reader = stream;
+
+                    std::io::copy(&mut reader, &mut std::io::sink()).map_err(|err| {
+                        crate::error::PlayerError::StreamError {
+                            message: format!("Failed to finish download: {err}"),
+                        }
+                    })?;
+
+                    drop(reader);
+
+                    if !cache_path.is_file() {
+                        return Err(crate::error::PlayerError::StreamError {
+                            message: format!(
+                                "Downloaded file was not created: {}",
+                                cache_path.display()
+                            ),
+                        });
+                    }
+
+                    Ok(cache_path)
+                },
+            )))
+        }
     }
 
     pub fn set_audio_cache_dir(&mut self, new_directory: PathBuf) {

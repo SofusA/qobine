@@ -13,9 +13,14 @@ repository.workspace = true
 name = "qobine-tui"
 path = "src/main.rs"
 
+[features]
+default = ["rodio"]
+rodio = ["player-module/rodio"]
+mpv = ["player-module/mpv"]
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
-player-module = { version = "*", path = "../player-module" }
+player-module = { version = "*", path = "../player-module", default-features = false }
 mpris-module = { version = "*", path = "../mpris-module" }
 cli-module = { version = "*", path = "../cli-module" }
 shared-playback-module = { version = "*", path = "../shared-playback-module" }
