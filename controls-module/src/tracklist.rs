@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 use crate::models::{Track, TrackStatus};
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -23,7 +21,7 @@ pub struct TopTracklist {
     pub image: Option<String>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum TracklistType {
     Album(AlbumTracklist),
     Playlist(PlaylistTracklist),
@@ -94,7 +92,7 @@ impl Tracklist {
 
     pub fn clear_queue(&mut self) {
         self.queue
-            .retain(|x| x.track.status != TrackStatus::Unplayed);
+            .retain(|item| item.track.status != TrackStatus::Unplayed);
     }
 
     #[must_use]
@@ -102,22 +100,42 @@ impl Tracklist {
         self.queue.len()
     }
 
+    /// Returns the queue item that is currently playing.
     #[must_use]
-    pub fn currently_playing(&self) -> Option<u32> {
+    pub fn current_queue_item(&self) -> Option<&QueueItem> {
         self.queue
             .iter()
-            .find(|t| t.track.status == TrackStatus::Playing)
-            .map(|x| x.track.id)
+            .find(|item| item.track.status == TrackStatus::Playing)
+    }
+
+    /// Returns the queue item immediately after the currently playing item.
+    ///
+    /// Returns `None` if nothing is playing or the current item is the final
+    /// item in the queue.
+    #[must_use]
+    pub fn next_queue_item(&self) -> Option<&QueueItem> {
+        let current_queue_id = self.current_queue_item()?.queue_id;
+
+        let current_position = self
+            .queue
+            .iter()
+            .position(|item| item.queue_id == current_queue_id)?;
+
+        let next_position = current_position.checked_add(1)?;
+
+        self.queue.get(next_position)
+    }
+
+    #[must_use]
+    pub fn currently_playing(&self) -> Option<u32> {
+        self.current_queue_item().map(|item| item.track.id)
     }
 
     #[must_use]
     pub fn current_playing_entity(&self) -> Option<PlayingEntity> {
-        let current_queue_item = self
-            .queue
-            .iter()
-            .find(|q| q.track.status == TrackStatus::Playing);
+        let queue_item = self.current_queue_item()?;
 
-        current_queue_item.map(|queue_item| match &self.list_type {
+        Some(match &self.list_type {
             TracklistType::Playlist(playlist_tracklist) => {
                 PlayingEntity::Playlist(PlayingPlaylist {
                     track_id: queue_item.track.id,
@@ -132,7 +150,7 @@ impl Tracklist {
 
     #[must_use]
     pub fn next_track_id(&self) -> Option<u32> {
-        self.next_track().map(|x| x.id)
+        self.next_queue_item().map(|item| item.track.id)
     }
 
     pub fn remove_track(&mut self, index: usize) {
@@ -148,17 +166,23 @@ impl Tracklist {
 
     pub fn insert_track(&mut self, insert_index: usize, track: Track) {
         let item = self.queue_item(track, None);
+
         self.queue.insert(insert_index.min(self.queue.len()), item);
     }
 
-    /// A new item with the next free queue id, not yet in the queue.
+    /// Creates a new item with the next free queue ID.
+    ///
+    /// The item is not added to the queue by this function.
     pub fn queue_item(&mut self, track: Track, connect_id: Option<i32>) -> QueueItem {
         let index = self.total().checked_add(1).unwrap_or_default();
         let highest = self.queue.iter().map(|item| item.queue_id).max();
+
         let queue_id = highest
             .map_or(0, |id| id.saturating_add(1))
             .max(self.next_queue_id);
+
         self.next_queue_id = queue_id.saturating_add(1);
+
         QueueItem {
             track,
             queue_id,
@@ -167,30 +191,44 @@ impl Tracklist {
         }
     }
 
-    /// Adopts the queue of the Qobuz Connect session, keeping the current track; with `keep_unknown` the items the session does not know yet stay after their nearest surviving predecessor. Returns whether the current track is still queued.
+    /// Adopts the queue of the Qobuz Connect session, keeping the current track.
+    ///
+    /// With `keep_unknown`, items the session does not know yet stay after
+    /// their nearest surviving predecessor.
+    ///
+    /// Returns whether the current track is still queued.
     pub fn replace(&mut self, items: Vec<QueueItem>, keep_unknown: bool) -> bool {
-        let current = self.current_queue_id();
+        let current_queue_id = self.current_queue_item().map(|item| item.queue_id);
+
         let mut queue = items;
         let mut previous = None;
+
         for item in self.queue.drain(..) {
             let present = queue.iter().any(|known| known.queue_id == item.queue_id);
+
             if !present && keep_unknown && item.connect_id.is_none() {
                 let at = previous
                     .and_then(|id| queue.iter().position(|known| known.queue_id == id))
                     .map_or(0, |position| position.saturating_add(1));
+
                 queue.insert(at.min(queue.len()), item.clone());
             }
+
             if present || (keep_unknown && item.connect_id.is_none()) {
                 previous = Some(item.queue_id);
             }
         }
+
         self.queue = queue;
-        let position =
-            current.and_then(|id| self.queue.iter().position(|item| item.queue_id == id));
+
+        let position = current_queue_id
+            .and_then(|queue_id| self.queue.iter().position(|item| item.queue_id == queue_id));
+
         if let Some(position) = position {
             self.skip_to_track(position);
             return true;
         }
+
         self.reset();
         false
     }
@@ -204,61 +242,51 @@ impl Tracklist {
 
     #[must_use]
     pub fn current_connect_id(&self) -> Option<i32> {
-        self.queue
-            .iter()
-            .find(|item| item.track.status == TrackStatus::Playing)
-            .and_then(|item| item.connect_id)
+        self.current_queue_item().and_then(|item| item.connect_id)
     }
 
     #[must_use]
     pub fn next_connect_id(&self) -> Option<i32> {
-        let next = self.current_position().checked_add(1)?;
-        self.queue.get(next).and_then(|item| item.connect_id)
+        self.next_queue_item().and_then(|item| item.connect_id)
     }
 
     pub fn reorder_queue(&mut self, new_order: &[usize]) {
-        if new_order.len() != self.queue.len() || new_order.iter().enumerate().all(|(i, &v)| i == v)
+        if new_order.len() != self.queue.len()
+            || new_order
+                .iter()
+                .enumerate()
+                .all(|(index, &value)| index == value)
         {
             return;
         }
 
         let reordered: Vec<_> = new_order
             .iter()
-            .filter_map(|&i| self.queue.get(i).cloned())
+            .filter_map(|&index| self.queue.get(index).cloned())
             .collect();
 
         self.queue = reordered;
     }
 
+    /// Returns the current queue position.
+    ///
+    /// Returns `0` if no item is currently playing.
     #[must_use]
     pub fn current_position(&self) -> usize {
         self.queue
             .iter()
-            .enumerate()
-            .find(|t| t.1.track.status == TrackStatus::Playing)
-            .map_or(0, |x| x.0)
+            .position(|item| item.track.status == TrackStatus::Playing)
+            .unwrap_or_default()
     }
 
     #[must_use]
     pub fn current_queue_id(&self) -> Option<u64> {
-        self.queue
-            .iter()
-            .find(|t| t.track.status == TrackStatus::Playing)
-            .map(|x| x.queue_id)
+        self.current_queue_item().map(|item| item.queue_id)
     }
 
     #[must_use]
     pub fn next_track_queue_id(&self) -> Option<u64> {
-        let current_position = self.current_position();
-
-        if current_position >= self.total() {
-            return None;
-        }
-
-        let next_position = current_position.checked_add(1)?;
-
-        let next = self.queue.get(next_position);
-        next.map(|x| x.queue_id)
+        self.next_queue_item().map(|item| item.queue_id)
     }
 
     #[must_use]
@@ -267,7 +295,7 @@ impl Tracklist {
     }
 
     pub fn reset(&mut self) {
-        for track in self.queue.iter_mut().map(|x| &mut x.track) {
+        for track in self.queue.iter_mut().map(|item| &mut item.track) {
             if track.status == TrackStatus::Played || track.status == TrackStatus::Playing {
                 track.status = TrackStatus::Unplayed;
             }
@@ -276,7 +304,7 @@ impl Tracklist {
         if let Some(first_item) = self
             .queue
             .iter_mut()
-            .find(|t| t.track.status == TrackStatus::Unplayed)
+            .find(|item| item.track.status == TrackStatus::Unplayed)
         {
             first_item.track.status = TrackStatus::Playing;
         }
@@ -284,48 +312,33 @@ impl Tracklist {
 
     #[must_use]
     pub fn next_track(&self) -> Option<&Track> {
-        let current_position = self.current_position();
-        let next_position = current_position.checked_add(1)?;
-
-        if self.total() <= next_position {
-            return None;
-        }
-
-        Some(&self.queue.index(next_position).track)
+        self.next_queue_item().map(|item| &item.track)
     }
 
     #[must_use]
     pub fn current_track(&self) -> Option<&Track> {
-        self.queue
-            .iter()
-            .map(|x| &x.track)
-            .find(|t| t.status == TrackStatus::Playing)
+        self.current_queue_item().map(|item| &item.track)
     }
 
-    pub fn skip_to_track(&mut self, new_position: usize) -> Option<&Track> {
-        let mut new_track: Option<&Track> = None;
+    pub fn skip_to_track(&mut self, new_position: usize) -> Option<&QueueItem> {
+        let mut new_item = None;
 
-        for queue_item in self.queue.iter_mut().map(|x| &mut x.track).enumerate() {
-            let queue_item_position = queue_item.0;
-
-            match queue_item_position.cmp(&new_position) {
+        for (position, queue_item) in self.queue.iter_mut().enumerate() {
+            match position.cmp(&new_position) {
                 std::cmp::Ordering::Less => {
-                    queue_item.1.status = TrackStatus::Played;
+                    queue_item.track.status = TrackStatus::Played;
                 }
-
                 std::cmp::Ordering::Equal => {
-                    queue_item.1.status = TrackStatus::Playing;
-
-                    new_track = Some(queue_item.1);
+                    queue_item.track.status = TrackStatus::Playing;
+                    new_item = Some(&*queue_item);
                 }
-
                 std::cmp::Ordering::Greater => {
-                    queue_item.1.status = TrackStatus::Unplayed;
+                    queue_item.track.status = TrackStatus::Unplayed;
                 }
             }
         }
 
-        new_track
+        new_item
     }
 }
 

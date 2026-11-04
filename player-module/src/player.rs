@@ -11,7 +11,7 @@ use rand::seq::SliceRandom;
 use tokio::{
     select,
     sync::{
-        broadcast,
+        broadcast, mpsc,
         watch::{self, Receiver, Sender},
     },
     time::sleep,
@@ -28,7 +28,7 @@ use crate::{
     expand_tilde,
     notification::{Notification, NotificationBroadcast},
     report::Reports,
-    sink::{QueryTrackResult, Sink},
+    sink::{QueryTrackResult, Sink, TrackFinished},
 };
 
 const INTERVAL_MS: u64 = 500;
@@ -59,7 +59,7 @@ pub struct Player {
     sink: Sink,
     volume: Sender<f32>,
     position: Sender<Duration>,
-    track_finished: Receiver<()>,
+    track_finished: mpsc::UnboundedReceiver<TrackFinished>,
     controls_rx: broadcast::Receiver<ControlCommand>,
     controls: Controls,
     database: Arc<Database>,
@@ -92,11 +92,10 @@ impl Player {
         let (volume, volume_receiver) = watch::channel(volume);
         let (auto_play, auto_play_rx) = watch::channel(enable_auto_play);
 
-        let sink = Sink::new(volume_receiver, preferred_device_id);
+        let (track_finished_tx, track_finished) = mpsc::unbounded_channel();
+        let sink = Sink::new(volume_receiver, preferred_device_id, track_finished_tx);
 
         let downloader = Downloader::new(audio_cache_directory, database.clone(), client.clone());
-
-        let track_finished = sink.track_finished();
 
         let (position, _) = watch::channel(Duration::default());
         let (target_status, _) = watch::channel(Status::default());
@@ -226,17 +225,13 @@ impl Player {
 
     async fn play(&mut self) -> AppResult<()> {
         self.wait_for_state_change_delay().await;
-        let track = self.tracklist_rx.borrow().current_track().cloned();
+        let current_item = self.tracklist_rx.borrow().current_queue_item().cloned();
 
         if self.sink.is_empty()
-            && let Some(current_track) = track
+            && let Some(current_item) = current_item
         {
-            tracing::info!("Sink is empty. Query track from play");
             self.set_target_status(Status::Buffering);
-            self.query_track(&current_track, false).await?;
-        } else {
-            self.set_target_status(Status::Playing);
-            self.sink.play();
+            self.query_track(&current_item, false).await?;
         }
 
         Ok(())
@@ -261,11 +256,13 @@ impl Player {
         self.target_status.send_replace(status);
     }
 
-    async fn query_track(&mut self, track: &Track, next_track: bool) -> AppResult<()> {
+    async fn query_track(&mut self, item: &QueueItem, next_track: bool) -> AppResult<()> {
+        let track = &item.track;
+
         tracing::info!(
             "Querying {} track: {}",
             if next_track { "next" } else { "current" },
-            &track.title
+            track.title
         );
 
         if next_track {
@@ -277,24 +274,21 @@ impl Player {
         self.wait_for_state_change_delay().await;
 
         let query_result = match download_result {
-            DownloadResult::Cached(track_path) => self.sink.query_track(&track_path)?,
-            DownloadResult::Streaming(reader) => self.sink.query_track_stream(reader)?,
+            DownloadResult::Cached(track_path) => {
+                self.sink.query_track(&track_path, item.queue_id)?
+            }
+            DownloadResult::Streaming(reader) => {
+                self.sink.query_track_stream(reader, item.queue_id)?
+            }
         };
 
         if next_track {
-            self.next_track_in_sink_queue = match query_result {
-                QueryTrackResult::Queued => {
-                    tracing::info!("In queue");
-                    true
-                }
-                QueryTrackResult::RecreateStreamRequired => {
-                    tracing::info!("Not in queue");
-                    false
-                }
-            };
+            self.next_track_in_sink_queue = matches!(query_result, QueryTrackResult::Queued);
         }
+
         self.sink.play();
         self.set_target_status(Status::Playing);
+
         if !next_track
             && let Some((id, position)) = self.pending_seek.take()
             && id == track.id
@@ -458,9 +452,9 @@ impl Player {
         );
 
         if (always_play || target_state_play)
-            && let Some(first_track) = tracklist.current_track()
+            && let Some(first_track) = tracklist.current_queue_item()
         {
-            tracing::info!("New queue starting with: {}", first_track.title);
+            tracing::info!("New queue starting with: {}", first_track.track.title);
             self.query_track(first_track, false).await?;
         }
 
@@ -505,8 +499,8 @@ impl Player {
             .unwrap_or(0);
         tracklist.skip_to_track(start);
 
-        if play && let Some(first_track) = tracklist.current_track() {
-            tracing::info!("New queue starting with: {}", first_track.title);
+        if play && let Some(first_track) = tracklist.current_queue_item() {
+            tracing::info!("New queue starting with: {}", first_track.track.title);
             self.query_track(first_track, false).await?;
         }
 
@@ -823,8 +817,8 @@ impl Player {
 
                 let tracklist = self.tracklist_rx.borrow().clone();
 
-                if let Some(next_track) = tracklist.next_track() {
-                    tracing::info!("Query next track: {} from tick", &next_track.title);
+                if let Some(next_track) = tracklist.next_queue_item() {
+                    tracing::info!("Query next track: {} from tick", &next_track.track.title);
                     self.query_track(next_track, true).await?;
                 }
             }
@@ -941,25 +935,47 @@ impl Player {
         Ok(())
     }
 
-    async fn track_finished(&mut self) -> AppResult<()> {
+    async fn track_finished(&mut self, event: TrackFinished) -> AppResult<()> {
+        if event.generation != self.sink.playback_generation() {
+            tracing::debug!(
+                ?event,
+                "Ignoring track-finished event from obsolete generation"
+            );
+            return Ok(());
+        }
+
         let mut tracklist = self.tracklist_rx.borrow().clone();
 
-        let current_position = tracklist.current_position();
-        let new_position = current_position.saturating_add(1);
+        let Some(current_item) = tracklist.current_queue_item() else {
+            return Ok(());
+        };
 
-        let next_track = tracklist.skip_to_track(new_position);
+        if current_item.queue_id != event.queue_id {
+            tracing::debug!(
+                ?event,
+                current_queue_id = current_item.queue_id,
+                "Ignoring track-finished event for non-current item"
+            );
+            return Ok(());
+        }
 
-        if let Some(next_track) = next_track {
-            if !self.next_track_in_sink_queue {
-                tracing::info!(
-                    "Track finished and next track is not in queue. Resetting queue, and querying track."
-                );
+        let new_position = tracklist.current_position().saturating_add(1);
+
+        let next_item = tracklist.skip_to_track(new_position);
+
+        if let Some(next_item) = next_item {
+            if self.next_track_in_sink_queue {
+                self.sink.promote_queued_track();
+            } else {
+                tracing::info!("Next track is not queued; recreating playback");
+
                 self.sink.clear();
+
                 if let Some(delay) = self.sample_rate_change_delay {
-                    tracing::info!("Waiting for sample rate change delay");
                     sleep(delay).await;
                 }
-                self.query_track(next_track, false).await?;
+
+                self.query_track(next_item, false).await?;
             }
         } else {
             tracklist.reset();
@@ -968,9 +984,11 @@ impl Player {
             self.sink.clear();
             self.position.send(Duration::default())?;
         }
+
         self.next_track_is_queried = false;
-        self.broadcast_tracklist(tracklist).await?;
-        Ok(())
+        self.next_track_in_sink_queue = false;
+
+        self.broadcast_tracklist(tracklist).await
     }
 
     pub async fn handle_active_change(&mut self, active: bool) -> AppResult<()> {
@@ -1004,8 +1022,8 @@ impl Player {
                     }
                 }
 
-                Ok(()) = self.track_finished.changed() => {
-                    if let Err(err) = self.track_finished().await {
+                Some(event) = self.track_finished.recv() => {
+                    if let Err(err) = self.track_finished(event).await {
                         self.broadcast.send_error(err.to_string());
                     }
                 }

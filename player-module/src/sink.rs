@@ -12,7 +12,7 @@ use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 use rodio::cpal::traits::HostTrait;
 use rodio::queue::queue;
 use rodio::{Decoder, DeviceTrait, Player, Source};
-use tokio::sync::watch::{self, Receiver, Sender};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
@@ -20,6 +20,12 @@ use crate::AppResult;
 use crate::error::PlayerError;
 use crate::prefetch::Prefetch;
 use crate::stderr_redirect::silence_stderr;
+
+#[derive(Debug, Clone, Copy)]
+pub struct TrackFinished {
+    pub generation: usize,
+    pub queue_id: u64,
+}
 
 struct Playback {
     player: Player,
@@ -30,30 +36,34 @@ struct Playback {
 pub struct Sink {
     playback: Option<Playback>,
     volume: VolumeReceiver,
-    track_finished: Sender<()>,
-    track_handle: Option<JoinHandle<()>>,
+    track_finished_tx: UnboundedSender<TrackFinished>,
+    current_track_handle: Option<JoinHandle<()>>,
+    queued_track_handle: Option<JoinHandle<()>>,
     duration_played: Arc<Mutex<Duration>>,
     playback_generation: Arc<AtomicUsize>,
     preferred_device_id: Option<String>,
 }
 
 impl Sink {
-    pub fn new(volume: VolumeReceiver, preferred_device_id: Option<String>) -> Self {
-        let (track_finished, _) = watch::channel(());
-
+    pub fn new(
+        volume: VolumeReceiver,
+        preferred_device_id: Option<String>,
+        track_finished_tx: UnboundedSender<TrackFinished>,
+    ) -> Self {
         Self {
             playback: None,
             volume,
-            track_finished,
-            track_handle: None,
+            track_finished_tx,
+            current_track_handle: None,
+            queued_track_handle: None,
             duration_played: Arc::default(),
             playback_generation: Arc::new(AtomicUsize::new(0)),
             preferred_device_id,
         }
     }
 
-    pub fn track_finished(&self) -> Receiver<()> {
-        self.track_finished.subscribe()
+    pub fn playback_generation(&self) -> usize {
+        self.playback_generation.load(Ordering::SeqCst)
     }
 
     pub fn position(&self) -> Duration {
@@ -120,29 +130,43 @@ impl Sink {
 
         self.playback_generation.fetch_add(1, Ordering::SeqCst);
 
-        self.clear_queue();
-        self.playback = None;
-
-        *self.duration_played.lock() = Duration::default();
-
-        if let Some(handle) = self.track_handle.take() {
+        if let Some(handle) = self.current_track_handle.take() {
             handle.abort();
         }
+
+        if let Some(handle) = self.queued_track_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(playback) = self.playback.as_ref() {
+            playback.sender.clear();
+        }
+
+        self.playback = None;
+        *self.duration_played.lock() = Duration::default();
     }
 
     pub fn clear_queue(&mut self) {
         tracing::info!("Clearing sink queue");
+
+        if let Some(handle) = self.queued_track_handle.take() {
+            handle.abort();
+        }
 
         if let Some(playback) = self.playback.as_ref() {
             playback.sender.clear();
         }
     }
 
+    pub fn promote_queued_track(&mut self) {
+        self.current_track_handle = self.queued_track_handle.take();
+    }
+
     pub const fn is_empty(&self) -> bool {
         self.playback.is_none()
     }
 
-    pub fn query_track(&mut self, track_path: &Path) -> AppResult<QueryTrackResult> {
+    pub fn query_track(&mut self, track_path: &Path, queue_id: u64) -> AppResult<QueryTrackResult> {
         tracing::info!("Sink query track: {}", track_path.to_string_lossy());
 
         let file = fs::File::open(track_path).map_err(|err| PlayerError::StreamError {
@@ -150,12 +174,13 @@ impl Sink {
         })?;
 
         let source = Decoder::try_from(file)?;
-        self.queue_decoder(source)
+        self.queue_decoder(source, queue_id)
     }
 
     pub fn query_track_stream(
         &mut self,
         reader: SeekableStreamReader,
+        queue_id: u64,
     ) -> AppResult<QueryTrackResult> {
         tracing::info!("Sink query track (streaming)");
 
@@ -169,13 +194,13 @@ impl Sink {
                 message: format!("Failed to decode streaming FLAC: {e}"),
             })?;
 
-        self.queue_decoder(source)
+        self.queue_decoder(source, queue_id)
     }
 
-    fn queue_decoder<R: Read + Seek + Send + Sync + 'static>(
-        &mut self,
-        source: Decoder<R>,
-    ) -> AppResult<QueryTrackResult> {
+    fn queue_decoder<T>(&mut self, source: Decoder<T>, queue_id: u64) -> AppResult<QueryTrackResult>
+    where
+        T: Read + Seek + Send + 'static,
+    {
         let sample_rate = source.sample_rate();
 
         let same_sample_rate = self
@@ -186,6 +211,8 @@ impl Sink {
         if !same_sample_rate {
             return Ok(QueryTrackResult::RecreateStreamRequired);
         }
+
+        let is_queued_track = self.playback.is_some();
 
         if self.playback.is_none() {
             let mut mixer = if let Some(preferred_device_name) = self.preferred_device_id.as_deref()
@@ -198,8 +225,8 @@ impl Sink {
             mixer.log_on_drop(false);
 
             let (sender, receiver) = queue(true);
-
             let player = rodio::Player::connect_new(mixer.mixer());
+
             player.append(receiver);
             set_volume(&player, *self.volume.borrow());
 
@@ -214,23 +241,20 @@ impl Sink {
             message: "Playback not initialized".to_string(),
         })?;
 
-        let track_finished = self.track_finished.clone();
+        let track_finished_tx = self.track_finished_tx.clone();
         let track_duration = source.total_duration().unwrap_or_default();
         let duration_played = self.duration_played.clone();
-
         let playback_generation = self.playback_generation.clone();
         let expected_generation = playback_generation.load(Ordering::SeqCst);
 
         let signal = playback.sender.append_with_signal(Prefetch::new(source));
 
-        let track_handle = tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 if signal.try_recv().is_ok() {
                     if playback_generation.load(Ordering::SeqCst) != expected_generation {
-                        tracing::debug!(
-                            "Ignoring track-finished signal from obsolete playback generation"
-                        );
-                        break;
+                        tracing::debug!(queue_id, "Ignoring obsolete track-finished signal");
+                        return;
                     }
 
                     {
@@ -238,15 +262,25 @@ impl Sink {
                         *duration_played = duration_played.saturating_add(track_duration);
                     }
 
-                    let _ = track_finished.send(());
-                    break;
+                    let _ = track_finished_tx.send(TrackFinished {
+                        generation: expected_generation,
+                        queue_id,
+                    });
+
+                    return;
                 }
 
                 sleep(Duration::from_millis(200)).await;
             }
         });
 
-        self.track_handle = Some(track_handle);
+        if is_queued_track {
+            if let Some(old_handle) = self.queued_track_handle.replace(handle) {
+                old_handle.abort();
+            }
+        } else if let Some(old_handle) = self.current_track_handle.replace(handle) {
+            old_handle.abort();
+        }
 
         Ok(QueryTrackResult::Queued)
     }
