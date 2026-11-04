@@ -11,10 +11,15 @@ use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 
 use crate::{AppResult, client::StreamClient, database::Database};
 
+#[cfg(feature = "mpv")]
+use tokio::task::JoinHandle;
+
 pub enum DownloadResult {
     Cached(PathBuf),
     #[cfg(feature = "rodio")]
     Streaming(SeekableStreamReader),
+    #[cfg(feature = "mpv")]
+    Downloading(JoinHandle<AppResult<PathBuf>>),
 }
 
 pub struct Downloader {
@@ -66,8 +71,30 @@ impl Downloader {
 
         #[cfg(feature = "mpv")]
         {
-            finish_download(stream).await?;
-            Ok(DownloadResult::Cached(cache_path))
+            Ok(DownloadResult::Downloading(tokio::task::spawn_blocking(
+                move || {
+                    let mut reader = stream;
+
+                    std::io::copy(&mut reader, &mut std::io::sink()).map_err(|err| {
+                        crate::error::PlayerError::StreamError {
+                            message: format!("Failed to finish download: {err}"),
+                        }
+                    })?;
+
+                    drop(reader);
+
+                    if !cache_path.is_file() {
+                        return Err(crate::error::PlayerError::StreamError {
+                            message: format!(
+                                "Downloaded file was not created: {}",
+                                cache_path.display()
+                            ),
+                        });
+                    }
+
+                    Ok(cache_path)
+                },
+            )))
         }
     }
 
@@ -102,8 +129,30 @@ impl Downloader {
 
         #[cfg(feature = "mpv")]
         {
-            finish_download(stream).await?;
-            Ok(DownloadResult::Cached(cache_path))
+            Ok(DownloadResult::Downloading(tokio::task::spawn_blocking(
+                move || {
+                    let mut reader = stream;
+
+                    std::io::copy(&mut reader, &mut std::io::sink()).map_err(|err| {
+                        crate::error::PlayerError::StreamError {
+                            message: format!("Failed to finish download: {err}"),
+                        }
+                    })?;
+
+                    drop(reader);
+
+                    if !cache_path.is_file() {
+                        return Err(crate::error::PlayerError::StreamError {
+                            message: format!(
+                                "Downloaded file was not created: {}",
+                                cache_path.display()
+                            ),
+                        });
+                    }
+
+                    Ok(cache_path)
+                },
+            )))
         }
     }
 
@@ -195,22 +244,4 @@ fn guess_extension(mime: &str) -> String {
         m if m.contains("mp3") => "mp3".to_string(),
         _ => "unknown".to_string(),
     }
-}
-
-#[cfg(feature = "mpv")]
-async fn finish_download(
-    mut reader: qobuz_client::stream::flac_source_stream::SeekableStreamReader,
-) -> AppResult<()> {
-    use std::io;
-
-    tokio::task::spawn_blocking(move || io::copy(&mut reader, &mut io::sink()))
-        .await
-        .map_err(|err| crate::error::PlayerError::StreamError {
-            message: format!("Download task failed: {err}"),
-        })?
-        .map_err(|err| crate::error::PlayerError::StreamError {
-            message: format!("Failed to finish download: {err}"),
-        })?;
-
-    Ok(())
 }
