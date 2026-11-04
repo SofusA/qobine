@@ -146,8 +146,8 @@ impl From<rodio::DeviceSinkError> for PlayerError {
     }
 }
 
-impl From<rodio::CpalError> for PlayerError {
-    fn from(value: rodio::CpalError) -> Self {
+impl From<rodio::DevicesError> for PlayerError {
+    fn from(value: rodio::DevicesError) -> Self {
         Self::StreamError {
             message: value.to_string(),
         }
