@@ -141,6 +141,7 @@ impl Player {
         })
     }
 
+    #[must_use]
     pub fn bindings(&self) -> PlayerBindings {
         PlayerBindings {
             controls: self.controls(),
@@ -160,54 +161,67 @@ impl Player {
         }
     }
 
+    #[must_use]
     pub fn controls(&self) -> Controls {
         self.controls.clone()
     }
 
+    #[must_use]
     pub fn status(&self) -> StatusReceiver {
         self.target_status.subscribe()
     }
 
+    #[must_use]
     pub fn volume(&self) -> VolumeReceiver {
         self.volume.subscribe()
     }
 
+    #[must_use]
     pub fn auto_play(&self) -> AutoPlayReceiver {
         self.auto_play_rx.clone()
     }
 
+    #[must_use]
     pub fn position(&self) -> PositionReceiver {
         self.position.subscribe()
     }
 
+    #[must_use]
     pub fn tracklist(&self) -> TracklistReceiver {
         self.tracklist_tx.subscribe()
     }
 
+    #[must_use]
     pub fn status_sender(&self) -> watch::Sender<Status> {
         self.target_status.clone()
     }
 
+    #[must_use]
     pub fn volume_sender(&self) -> watch::Sender<f32> {
         self.volume.clone()
     }
 
+    #[must_use]
     pub fn auto_play_sender(&self) -> watch::Sender<bool> {
         self.auto_play.clone()
     }
 
+    #[must_use]
     pub fn position_sender(&self) -> watch::Sender<Duration> {
         self.position.clone()
     }
 
+    #[must_use]
     pub fn tracklist_sender(&self) -> watch::Sender<Tracklist> {
         self.tracklist_tx.clone()
     }
 
+    #[must_use]
     pub fn active(&self) -> watch::Receiver<bool> {
         self.active.subscribe()
     }
 
+    #[must_use]
     pub fn active_sender(&self) -> watch::Sender<bool> {
         self.active.clone()
     }
@@ -277,6 +291,7 @@ impl Player {
             DownloadResult::Cached(track_path) => {
                 self.sink.query_track(&track_path, item.queue_id)?
             }
+            #[cfg(feature = "rodio")]
             DownloadResult::Streaming(reader) => {
                 self.sink.query_track_stream(reader, item.queue_id)?
             }

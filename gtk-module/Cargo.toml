@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
-player-module = { version = "*", path = "../player-module" }
+player-module = { version = "*", path = "../player-module", features = ["rodio"] }
 mpris-module = { version = "*", path = "../mpris-module" }
 cli-module = { version = "*", path = "../cli-module" }
 shared-playback-module = { version = "*", path = "../shared-playback-module" }

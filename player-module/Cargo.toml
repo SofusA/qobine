@@ -9,9 +9,17 @@ edition.workspace = true
 license-file.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+rodio = ["dep:rodio"]
+mpv = ["dep:libmpv2"]
+
 [dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 qobuz-client = { version = "*", path = "../qobuz-client" }
+
+rodio = { workspace = true, optional = true }
+libmpv2 = { version = "7", optional = true }
 
 tokio.workspace = true
 rand.workspace = true
@@ -20,7 +28,6 @@ snafu.workspace = true
 serde.workspace = true
 moka.workspace = true
 time.workspace = true
-rodio.workspace = true
 reqwest.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true

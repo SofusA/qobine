@@ -5,12 +5,15 @@ use std::{
 
 use controls_module::models::Track;
 use num_traits::ToPrimitive;
+
+#[cfg(feature = "rodio")]
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 
 use crate::{AppResult, client::StreamClient, database::Database};
 
 pub enum DownloadResult {
     Cached(PathBuf),
+    #[cfg(feature = "rodio")]
     Streaming(SeekableStreamReader),
 }
 
@@ -53,9 +56,19 @@ impl Downloader {
             return Ok(DownloadResult::Cached(cache_path));
         }
 
-        let stream = self.client.stream_track(cache_path, track_info).await?;
+        let stream = self
+            .client
+            .stream_track(cache_path.clone(), track_info)
+            .await?;
 
-        Ok(DownloadResult::Streaming(stream))
+        #[cfg(feature = "rodio")]
+        return Ok(DownloadResult::Streaming(stream));
+
+        #[cfg(feature = "mpv")]
+        {
+            finish_download(stream).await?;
+            Ok(DownloadResult::Cached(cache_path))
+        }
     }
 
     /// File based path: cheap cpu as no crypto ops
@@ -83,7 +96,15 @@ impl Downloader {
             .client
             .stream_track_file_based(&track_url.url, &cache_path)
             .await?;
-        Ok(DownloadResult::Streaming(stream))
+
+        #[cfg(feature = "rodio")]
+        return Ok(DownloadResult::Streaming(stream));
+
+        #[cfg(feature = "mpv")]
+        {
+            finish_download(stream).await?;
+            Ok(DownloadResult::Cached(cache_path))
+        }
     }
 
     pub fn set_audio_cache_dir(&mut self, new_directory: PathBuf) {
@@ -174,4 +195,22 @@ fn guess_extension(mime: &str) -> String {
         m if m.contains("mp3") => "mp3".to_string(),
         _ => "unknown".to_string(),
     }
+}
+
+#[cfg(feature = "mpv")]
+async fn finish_download(
+    mut reader: qobuz_client::stream::flac_source_stream::SeekableStreamReader,
+) -> AppResult<()> {
+    use std::io;
+
+    tokio::task::spawn_blocking(move || io::copy(&mut reader, &mut io::sink()))
+        .await
+        .map_err(|err| crate::error::PlayerError::StreamError {
+            message: format!("Download task failed: {err}"),
+        })?
+        .map_err(|err| crate::error::PlayerError::StreamError {
+            message: format!("Failed to finish download: {err}"),
+        })?;
+
+    Ok(())
 }

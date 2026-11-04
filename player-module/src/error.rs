@@ -132,12 +132,14 @@ impl<T> From<std::sync::PoisonError<T>> for PlayerError {
     }
 }
 
+#[cfg(feature = "rodio")]
 impl From<rodio::source::SeekError> for PlayerError {
     fn from(_: rodio::source::SeekError) -> Self {
         Self::Seek
     }
 }
 
+#[cfg(feature = "rodio")]
 impl From<rodio::DeviceSinkError> for PlayerError {
     fn from(value: rodio::DeviceSinkError) -> Self {
         Self::StreamError {
@@ -146,6 +148,7 @@ impl From<rodio::DeviceSinkError> for PlayerError {
     }
 }
 
+#[cfg(feature = "rodio")]
 impl From<rodio::CpalError> for PlayerError {
     fn from(value: rodio::CpalError) -> Self {
         Self::StreamError {
@@ -154,6 +157,7 @@ impl From<rodio::CpalError> for PlayerError {
     }
 }
 
+#[cfg(feature = "rodio")]
 impl From<rodio::decoder::DecoderError> for PlayerError {
     fn from(value: rodio::decoder::DecoderError) -> Self {
         Self::StreamError {
