@@ -226,6 +226,13 @@ impl DisconnectClient {
         let initial_state = self.get_state().await?;
         let is_active = initial_state.active_device == self.device_name;
 
+        self.update_active_device(initial_state.active_device);
+        _ = self.tracklist_sender.send(initial_state.tracklist);
+        _ = self.status_sender.send(initial_state.playback_status);
+        _ = self.volume_sender.send(initial_state.volume);
+        _ = self.position_sender.send(initial_state.position);
+        _ = self.auto_play_sender.send(initial_state.auto_play);
+
         self.active_sender.send_if_modified(|current| {
             if *current == is_active {
                 false
@@ -234,13 +241,6 @@ impl DisconnectClient {
                 true
             }
         });
-
-        self.update_active_device(initial_state.active_device);
-        _ = self.tracklist_sender.send(initial_state.tracklist);
-        _ = self.status_sender.send(initial_state.playback_status);
-        _ = self.volume_sender.send(initial_state.volume);
-        _ = self.position_sender.send(initial_state.position);
-        _ = self.auto_play_sender.send(initial_state.auto_play);
 
         loop {
             tokio::select! {
