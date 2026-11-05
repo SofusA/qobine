@@ -297,23 +297,23 @@ async fn background_task(
                     let toast = templates.borrow().render("toast.html", &json!({"message": message_string, "severity": severity}));
                     let event = match message {
                         Notification::Error(_) => ServerSentEvent {
-                            event_name: "error".into(),
+                            event_name: "toast-error".into(),
                             event_data: toast,
                         },
                         Notification::Warning(_) => {
                             ServerSentEvent {
-                                event_name: "warn".into(),
+                                event_name: "toast-warn".into(),
                                 event_data: toast,
                             }
                         }
                         Notification::Success(_) => {
                             ServerSentEvent {
-                                event_name: "success".into(),
+                                event_name: "toast-success".into(),
                                 event_data: toast,
                             }
                         }
                         Notification::Info(_) => ServerSentEvent {
-                            event_name: "info".into(),
+                            event_name: "toast-info".into(),
                             event_data: toast,
                         },
                     };

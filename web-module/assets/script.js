@@ -41,18 +41,29 @@ function initSse() {
     }
   });
 
-  for (const level of ["error", "warn", "success", "info"]) {
+  for (const level of [
+    "toast-error",
+    "toast-warn",
+    "toast-success",
+    "toast-info",
+  ]) {
     evtSource.addEventListener(level, (event) => {
+      if (typeof event.data !== "string" || event.data.trim() === "") {
+        return;
+      }
+
       const container = document.getElementById("toast-container");
 
-      if (container) {
-        container.insertAdjacentHTML("afterbegin", event.data);
+      if (!container) {
+        return;
+      }
 
-        const notification = container.firstElementChild;
+      container.insertAdjacentHTML("afterbegin", event.data);
 
-        if (notification) {
-          parseNotification(notification);
-        }
+      const notification = container.firstElementChild;
+
+      if (notification) {
+        parseNotification(notification);
       }
     });
   }
