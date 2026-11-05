@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 use crate::models::{Track, TrackStatus};
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -74,17 +72,34 @@ impl Tracklist {
         }
     }
 
-    pub fn set_list_type(&mut self, list_type: TracklistType) {
-        self.list_type = list_type;
-    }
-
     #[must_use]
     pub const fn new_with_id(list_type: TracklistType, items: Vec<QueueItem>) -> Self {
-        Self {
-            queue: items,
-            list_type,
-            next_queue_id: 0,
-        }
+        Self::new(list_type, items)
+    }
+
+    fn playing_item(&self) -> Option<&QueueItem> {
+        self.queue
+            .iter()
+            .find(|item| item.track.status == TrackStatus::Playing)
+    }
+
+    fn playing_position(&self) -> Option<usize> {
+        self.queue
+            .iter()
+            .position(|item| item.track.status == TrackStatus::Playing)
+    }
+
+    fn next_item(&self) -> Option<&QueueItem> {
+        self.playing_position()
+            .and_then(|position| self.queue.get(position.saturating_add(1)))
+    }
+
+    fn position_of_queue_id(&self, queue_id: u64) -> Option<usize> {
+        self.queue.iter().position(|item| item.queue_id == queue_id)
+    }
+
+    pub fn set_list_type(&mut self, list_type: TracklistType) {
+        self.list_type = list_type;
     }
 
     #[must_use]
@@ -94,7 +109,7 @@ impl Tracklist {
 
     pub fn clear_queue(&mut self) {
         self.queue
-            .retain(|x| x.track.status != TrackStatus::Unplayed);
+            .retain(|item| item.track.status != TrackStatus::Unplayed);
     }
 
     #[must_use]
@@ -104,35 +119,27 @@ impl Tracklist {
 
     #[must_use]
     pub fn currently_playing(&self) -> Option<u32> {
-        self.queue
-            .iter()
-            .find(|t| t.track.status == TrackStatus::Playing)
-            .map(|x| x.track.id)
+        self.playing_item().map(|item| item.track.id)
     }
 
     #[must_use]
     pub fn current_playing_entity(&self) -> Option<PlayingEntity> {
-        let current_queue_item = self
-            .queue
-            .iter()
-            .find(|q| q.track.status == TrackStatus::Playing);
+        let item = self.playing_item()?;
 
-        current_queue_item.map(|queue_item| match &self.list_type {
-            TracklistType::Playlist(playlist_tracklist) => {
-                PlayingEntity::Playlist(PlayingPlaylist {
-                    track_id: queue_item.track.id,
-                    queue_id: queue_item.queue_id,
-                    index: queue_item.index,
-                    playlist_id: playlist_tracklist.id,
-                })
-            }
-            _ => PlayingEntity::Track(queue_item.track.clone()),
+        Some(match &self.list_type {
+            TracklistType::Playlist(playlist) => PlayingEntity::Playlist(PlayingPlaylist {
+                track_id: item.track.id,
+                queue_id: item.queue_id,
+                index: item.index,
+                playlist_id: playlist.id,
+            }),
+            _ => PlayingEntity::Track(item.track.clone()),
         })
     }
 
     #[must_use]
     pub fn next_track_id(&self) -> Option<u32> {
-        self.next_track().map(|x| x.id)
+        self.next_item().map(|item| item.track.id)
     }
 
     pub fn remove_track(&mut self, index: usize) {
@@ -151,48 +158,60 @@ impl Tracklist {
         self.queue.insert(insert_index.min(self.queue.len()), item);
     }
 
-    /// A new item with the next free queue id, not yet in the queue.
     pub fn queue_item(&mut self, track: Track, connect_id: Option<i32>) -> QueueItem {
-        let index = self.total().checked_add(1).unwrap_or_default();
-        let highest = self.queue.iter().map(|item| item.queue_id).max();
-        let queue_id = highest
+        let queue_id = self
+            .queue
+            .iter()
+            .map(|item| item.queue_id)
+            .max()
             .map_or(0, |id| id.saturating_add(1))
             .max(self.next_queue_id);
+
         self.next_queue_id = queue_id.saturating_add(1);
+
         QueueItem {
             track,
             queue_id,
-            index,
+            index: self.queue.len().saturating_add(1),
             connect_id,
         }
     }
 
-    /// Adopts the queue of the Qobuz Connect session, keeping the current track; with `keep_unknown` the items the session does not know yet stay after their nearest surviving predecessor. Returns whether the current track is still queued.
     pub fn replace(&mut self, items: Vec<QueueItem>, keep_unknown: bool) -> bool {
-        let current = self.current_queue_id();
+        let current_queue_id = self.current_queue_id();
+        let old_queue = std::mem::take(&mut self.queue);
         let mut queue = items;
-        let mut previous = None;
-        for item in self.queue.drain(..) {
+        let mut previous_queue_id = None;
+
+        for item in old_queue {
             let present = queue.iter().any(|known| known.queue_id == item.queue_id);
-            if !present && keep_unknown && item.connect_id.is_none() {
-                let at = previous
-                    .and_then(|id| queue.iter().position(|known| known.queue_id == id))
+
+            let should_keep_unknown = keep_unknown && item.connect_id.is_none() && !present;
+
+            if should_keep_unknown {
+                let insertion_position = previous_queue_id
+                    .and_then(|queue_id| queue.iter().position(|known| known.queue_id == queue_id))
                     .map_or(0, |position| position.saturating_add(1));
-                queue.insert(at.min(queue.len()), item.clone());
-            }
-            if present || (keep_unknown && item.connect_id.is_none()) {
-                previous = Some(item.queue_id);
+
+                let queue_id = item.queue_id;
+                queue.insert(insertion_position.min(queue.len()), item);
+                previous_queue_id = Some(queue_id);
+            } else if present {
+                previous_queue_id = Some(item.queue_id);
             }
         }
+
         self.queue = queue;
-        let position =
-            current.and_then(|id| self.queue.iter().position(|item| item.queue_id == id));
-        if let Some(position) = position {
-            self.skip_to_track(position);
-            return true;
-        }
-        self.reset();
-        false
+
+        let Some(position) =
+            current_queue_id.and_then(|queue_id| self.position_of_queue_id(queue_id))
+        else {
+            self.reset();
+            return false;
+        };
+
+        self.skip_to_track(position);
+        true
     }
 
     #[must_use]
@@ -204,61 +223,60 @@ impl Tracklist {
 
     #[must_use]
     pub fn current_connect_id(&self) -> Option<i32> {
-        self.queue
-            .iter()
-            .find(|item| item.track.status == TrackStatus::Playing)
-            .and_then(|item| item.connect_id)
+        self.playing_item().and_then(|item| item.connect_id)
     }
 
     #[must_use]
     pub fn next_connect_id(&self) -> Option<i32> {
-        let next = self.current_position().checked_add(1)?;
-        self.queue.get(next).and_then(|item| item.connect_id)
+        self.next_item().and_then(|item| item.connect_id)
     }
 
     pub fn reorder_queue(&mut self, new_order: &[usize]) {
-        if new_order.len() != self.queue.len() || new_order.iter().enumerate().all(|(i, &v)| i == v)
+        if new_order.len() != self.queue.len()
+            || new_order
+                .iter()
+                .enumerate()
+                .all(|(position, &index)| position == index)
         {
             return;
         }
 
-        let reordered: Vec<_> = new_order
+        let mut seen = vec![false; self.queue.len()];
+
+        for &index in new_order {
+            let Some(already_seen) = seen.get_mut(index) else {
+                return;
+            };
+
+            if std::mem::replace(already_seen, true) {
+                return;
+            }
+        }
+
+        let Some(reordered) = new_order
             .iter()
-            .filter_map(|&i| self.queue.get(i).cloned())
-            .collect();
+            .map(|&index| self.queue.get(index).cloned())
+            .collect::<Option<Vec<_>>>()
+        else {
+            return;
+        };
 
         self.queue = reordered;
     }
 
     #[must_use]
     pub fn current_position(&self) -> usize {
-        self.queue
-            .iter()
-            .enumerate()
-            .find(|t| t.1.track.status == TrackStatus::Playing)
-            .map_or(0, |x| x.0)
+        self.playing_position().unwrap_or_default()
     }
 
     #[must_use]
     pub fn current_queue_id(&self) -> Option<u64> {
-        self.queue
-            .iter()
-            .find(|t| t.track.status == TrackStatus::Playing)
-            .map(|x| x.queue_id)
+        self.playing_item().map(|item| item.queue_id)
     }
 
     #[must_use]
     pub fn next_track_queue_id(&self) -> Option<u64> {
-        let current_position = self.current_position();
-
-        if current_position >= self.total() {
-            return None;
-        }
-
-        let next_position = current_position.checked_add(1)?;
-
-        let next = self.queue.get(next_position);
-        next.map(|x| x.queue_id)
+        self.next_item().map(|item| item.queue_id)
     }
 
     #[must_use]
@@ -267,65 +285,48 @@ impl Tracklist {
     }
 
     pub fn reset(&mut self) {
-        for track in self.queue.iter_mut().map(|x| &mut x.track) {
-            if track.status == TrackStatus::Played || track.status == TrackStatus::Playing {
-                track.status = TrackStatus::Unplayed;
+        for item in &mut self.queue {
+            if matches!(
+                item.track.status,
+                TrackStatus::Played | TrackStatus::Playing
+            ) {
+                item.track.status = TrackStatus::Unplayed;
             }
         }
 
-        if let Some(first_item) = self
+        if let Some(item) = self
             .queue
             .iter_mut()
-            .find(|t| t.track.status == TrackStatus::Unplayed)
+            .find(|item| item.track.status == TrackStatus::Unplayed)
         {
-            first_item.track.status = TrackStatus::Playing;
+            item.track.status = TrackStatus::Playing;
         }
     }
 
     #[must_use]
     pub fn next_track(&self) -> Option<&Track> {
-        let current_position = self.current_position();
-        let next_position = current_position.checked_add(1)?;
-
-        if self.total() <= next_position {
-            return None;
-        }
-
-        Some(&self.queue.index(next_position).track)
+        self.next_item().map(|item| &item.track)
     }
 
     #[must_use]
     pub fn current_track(&self) -> Option<&Track> {
-        self.queue
-            .iter()
-            .map(|x| &x.track)
-            .find(|t| t.status == TrackStatus::Playing)
+        self.playing_item().map(|item| &item.track)
     }
 
     pub fn skip_to_track(&mut self, new_position: usize) -> Option<&Track> {
-        let mut new_track: Option<&Track> = None;
-
-        for queue_item in self.queue.iter_mut().map(|x| &mut x.track).enumerate() {
-            let queue_item_position = queue_item.0;
-
-            match queue_item_position.cmp(&new_position) {
-                std::cmp::Ordering::Less => {
-                    queue_item.1.status = TrackStatus::Played;
-                }
-
-                std::cmp::Ordering::Equal => {
-                    queue_item.1.status = TrackStatus::Playing;
-
-                    new_track = Some(queue_item.1);
-                }
-
-                std::cmp::Ordering::Greater => {
-                    queue_item.1.status = TrackStatus::Unplayed;
-                }
-            }
+        if new_position >= self.queue.len() {
+            return None;
         }
 
-        new_track
+        for (position, item) in self.queue.iter_mut().enumerate() {
+            item.track.status = match position.cmp(&new_position) {
+                std::cmp::Ordering::Less => TrackStatus::Played,
+                std::cmp::Ordering::Equal => TrackStatus::Playing,
+                std::cmp::Ordering::Greater => TrackStatus::Unplayed,
+            };
+        }
+
+        self.queue.get(new_position).map(|item| &item.track)
     }
 }
 
