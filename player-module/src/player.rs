@@ -975,11 +975,19 @@ impl Player {
 
     pub async fn handle_active_change(&mut self, active: bool) -> AppResult<()> {
         if active {
-            let tracklist = {
-                let tracklist = self.tracklist_rx.borrow();
-                tracklist.clone()
-            };
-            self.new_queue(tracklist, false).await?;
+            let tracklist = self.tracklist_rx.borrow().clone();
+
+            self.sink.clear();
+            self.next_track_is_queried = false;
+            self.next_track_in_sink_queue = false;
+
+            if matches!(
+                *self.target_status.borrow(),
+                Status::Playing | Status::Buffering
+            ) && let Some(track) = tracklist.current_track()
+            {
+                self.query_track(track, false).await?;
+            }
         } else {
             self.sink.clear();
         }
