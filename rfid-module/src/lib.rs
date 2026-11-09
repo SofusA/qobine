@@ -408,7 +408,7 @@ pub struct LinkPlaylistRfid {
 
 fn set_secret_header(mut request: RequestBuilder, secret: Option<&str>) -> RequestBuilder {
     if let Some(secret) = secret {
-        request = request.header("Cookie", &format!("secret={secret}"));
+        request = request.header("Cookie", &format!("__Host-secret={secret}"));
     }
     request
 }
