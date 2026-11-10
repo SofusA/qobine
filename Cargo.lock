@@ -4542,6 +4542,7 @@ dependencies = [
  "hkdf 0.13.0",
  "hostname",
  "md5",
+ "num-traits",
  "open",
  "parking_lot 0.13.0",
  "player-module",

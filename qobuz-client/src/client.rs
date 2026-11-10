@@ -1,7 +1,7 @@
 use crate::{
     Error, Result,
     qobuz_models::{
-        TrackInfo,
+        TrackInfo, TrackUrl,
         album::Album,
         album_suggestion::{AlbumSuggestionResponse, ReleaseQuery},
         artist::ArtistsResponse,
@@ -24,6 +24,7 @@ use crate::{
     },
 };
 use axum::{extract::Query, response::Html, routing::get};
+use num_traits::ToPrimitive;
 use regex::Regex;
 use reqwest::{
     Method, Response,
@@ -45,14 +46,63 @@ const API_URL: &str = "https://www.qobuz.com/api.json/0.2/";
 const PLAY_URL: &str = "https://play.qobuz.com";
 
 #[derive(Debug)]
+enum StreamingBackend {
+    Session { session: Option<StartResponse> },
+    FileBased { active_secret: String },
+}
+
+#[derive(Debug)]
+enum StreamingInfoInner {
+    Session(TrackInfo),
+    FileBased(TrackUrl),
+}
+
+#[derive(Debug)]
+pub struct StreamingInfo {
+    inner: StreamingInfoInner,
+}
+
+impl StreamingInfo {
+    #[must_use]
+    pub fn blob(&self) -> Option<&str> {
+        match &self.inner {
+            StreamingInfoInner::Session(info) => info.blob.as_deref(),
+            StreamingInfoInner::FileBased(info) => info.blob.as_deref(),
+        }
+    }
+
+    #[must_use]
+    pub const fn format_id(&self) -> Option<i32> {
+        match &self.inner {
+            StreamingInfoInner::Session(info) => info.format_id,
+            StreamingInfoInner::FileBased(info) => Some(info.format_id),
+        }
+    }
+
+    #[must_use]
+    pub fn mime_type(&self) -> &str {
+        match &self.inner {
+            StreamingInfoInner::Session(info) => &info.mime_type,
+            StreamingInfoInner::FileBased(info) => &info.mime_type,
+        }
+    }
+
+    #[must_use]
+    pub fn sampling_rate(&self) -> Option<u32> {
+        match &self.inner {
+            StreamingInfoInner::Session(info) => info.sampling_rate,
+            StreamingInfoInner::FileBased(info) => (info.sampling_rate * 1000.0).round().to_u32(),
+        }
+    }
+}
+
 pub struct QobuzClient {
-    session: Option<StartResponse>,
+    backend: StreamingBackend,
     app_id: String,
     base_url: String,
     http_client: reqwest::Client,
     user_token: String,
     user_id: i64,
-    active_secret: Option<String>,
 }
 
 #[derive(
@@ -335,22 +385,44 @@ async fn read_code_from_stdin() -> Result<String, Error> {
 }
 
 impl QobuzClient {
-    pub fn new(
+    pub fn new_session(user_auth_token: &str, user_id: i64, app_id: &str) -> Result<Self> {
+        Self::new(
+            user_auth_token,
+            user_id,
+            app_id,
+            StreamingBackend::Session { session: None },
+        )
+    }
+
+    pub fn new_file_based(
         user_auth_token: &str,
         user_id: i64,
         app_id: &str,
-        active_secret: Option<String>,
+        active_secret: String,
+    ) -> Result<Self> {
+        Self::new(
+            user_auth_token,
+            user_id,
+            app_id,
+            StreamingBackend::FileBased { active_secret },
+        )
+    }
+
+    fn new(
+        user_auth_token: &str,
+        user_id: i64,
+        app_id: &str,
+        backend: StreamingBackend,
     ) -> Result<Self> {
         let http_client = reqwest::Client::builder().cookie_store(true).build()?;
 
         Ok(Self {
+            backend,
             http_client,
-            session: None,
             user_token: user_auth_token.to_string(),
             user_id,
             app_id: app_id.to_string(),
             base_url: API_URL.to_string(),
-            active_secret,
         })
     }
 
@@ -584,58 +656,183 @@ impl QobuzClient {
     async fn renew_session(&mut self) -> Result<()> {
         tracing::info!("Renewing session");
 
+        if !matches!(self.backend, StreamingBackend::Session { .. }) {
+            return Err(Error::Stream {
+                message: "Session streaming is not enabled".to_string(),
+            });
+        }
+
         let endpoint = format!("{}{}", self.base_url, Endpoint::SessionStart);
-        let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
+        let now = time::OffsetDateTime::now_utc().unix_timestamp().to_string();
 
         let mut args = BTreeMap::<&str, String>::new();
         args.insert("profile", "qbz-1".to_string());
 
         let request_sig = get_request_sig("sessionstart", &args, &now);
 
-        let mut form_data = HashMap::new();
-        form_data.insert("profile", "qbz-1");
-        form_data.insert("request_ts", now.as_str());
-        form_data.insert("request_sig", request_sig.as_str());
+        let form_data = HashMap::from([
+            ("profile", "qbz-1"),
+            ("request_ts", now.as_str()),
+            ("request_sig", request_sig.as_str()),
+        ]);
 
         let result: StartResponse = self.post(&endpoint, form_data).await?;
 
         tracing::info!("Session renewed: {}", result.session_id);
+
         if let Some(infos) = &result.infos {
             tracing::debug!("Session infos: {}", infos);
         }
 
-        self.session = Some(result);
-        Ok(())
+        if let StreamingBackend::Session { session } = &mut self.backend {
+            *session = Some(result);
+            Ok(())
+        } else {
+            Err(Error::Stream {
+                message: "Streaming backend changed while renewing session".to_string(),
+            })
+        }
     }
 
     async fn ensure_valid_session(&mut self) -> Result<&StartResponse> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| Error::Time {
-                message: e.to_string(),
+            .map_err(|error| Error::Time {
+                message: error.to_string(),
             })?
             .as_secs();
 
-        let need_new_session = self
-            .session
-            .as_ref()
-            .is_none_or(|s| u64::from(s.expires_at) <= now);
+        let need_new_session = match &self.backend {
+            StreamingBackend::Session { session } => session
+                .as_ref()
+                .is_none_or(|session| u64::from(session.expires_at) <= now),
+            StreamingBackend::FileBased { .. } => {
+                return Err(Error::Stream {
+                    message: "Session streaming is not enabled".to_string(),
+                });
+            }
+        };
 
         if need_new_session {
             self.renew_session().await?;
         }
 
-        self.session.as_ref().ok_or_else(|| Error::Api {
-            message: "Failed to obtain a valid session".to_string(),
-        })
+        match &self.backend {
+            StreamingBackend::Session {
+                session: Some(session),
+            } => Ok(session),
+            StreamingBackend::Session { session: None } => Err(Error::Api {
+                message: "Failed to obtain a valid session".to_string(),
+            }),
+            StreamingBackend::FileBased { .. } => Err(Error::Stream {
+                message: "Session streaming is not enabled".to_string(),
+            }),
+        }
     }
 
     fn session_infos(&self) -> Option<&str> {
-        self.session.as_ref().and_then(|s| s.infos.as_deref())
+        match &self.backend {
+            StreamingBackend::Session { session } => session
+                .as_ref()
+                .and_then(|session| session.infos.as_deref()),
+            StreamingBackend::FileBased { .. } => None,
+        }
+    }
+
+    pub async fn get_streaming_info(
+        &mut self,
+        track_id: u32,
+        max_audio_quality: AudioQuality,
+    ) -> Result<StreamingInfo> {
+        match &self.backend {
+            StreamingBackend::Session { .. } => {
+                let session_id = self.ensure_valid_session().await?.session_id.clone();
+
+                let endpoint = format!("{}{}", self.base_url, Endpoint::File);
+                let now = time::OffsetDateTime::now_utc().unix_timestamp().to_string();
+                let quality = max_audio_quality.to_string();
+                let track_id = track_id.to_string();
+
+                let mut args = BTreeMap::<&str, String>::new();
+                args.insert("format_id", quality.clone());
+                args.insert("intent", "stream".to_string());
+                args.insert("track_id", track_id.clone());
+
+                let request_sig = get_request_sig("fileurl", &args, &now);
+
+                let params = [
+                    ("request_ts", now.as_str()),
+                    ("request_sig", request_sig.as_str()),
+                    ("track_id", track_id.as_str()),
+                    ("format_id", quality.as_str()),
+                    ("intent", "stream"),
+                ];
+
+                let response = make_get_call(
+                    &endpoint,
+                    Some(&params),
+                    &self.http_client,
+                    &self.app_id,
+                    Some(&self.user_token),
+                    Some(&session_id),
+                )
+                .await?;
+
+                let info = serde_json::from_str::<TrackInfo>(&response).map_err(|error| {
+                    tracing::debug!("TrackInfo deserialize error: {error}");
+                    tracing::debug!("Response was: {response}");
+
+                    Error::DeserializeJSON {
+                        message: error.to_string(),
+                    }
+                })?;
+
+                Ok(StreamingInfo {
+                    inner: StreamingInfoInner::Session(info),
+                })
+            }
+
+            StreamingBackend::FileBased { active_secret } => {
+                let info = track_url(
+                    track_id,
+                    active_secret,
+                    &self.base_url,
+                    &self.http_client,
+                    &self.app_id,
+                    &self.user_token,
+                    max_audio_quality,
+                )
+                .await?;
+
+                Ok(StreamingInfo {
+                    inner: StreamingInfoInner::FileBased(info),
+                })
+            }
+        }
     }
 
     pub async fn stream_track(
         &mut self,
+        streaming_info: StreamingInfo,
+        cache_path: PathBuf,
+    ) -> Result<SeekableStreamReader> {
+        match (&self.backend, streaming_info.inner) {
+            (StreamingBackend::Session { .. }, StreamingInfoInner::Session(track_info)) => {
+                self.stream_session_track(track_info, cache_path).await
+            }
+
+            (StreamingBackend::FileBased { .. }, StreamingInfoInner::FileBased(track_info)) => {
+                file_based::stream_track_file_based(&track_info.url, &cache_path).await
+            }
+
+            _ => Err(Error::Stream {
+                message: "Streaming information does not match the active backend".to_string(),
+            }),
+        }
+    }
+
+    async fn stream_session_track(
+        &self,
         track_info: TrackInfo,
         cache_path: PathBuf,
     ) -> Result<SeekableStreamReader> {
@@ -644,7 +841,9 @@ impl QobuzClient {
         let content_key = if let (Some(key_str), Some(infos)) = (&track_info.key, session_infos) {
             let session_key = crypto::derive_session_key(&infos)?;
             let content_key = crypto::unwrap_content_key(&session_key, key_str)?;
+
             tracing::debug!("Derived content key for key_id: {:?}", track_info.key_id);
+
             Some(content_key)
         } else {
             tracing::warn!("No encryption key available");
@@ -655,14 +854,8 @@ impl QobuzClient {
         let init_bytes = fetch_segment(&seg0_url, 0).await?;
         let init_info = cmaf::parse_init_segment(&init_bytes)?;
 
-        tracing::info!(
-            "Init segment: {} bytes, FLAC header: {} bytes",
-            init_bytes.len(),
-            init_info.flac_header.len(),
-        );
-
-        // Segment table may list more audio segments than the API's n_segments-1.
         let audio_segments = init_info.segment_table.len();
+
         if audio_segments == 0 {
             return Err(Error::Stream {
                 message: "Track has no audio segments".to_string(),
@@ -671,7 +864,7 @@ impl QobuzClient {
 
         let flac_header_len = u64::try_from(init_info.flac_header.len())?;
         let mut segment_map = Vec::new();
-        let mut cumulative_offset: u64 = 0;
+        let mut cumulative_offset = 0_u64;
 
         for entry in &init_info.segment_table {
             segment_map.push(SegmentByteInfo {
@@ -692,12 +885,6 @@ impl QobuzClient {
                 message: "total FLAC size overflow".to_string(),
             })?;
 
-        tracing::info!(
-            "Segment map: {} audio segments, total FLAC size: {} bytes",
-            audio_segments,
-            total_byte_len,
-        );
-
         let params = FlacSourceParams {
             url_template: track_info.url_template,
             content_key,
@@ -710,85 +897,6 @@ impl QobuzClient {
             SegmentReader::new(params),
             total_byte_len,
         ))
-    }
-
-    pub async fn get_streaming_info(
-        &mut self,
-        track_id: u32,
-        max_audio_quality: AudioQuality,
-    ) -> Result<TrackInfo> {
-        let session_id = self.ensure_valid_session().await?.session_id.clone();
-
-        let endpoint = format!("{}{}", self.base_url, Endpoint::File);
-        let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
-        let quality_string = max_audio_quality.to_string();
-        let track_id_str = track_id.to_string();
-
-        let mut args = BTreeMap::<&str, String>::new();
-        args.insert("format_id", quality_string.clone());
-        args.insert("intent", "stream".to_string());
-        args.insert("track_id", track_id_str.clone());
-
-        let request_sig = get_request_sig("fileurl", &args, &now);
-
-        let params = vec![
-            ("request_ts", now.as_str()),
-            ("request_sig", request_sig.as_str()),
-            ("track_id", track_id_str.as_str()),
-            ("format_id", quality_string.as_str()),
-            ("intent", "stream"),
-        ];
-
-        match make_get_call(
-            &endpoint,
-            Some(&params),
-            &self.http_client,
-            &self.app_id,
-            Some(&self.user_token),
-            Some(&session_id),
-        )
-        .await
-        {
-            Ok(response) => match serde_json::from_str::<TrackInfo>(response.as_str()) {
-                Ok(item) => Ok(item),
-                Err(error) => {
-                    tracing::debug!("TrackURL deserialize error: {}", error);
-                    tracing::debug!("Response was: {}", response);
-                    Err(Error::DeserializeJSON {
-                        message: error.to_string(),
-                    })
-                }
-            },
-            Err(error) => Err(Error::Api {
-                message: error.to_string(),
-            }),
-        }
-    }
-
-    pub async fn get_file_based_streaming_info(
-        &self,
-        track_id: u32,
-        max_audio_quality: AudioQuality,
-    ) -> Result<crate::qobuz_models::TrackUrl> {
-        let secret = self.active_secret.as_deref().ok_or(Error::SecretNotSet)?;
-        track_url(
-            track_id,
-            secret,
-            &self.base_url,
-            &self.http_client,
-            &self.app_id,
-            &self.user_token,
-            max_audio_quality,
-        )
-        .await
-    }
-
-    pub async fn stream_track_file_based(
-        &self,
-        url: &str,
-        cache_path: &std::path::Path,
-    ) -> Result<SeekableStreamReader> {
-        file_based::stream_track_file_based(url, cache_path).await
     }
 
     pub async fn favorites(&self, limit: i32) -> Result<Favorites> {
@@ -1543,7 +1651,7 @@ async fn track_url(
     app_id: &str,
     user_token: &str,
     max_audio_quality: AudioQuality,
-) -> Result<crate::qobuz_models::TrackUrl> {
+) -> Result<TrackUrl> {
     let endpoint = format!("{}{}", base_url, Endpoint::TrackURL);
     let now = format!("{}", time::OffsetDateTime::now_utc().unix_timestamp());
     let quality = max_audio_quality.to_string();
