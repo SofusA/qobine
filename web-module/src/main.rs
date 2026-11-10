@@ -108,24 +108,25 @@ pub async fn run() -> AppResult<()> {
     let disconnect_args = parse_disconnect_args(args.disconnect);
 
     let shared_playback_config = if let Some(disconnect) = disconnect_args.as_ref() {
-        SharedPlaybackConfig::Disconnect(ParsedDisconnect {
+        Some(SharedPlaybackConfig::Disconnect(ParsedDisconnect {
             server_url: disconnect.server_url.clone(),
             password: disconnect.password.clone(),
             device_name: disconnect.device_name.clone(),
-        })
+        }))
     } else if args.connect.connect {
-        SharedPlaybackConfig::Connect(args.connect.name_args.connect_name.clone())
+        Some(SharedPlaybackConfig::Connect(
+            args.connect.name_args.connect_name.clone(),
+        ))
     } else {
-        SharedPlaybackConfig::None
+        None
     };
 
-    let (_config_tx, shared_playback_config_rx) = watch::channel(shared_playback_config.clone());
+    let shared_playback_enabled = shared_playback_config.is_some();
+
+    let shared_playback_config_channel = shared_playback_config.map(watch::channel);
 
     let (shared_devices_tx, shared_devices_rx) = watch::channel(Vec::new());
     let (activate_shared_device_tx, activate_shared_device_rx) = mpsc::unbounded_channel();
-    let shared_playback_player = player.bindings();
-    let shared_playback_client = client.clone();
-    let shared_playback_exit_sender = exit_sender.clone();
 
     {
         let position_receiver = player.position();
@@ -143,22 +144,36 @@ pub async fn run() -> AppResult<()> {
         let shared_devices_rx = shared_devices_rx.clone();
         let activate_shared_device_tx = activate_shared_device_tx.clone();
 
-        tokio::spawn(async move {
-            if let Err(err) = shared_playback_module::init(
-                shared_playback_player,
-                shared_playback_client,
-                shared_playback_config_rx,
-                max_audio_quality,
-                shared_devices_tx,
-                activate_shared_device_rx,
-                39621,
-            )
-            .await
-            {
-                _ = shared_playback_exit_sender.send(true);
-                eprintln!("{err}");
-            }
-        });
+        if let Some((config_tx, shared_playback_config_rx)) = shared_playback_config_channel {
+            let shared_playback_player = player.bindings();
+            let shared_playback_client = client.clone();
+            let shared_playback_exit_sender = exit_sender.clone();
+
+            tokio::spawn(async move {
+                // Keep the sender alive while shared playback is running.
+                let _config_tx = config_tx;
+
+                if let Err(err) = shared_playback_module::init(
+                    shared_playback_player,
+                    shared_playback_client,
+                    shared_playback_config_rx,
+                    max_audio_quality,
+                    shared_devices_tx,
+                    activate_shared_device_rx,
+                    39621,
+                )
+                .await
+                {
+                    _ = shared_playback_exit_sender.send(true);
+                    eprintln!("{err}");
+                }
+            });
+        }
+
+        let web_shared_devices_rx = shared_playback_enabled.then(|| shared_devices_rx.clone());
+
+        let web_activate_shared_device_tx =
+            shared_playback_enabled.then(|| activate_shared_device_tx.clone());
 
         tokio::spawn(async move {
             if let Err(err) = web_module::init(
@@ -174,8 +189,8 @@ pub async fn run() -> AppResult<()> {
                 broadcast,
                 client,
                 database,
-                Some(shared_devices_rx), // TODO: Only some if cli either enables Connect or Disconnect
-                Some(activate_shared_device_tx), // TODO: Only some if cli either enables Connect or Disconnect,
+                web_shared_devices_rx,
+                web_activate_shared_device_tx,
             )
             .await
             {
@@ -205,8 +220,8 @@ pub async fn run() -> AppResult<()> {
             args.rfid_config.rfid_server_base_address,
             args.rfid_config.rfid_server_secret,
             rfid_state,
-            Some(shared_devices_rx), // TODO: Only some if cli either enables Connect or Disconnect
-            Some(activate_shared_device_tx), // TODO: Only some if cli either enables Connect or Disconnect
+            shared_playback_enabled.then(|| shared_devices_rx.clone()),
+            shared_playback_enabled.then(|| activate_shared_device_tx.clone()),
         );
     }
 
