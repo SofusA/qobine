@@ -4,7 +4,6 @@ use std::{
 };
 
 use controls_module::models::Track;
-use num_traits::ToPrimitive;
 use qobuz_client::stream::flac_source_stream::SeekableStreamReader;
 
 use crate::{AppResult, client::StreamClient, database::Database};
@@ -34,43 +33,15 @@ impl Downloader {
     }
 
     pub async fn ensure_track_is_downloaded(&mut self, track: &Track) -> AppResult<DownloadResult> {
-        if self.client.file_based_streaming().await {
-            return self.ensure_track_is_downloaded_file_based(track).await;
-        }
-
-        let track_info = self.client.get_streaming_info(track.id).await?;
+        let streaming_info = self.client.get_streaming_info(track.id).await?;
 
         let cache_path = cache_path(
             track,
-            &track_info.mime_type,
-            track_info.sampling_rate,
+            streaming_info.mime_type(),
+            streaming_info.sampling_rate(),
             &self.audio_cache_directory,
         );
-        self.database.set_cache_entry(cache_path.as_path()).await?;
 
-        if cache_path.exists() {
-            tracing::info!("Playing from cache: {}", cache_path.display());
-            return Ok(DownloadResult::Cached(cache_path));
-        }
-
-        let stream = self.client.stream_track(cache_path, track_info).await?;
-
-        Ok(DownloadResult::Streaming(stream))
-    }
-
-    /// File based path: cheap cpu as no crypto ops
-    async fn ensure_track_is_downloaded_file_based(
-        &mut self,
-        track: &Track,
-    ) -> AppResult<DownloadResult> {
-        let track_url = self.client.get_file_based_streaming_info(track.id).await?;
-
-        let cache_path = cache_path(
-            track,
-            &track_url.mime_type,
-            (track_url.sampling_rate * 1000.0).to_u32(),
-            &self.audio_cache_directory,
-        );
         self.database.set_cache_entry(cache_path.as_path()).await?;
 
         if cache_path.exists() {
@@ -79,10 +50,9 @@ impl Downloader {
         }
 
         tracing::info!("Streaming: {}", track.title);
-        let stream = self
-            .client
-            .stream_track_file_based(&track_url.url, &cache_path)
-            .await?;
+
+        let stream = self.client.stream_track(cache_path, streaming_info).await?;
+
         Ok(DownloadResult::Streaming(stream))
     }
 

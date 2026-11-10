@@ -16,10 +16,9 @@ use controls_module::models::{
 use moka::future::Cache;
 use qobuz_client::{
     client::{
-        AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, StreamingEnd,
+        AudioQuality, OAuthResult, QobuzClient, ReleaseType, Secrets, StreamingEnd, StreamingInfo,
         browser_oauth_login,
     },
-    qobuz_models::{TrackInfo, TrackUrl},
     stream::flac_source_stream::SeekableStreamReader,
 };
 use time::Duration;
@@ -204,18 +203,23 @@ impl StreamClient {
 
         let token = credentials.user_auth_token.as_str();
         let secrets = self.secrets().await?;
-        let active_secret = if *self.file_based_streaming.read().await {
-            Some(qobuz_client::client::active_secret(&secrets, token).await?)
-        } else {
-            None
-        };
 
-        Ok(QobuzClient::new(
-            token,
-            credentials.user_id,
-            &secrets.app_id,
-            active_secret,
-        )?)
+        if *self.file_based_streaming.read().await {
+            let active_secret = qobuz_client::client::active_secret(&secrets, token).await?;
+
+            Ok(QobuzClient::new_file_based(
+                token,
+                credentials.user_id,
+                &secrets.app_id,
+                active_secret,
+            )?)
+        } else {
+            Ok(QobuzClient::new_session(
+                token,
+                credentials.user_id,
+                &secrets.app_id,
+            )?)
+        }
     }
 
     async fn get_client(&self) -> AppResult<tokio::sync::RwLockReadGuard<'_, QobuzClient>> {
@@ -267,30 +271,19 @@ impl StreamClient {
         Ok(())
     }
 
-    pub async fn get_streaming_info(&self, track_id: u32) -> AppResult<TrackInfo> {
+    pub async fn get_streaming_info(&self, track_id: u32) -> AppResult<StreamingInfo> {
         let mut client = self.get_client_mut().await?;
-        let audio_quality = self.max_audio_quality.read().await;
+        let audio_quality = *self.max_audio_quality.read().await;
 
-        let info = client.get_streaming_info(track_id, *audio_quality).await?;
-        let token = StreamToken {
-            blob: info.blob.clone(),
-            format_id: info.format_id,
-        };
-        self.stream_tokens.insert(track_id, token).await;
-        Ok(info)
-    }
+        let info = client.get_streaming_info(track_id, audio_quality).await?;
 
-    pub async fn get_file_based_streaming_info(&self, track_id: u32) -> AppResult<TrackUrl> {
-        let client = self.get_client().await?;
-        let audio_quality = self.max_audio_quality.read().await;
-        let info = client
-            .get_file_based_streaming_info(track_id, *audio_quality)
-            .await?;
         let token = StreamToken {
-            blob: info.blob.clone(),
-            format_id: Some(info.format_id),
+            blob: info.blob().map(str::to_owned),
+            format_id: info.format_id(),
         };
+
         self.stream_tokens.insert(track_id, token).await;
+
         Ok(info)
     }
 
@@ -310,24 +303,14 @@ impl StreamClient {
         Ok(client.report_streaming_end(events, version).await?)
     }
 
-    pub async fn stream_track_file_based(
-        &self,
-        url: &str,
-        cache_path: &std::path::Path,
-    ) -> AppResult<SeekableStreamReader> {
-        let client = self.get_client().await?;
-        let stream = client.stream_track_file_based(url, cache_path).await?;
-        Ok(stream)
-    }
-
     pub async fn stream_track(
         &self,
         cache_path: PathBuf,
-        track_info: TrackInfo,
+        streaming_info: StreamingInfo,
     ) -> AppResult<SeekableStreamReader> {
         let mut client = self.get_client_mut().await?;
-        let stream = client.stream_track(track_info, cache_path).await?;
-        Ok(stream)
+
+        Ok(client.stream_track(streaming_info, cache_path).await?)
     }
 
     pub async fn album(&self, id: &str) -> AppResult<Album> {
