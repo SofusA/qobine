@@ -9,13 +9,12 @@ use ratatui::{
     prelude::*,
     widgets::{ListState, Paragraph, ScrollbarState},
 };
-use ratatui_image::StatefulImage;
 
 use super::{about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
-    ui::{Pane, block, leaves_content, mark_as_favorite, sidebar},
+    ui::{COVER_IMAGE, Pane, block, leaves_content, mark_as_favorite, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
@@ -154,7 +153,7 @@ impl ArtistOverlay {
         .areas(area);
 
         if let Some(AppImage { protocol, .. }) = image {
-            frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
         let name = Line::from(Span::styled(self.artist_name.clone(), Style::new().bold()));

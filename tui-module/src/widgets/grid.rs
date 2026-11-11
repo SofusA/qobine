@@ -17,7 +17,6 @@ use ratatui::{
         StatefulWidget, Widget,
     },
 };
-use ratatui_image::StatefulImage;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
@@ -28,7 +27,7 @@ use crate::{
     },
     image_cache::ImageManager,
     ui::{
-        ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_TEXT_STYLE, SELECTED_STYLE,
+        ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HIGHLIGHT_TEXT_STYLE, SELECTED_STYLE,
         album_cover_area, format_duration, mark_as_favorite, mark_as_owned, mark_explicit_and_hifi,
     },
     widgets::filtered_list::FilteredListState,
@@ -384,7 +383,7 @@ impl GridItem for AlbumSimple {
         };
 
         if let Some(image) = image_cache.get_mut(&self.image) {
-            StatefulImage::default().render(image_area, buf, &mut image.protocol);
+            COVER_IMAGE.render(image_area, buf, &mut image.protocol);
         } else {
             Paragraph::new("Loading...").render(image_area, buf);
         }
@@ -520,7 +519,7 @@ impl GridItem for Artist {
 
         if let Some(image_key) = &self.image {
             if let Some(image) = image_cache.get_mut(image_key) {
-                StatefulImage::default().render(image_area, buf, &mut image.protocol);
+                COVER_IMAGE.render(image_area, buf, &mut image.protocol);
             } else {
                 Paragraph::new("Loading...").render(image_area, buf);
             }
@@ -620,7 +619,7 @@ impl GridItem for PlaylistSimple {
 
         if let Some(image_key) = &self.image {
             if let Some(image) = image_cache.get_mut(image_key) {
-                StatefulImage::default().render(image_area, buf, &mut image.protocol);
+                COVER_IMAGE.render(image_area, buf, &mut image.protocol);
             } else {
                 Paragraph::new("Loading...").render(image_area, buf);
             }

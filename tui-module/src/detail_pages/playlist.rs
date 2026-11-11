@@ -2,12 +2,14 @@ use controls_module::{controls::Controls, models::Playlist};
 use num_traits::ToPrimitive;
 use player_module::{AppResult, client::StreamClient};
 use ratatui::{crossterm::event::KeyCode, prelude::*, widgets::Paragraph};
-use ratatui_image::StatefulImage;
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
-    ui::{ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds, tab_bar},
+    ui::{
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, block, format_seconds,
+        tab_bar,
+    },
     widgets::track_list::{TrackList, TrackListEvent},
 };
 
@@ -168,7 +170,7 @@ impl PlaylistOverlay {
                 ALBUM_COVER_HEIGHT.min(image_area.height),
             );
 
-            frame.render_stateful_widget(StatefulImage::default(), centered_image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, centered_image_area, protocol);
         }
 
         let information = vec![

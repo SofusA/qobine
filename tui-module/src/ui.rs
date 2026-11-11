@@ -9,6 +9,7 @@ use ratatui::{
         Wrap,
     },
 };
+use ratatui_image::{FilterType, Resize, StatefulImage, protocol::StatefulProtocol};
 use tui_input::Input;
 
 use crate::{
@@ -26,6 +27,8 @@ pub const COLUMN_SPACING: u16 = 2;
 pub const ALBUM_COVER_WIDTH: u16 = 20;
 pub const ALBUM_COVER_HEIGHT: u16 = 9;
 pub const ALBUM_COVER_GAP: u16 = 2;
+pub const COVER_IMAGE: StatefulImage<StatefulProtocol> =
+    StatefulImage::new().resize(Resize::Fit(Some(FilterType::Lanczos3)));
 
 pub const fn album_cover_area(area: Rect) -> Option<Rect> {
     if area.width < ALBUM_COVER_WIDTH || area.height < ALBUM_COVER_HEIGHT {
