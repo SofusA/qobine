@@ -223,7 +223,11 @@ impl AlbumDetailPage {
 
                     artist_box.append(&button);
 
-                    let year_string = album.release_year.to_string();
+                    let year_string = album
+                        .release_year
+                        .map(|year| year.to_string())
+                        .unwrap_or_default();
+
                     let duration_string = format_time(album.duration_seconds);
 
                     let mut meta_info = vec![year_string.as_str(), &duration_string];
@@ -333,7 +337,11 @@ impl AlbumDetailPage {
                         let released_label = gtk::Label::builder()
                             .label(format!(
                                 "Released by {} in {}",
-                                label_text, dialog_album.release_year
+                                label_text,
+                                dialog_album
+                                    .release_year
+                                    .map(|year| year.to_string())
+                                    .unwrap_or_default()
                             ))
                             .xalign(0.0)
                             .wrap(true)

@@ -40,7 +40,7 @@ pub struct Album {
     pub id: String,
     pub title: String,
     pub artist: Artist,
-    pub release_year: u32,
+    pub release_year: Option<u32>,
     pub hires_available: bool,
     pub explicit: bool,
     pub total_tracks: u32,
@@ -64,7 +64,7 @@ pub struct AlbumSimple {
     pub image: String,
     pub available: bool,
     pub hires_available: bool,
-    pub release_year: u32,
+    pub release_year: Option<u32>,
     pub explicit: bool,
     pub duration_seconds: u32,
 }

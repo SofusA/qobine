@@ -33,7 +33,7 @@ pub struct AlbumOverlay {
     similar: Grid<AlbumSimple>,
     description: Option<String>,
     image_url: String,
-    release_year: u32,
+    release_year: Option<u32>,
     total_tracks: u32,
     duration_seconds: u32,
     hires_available: bool,
@@ -394,8 +394,8 @@ impl AlbumOverlay {
 
         let mut parts = Vec::new();
 
-        if self.release_year > 0 {
-            parts.push(self.release_year.to_string());
+        if let Some(year) = self.release_year.filter(|&year| year > 0) {
+            parts.push(year.to_string());
         }
 
         parts.push(format!("{} tracks", self.total_tracks));

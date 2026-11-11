@@ -86,13 +86,13 @@ pub fn parse_album_simple(
     }
 }
 
-// TODO: Change return type to Result
 #[must_use]
-pub fn extract_year(date_str: &str) -> u32 {
+pub fn extract_year(date_str: &str) -> Option<u32> {
     let format = format_description!("[year]-[month]-[day]");
-    let date = time::Date::parse(date_str, &format);
 
-    date.map_or(0, |date| u32::try_from(date.year()).unwrap_or_default())
+    time::Date::parse(date_str, &format)
+        .ok()
+        .and_then(|date| u32::try_from(date.year()).ok())
 }
 
 #[must_use]
