@@ -1,11 +1,8 @@
-use tokio::sync::{mpsc, watch};
-
 use std::sync::Arc;
 
 use cli_module::{SharedPlaybackConfig, SharedPlaybackDevice, SharedPlaybackDeviceId};
 use player_module::{AppResult, AudioQuality, client::StreamClient, player::PlayerBindings};
-
-// TODO: Restart connect when max_audio_quality changes
+use tokio::sync::{mpsc, watch};
 
 pub async fn init(
     player_bindings: PlayerBindings,
@@ -17,6 +14,9 @@ pub async fn init(
     connect_port: u16,
 ) -> AppResult<()> {
     let mut activations_open = true;
+    let mut config_changes_open = true;
+    let mut current_max_audio_quality = max_audio_quality;
+    let mut config_changes = player_bindings.controls.subscribe();
 
     loop {
         let config = client_config.borrow_and_update().clone();
@@ -33,7 +33,56 @@ pub async fn init(
                         }
                     }
 
-                    activation = activations.recv(), if activations_open => {
+                    change = config_changes.recv(),
+                        if config_changes_open =>
+                    {
+                        match change {
+                            Ok(
+                                controls_module::controls::ControlCommand::
+                                    StreamingConfiguration {
+                                        configuration:
+                                            controls_module::controls::
+                                                StreamingConfiguration::
+                                                SetMaxAudioQuality {
+                                                    new_quality,
+                                                },
+                                    },
+                            ) => {
+                                if new_quality != current_max_audio_quality {
+                                    tracing::info!(
+                                        "Max audio quality changed from {} to {}",
+                                        current_max_audio_quality,
+                                        new_quality
+                                    );
+
+                                    current_max_audio_quality = new_quality;
+                                }
+                            }
+
+                            Ok(_) => {}
+
+                            Err(
+                                tokio::sync::broadcast::error::RecvError::
+                                    Lagged(skipped),
+                            ) => {
+                                tracing::warn!(
+                                    "Shared playback configuration listener \
+                                     lagged by {skipped} messages"
+                                );
+                            }
+
+                            Err(
+                                tokio::sync::broadcast::error::RecvError::
+                                    Closed,
+                            ) => {
+                                config_changes_open = false;
+                            }
+                        }
+                    }
+
+                    activation = activations.recv(),
+                        if activations_open =>
+                    {
                         if activation.is_none() {
                             activations_open = false;
                         }
@@ -43,7 +92,11 @@ pub async fn init(
 
             SharedPlaybackConfig::Connect(connect_name) => {
                 devices.send_replace(Vec::new());
-                tracing::info!("Starting Qobuz Connect as {connect_name}");
+
+                tracing::info!(
+                    "Starting Qobuz Connect as {connect_name} with max audio \
+                     quality {current_max_audio_quality}"
+                );
 
                 let (activation_sender, activation_receiver) = mpsc::unbounded_channel();
 
@@ -55,7 +108,7 @@ pub async fn init(
                     player_bindings.tracklist_receiver.clone(),
                     player_bindings.status_receiver.clone(),
                     player_bindings.volume_receiver.clone(),
-                    max_audio_quality,
+                    current_max_audio_quality,
                     devices.clone(),
                     activation_receiver,
                     connect_port,
@@ -80,7 +133,7 @@ pub async fn init(
                                 client_config.borrow_and_update().clone();
 
                             if next == SharedPlaybackConfig::Connect(
-                                connect_name.clone()
+                                connect_name.clone(),
                             ) {
                                 continue;
                             }
@@ -92,12 +145,65 @@ pub async fn init(
                             break;
                         }
 
+                        change = config_changes.recv(),
+                            if config_changes_open =>
+                        {
+                            match change {
+                                Ok(
+                                    controls_module::controls::ControlCommand::
+                                        StreamingConfiguration {
+                                            configuration:
+                                                controls_module::controls::
+                                                    StreamingConfiguration::
+                                                    SetMaxAudioQuality {
+                                                        new_quality,
+                                                    },
+                                        },
+                                ) => {
+                                    if new_quality ==
+                                        current_max_audio_quality
+                                    {
+                                        continue;
+                                    }
+
+                                    tracing::info!(
+                                        "Max audio quality changed from {} \
+                                         to {}; restarting Qobuz Connect",
+                                        current_max_audio_quality,
+                                        new_quality
+                                    );
+
+                                    current_max_audio_quality = new_quality;
+                                    break;
+                                }
+
+                                Ok(_) => {}
+
+                                Err(
+                                    tokio::sync::broadcast::error::RecvError::
+                                        Lagged(skipped),
+                                ) => {
+                                    tracing::warn!(
+                                        "Shared playback configuration \
+                                         listener lagged by {skipped} messages"
+                                    );
+                                }
+
+                                Err(
+                                    tokio::sync::broadcast::error::RecvError::
+                                        Closed,
+                                ) => {
+                                    config_changes_open = false;
+                                }
+                            }
+                        }
+
                         activation = activations.recv(),
                             if activations_open =>
                         {
                             match activation {
                                 Some(
-                                    SharedPlaybackDeviceId::Connect(id)
+                                    SharedPlaybackDeviceId::Connect(id),
                                 ) => {
                                     if activation_sender.send(id).is_err() {
                                         tracing::debug!(
@@ -122,10 +228,6 @@ pub async fn init(
                     }
                 }
 
-                /*
-                 * `backend` is dropped here. This drops the Connect session,
-                 * discovery service and temporary activation receiver.
-                 */
                 devices.send_replace(Vec::new());
             }
 
@@ -165,7 +267,7 @@ pub async fn init(
                                 client_config.borrow_and_update().clone();
 
                             if next == SharedPlaybackConfig::Disconnect(
-                                disconnect_config.clone()
+                                disconnect_config.clone(),
                             ) {
                                 continue;
                             }
@@ -177,12 +279,63 @@ pub async fn init(
                             break;
                         }
 
+                        change = config_changes.recv(),
+                            if config_changes_open =>
+                        {
+                            match change {
+                                Ok(
+                                    controls_module::controls::ControlCommand::
+                                        StreamingConfiguration {
+                                            configuration:
+                                                controls_module::controls::
+                                                    StreamingConfiguration::
+                                                    SetMaxAudioQuality {
+                                                        new_quality,
+                                                    },
+                                        },
+                                ) => {
+                                    if new_quality !=
+                                        current_max_audio_quality
+                                    {
+                                        tracing::info!(
+                                            "Max audio quality changed from \
+                                             {} to {}",
+                                            current_max_audio_quality,
+                                            new_quality
+                                        );
+
+                                        current_max_audio_quality =
+                                            new_quality;
+                                    }
+                                }
+
+                                Ok(_) => {}
+
+                                Err(
+                                    tokio::sync::broadcast::error::RecvError::
+                                        Lagged(skipped),
+                                ) => {
+                                    tracing::warn!(
+                                        "Shared playback configuration \
+                                         listener lagged by {skipped} messages"
+                                    );
+                                }
+
+                                Err(
+                                    tokio::sync::broadcast::error::RecvError::
+                                        Closed,
+                                ) => {
+                                    config_changes_open = false;
+                                }
+                            }
+                        }
+
                         activation = activations.recv(),
                             if activations_open =>
                         {
                             match activation {
                                 Some(
-                                    SharedPlaybackDeviceId::Disconnect(id)
+                                    SharedPlaybackDeviceId::Disconnect(id),
                                 ) => {
                                     if activation_sender.send(id).is_err() {
                                         tracing::debug!(
@@ -207,11 +360,6 @@ pub async fn init(
                     }
                 }
 
-                /*
-                 * Dropping `backend` must also stop its network connection.
-                 * Disconnect must therefore not detach its main client loop
-                 * using `tokio::spawn`.
-                 */
                 devices.send_replace(Vec::new());
             }
         }

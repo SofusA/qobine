@@ -25,6 +25,28 @@ const REFRESH_LEAD: Duration = Duration::from_secs(300);
 const REFRESH_RETRY: Duration = Duration::from_secs(60);
 const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
 
+const DISCOVERY_RESTART_DELAY: Duration = Duration::from_millis(500);
+const DISCOVERY_RESTART_ATTEMPTS: usize = 5;
+
+async fn start_discovery(
+    device: &Device,
+    app_id: &str,
+    port: u16,
+) -> Result<(Discovery, mpsc::Receiver<Handover>), Error> {
+    for _ in 1..DISCOVERY_RESTART_ATTEMPTS {
+        match Discovery::start(device, app_id, port).await {
+            Ok(discovery) => return Ok(discovery),
+            Err(err) => {
+                tracing::warn!("Starting Qobuz Connect discovery failed, retrying: {err}");
+
+                tokio::time::sleep(DISCOVERY_RESTART_DELAY).await;
+            }
+        }
+    }
+
+    Discovery::start(device, app_id, port).await
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A device of the Qobuz Connect session, by its renderer id in that session.
 struct ConnectDevice {
@@ -102,7 +124,7 @@ pub async fn run_connect(
     let delegated = !client.credentials_is_set()?;
     let app_id = client.app_id().await?;
 
-    let (discovery, handovers) = Discovery::start(&device, &app_id, port)
+    let (discovery, handovers) = start_discovery(&device, &app_id, port)
         .await
         .map_err(|err| map_err(&err))?;
 
