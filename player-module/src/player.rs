@@ -50,6 +50,12 @@ pub struct PlayerBindings {
     pub active_sender: watch::Sender<bool>,
 }
 
+enum QueueStart {
+    Always,
+    IfPlaying,
+    Paused,
+}
+
 pub struct Player {
     broadcast: Arc<NotificationBroadcast>,
     tracklist_tx: Sender<Tracklist>,
@@ -423,13 +429,11 @@ impl Player {
             return Ok(());
         }
 
-        self.position.send(Duration::default())?;
-
         if tracklist.skip_to_track(new_position).is_some() {
-            self.new_queue(tracklist, false).await?;
+            self.restart_queue(tracklist, QueueStart::IfPlaying).await?;
         } else {
             tracklist.reset();
-            self.stop(tracklist).await?;
+            self.restart_queue(tracklist, QueueStart::Paused).await?;
         }
 
         Ok(())
@@ -447,26 +451,34 @@ impl Player {
             .await
     }
 
-    async fn new_queue(&mut self, tracklist: Tracklist, always_play: bool) -> AppResult<()> {
+    fn clear_sink_state(&mut self) {
         self.sink.clear();
         self.next_track_is_queried = false;
         self.next_track_in_sink_queue = false;
+    }
 
-        let target_state_play = matches!(
-            *self.target_status.borrow(),
-            Status::Playing | Status::Buffering
-        );
+    async fn restart_queue(&mut self, tracklist: Tracklist, start: QueueStart) -> AppResult<()> {
+        let should_play = match start {
+            QueueStart::Always => true,
+            QueueStart::IfPlaying => matches!(
+                *self.target_status.borrow(),
+                Status::Playing | Status::Buffering
+            ),
+            QueueStart::Paused => false,
+        };
 
-        if (always_play || target_state_play)
-            && let Some(first_track) = tracklist.current_track()
-        {
-            tracing::info!("New queue starting with: {}", first_track.title);
-            self.query_track(first_track, false).await?;
+        self.pending_seek = None;
+        self.position.send_replace(Duration::default());
+
+        if should_play && let Some(track) = tracklist.current_track() {
+            self.clear_sink_state();
+            tracing::info!("Restarting queue with: {}", track.title);
+            self.query_track(track, false).await?;
+        } else {
+            self.stop();
         }
 
-        self.broadcast_tracklist(tracklist).await?;
-
-        Ok(())
+        self.broadcast_tracklist(tracklist).await
     }
 
     async fn new_track_queue(
@@ -475,22 +487,23 @@ impl Player {
         play: bool,
         start_index: Option<usize>,
     ) -> AppResult<()> {
-        self.sink.clear();
-        self.next_track_is_queried = false;
-        self.next_track_in_sink_queue = false;
-
-        let start = start_index
+        let start_connect_id = start_index
             .and_then(|index| items.get(index))
             .map(|item| item.connect_id);
+
         let tracks = self
             .fetch_tracks(items.iter().map(|item| item.track_id).collect())
             .await?;
+
         let mut queue_items = Vec::with_capacity(items.len());
+
         for item in &items {
             let Some(track) = tracks.get(&item.track_id) else {
                 continue;
             };
+
             let index = queue_items.len();
+
             queue_items.push(QueueItem {
                 track: track.clone(),
                 queue_id: u64::try_from(index).unwrap_or_default(),
@@ -500,19 +513,20 @@ impl Player {
         }
 
         let mut tracklist = Tracklist::new_with_id(TracklistType::Tracks, queue_items);
-        let start = start
+
+        let start_index = start_connect_id
             .and_then(|connect_id| tracklist.position_of_connect_id(connect_id))
             .unwrap_or(0);
-        tracklist.skip_to_track(start);
 
-        if play && let Some(first_track) = tracklist.current_track() {
-            tracing::info!("New queue starting with: {}", first_track.title);
-            self.query_track(first_track, false).await?;
-        }
+        tracklist.skip_to_track(start_index);
 
-        self.broadcast_tracklist(tracklist).await?;
+        let start = if play {
+            QueueStart::Always
+        } else {
+            QueueStart::Paused
+        };
 
-        Ok(())
+        self.restart_queue(tracklist, start).await
     }
 
     async fn replace_queue(
@@ -561,6 +575,7 @@ impl Player {
         if fingerprint(&adopted) == before {
             return Ok(());
         }
+
         let same_items = adopted
             .queue()
             .iter()
@@ -569,21 +584,20 @@ impl Player {
         if !same_items {
             adopted.set_list_type(TracklistType::Tracks);
         }
+
         if current_survives {
             self.update_queue(adopted).await
         } else {
-            self.stop(adopted).await
+            self.restart_queue(adopted, QueueStart::Paused).await
         }
     }
 
-    async fn stop(&mut self, tracklist: Tracklist) -> AppResult<()> {
+    fn stop(&mut self) {
         self.set_target_status(Status::Paused);
         self.sink.pause();
-        self.sink.clear();
-        self.next_track_is_queried = false;
-        self.next_track_in_sink_queue = false;
-        self.position.send(Duration::default())?;
-        self.broadcast_tracklist(tracklist).await
+        self.clear_sink_state();
+        self.pending_seek = None;
+        self.position.send_replace(Duration::default());
     }
 
     /// The tracks of a Qobuz Connect queue by id; tracks the catalog no longer serves are left out and logged.
@@ -625,7 +639,7 @@ impl Player {
 
         let tracklist = Tracklist::new(TracklistType::Tracks, tracks_to_queue_items(vec![track]));
 
-        self.new_queue(tracklist, true).await
+        self.restart_queue(tracklist, QueueStart::Always).await
     }
 
     async fn play_album(&mut self, album_id: &str, index: usize) -> AppResult<()> {
@@ -648,7 +662,7 @@ impl Player {
         );
 
         tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
-        self.new_queue(tracklist, true).await
+        self.restart_queue(tracklist, QueueStart::Always).await
     }
 
     async fn play_top_tracks(&mut self, artist_id: u32, index: usize) -> AppResult<()> {
@@ -667,7 +681,7 @@ impl Player {
         );
 
         tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
-        self.new_queue(tracklist, true).await
+        self.restart_queue(tracklist, QueueStart::Always).await
     }
 
     async fn play_tracks(
@@ -690,7 +704,7 @@ impl Player {
 
         let mut tracklist = Tracklist::new(TracklistType::Tracks, tracks_to_queue_items(tracks));
         tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
-        self.new_queue(tracklist, true).await
+        self.restart_queue(tracklist, QueueStart::Always).await
     }
 
     async fn play_playlist(
@@ -735,7 +749,7 @@ impl Player {
 
         tracklist.skip_to_track(index.saturating_sub(unstreamable_tracks_to_index));
 
-        self.new_queue(tracklist, true).await
+        self.restart_queue(tracklist, QueueStart::Always).await
     }
 
     async fn remove_index_from_queue(&mut self, index: usize) -> AppResult<()> {
@@ -912,8 +926,7 @@ impl Player {
             } => self.replace_queue(items, keep_unknown).await?,
             ControlCommand::ClearQueue => self.clear_queue().await?,
             ControlCommand::Stop => {
-                let tracklist = self.tracklist_rx.borrow().clone();
-                self.stop(tracklist).await?;
+                self.stop();
             }
             ControlCommand::StreamingConfiguration { configuration } => match configuration {
                 StreamingConfiguration::SetMaxAudioQuality { new_quality } => {
@@ -954,7 +967,7 @@ impl Player {
                 tracing::info!(
                     "Track finished and next track is not in queue. Resetting queue, and querying track."
                 );
-                self.sink.clear();
+                self.clear_sink_state();
                 if let Some(delay) = self.sample_rate_change_delay {
                     tracing::info!("Waiting for sample rate change delay");
                     sleep(delay).await;
@@ -963,10 +976,7 @@ impl Player {
             }
         } else {
             tracklist.reset();
-            self.set_target_status(Status::Paused);
-            self.sink.pause();
-            self.sink.clear();
-            self.position.send(Duration::default())?;
+            self.stop();
         }
         self.next_track_is_queried = false;
         self.broadcast_tracklist(tracklist).await?;
@@ -977,9 +987,7 @@ impl Player {
         if active {
             let tracklist = self.tracklist_rx.borrow().clone();
 
-            self.sink.clear();
-            self.next_track_is_queried = false;
-            self.next_track_in_sink_queue = false;
+            self.clear_sink_state();
 
             if matches!(
                 *self.target_status.borrow(),
