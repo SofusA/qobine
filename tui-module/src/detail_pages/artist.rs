@@ -14,7 +14,7 @@ use super::{about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
-    ui::{COVER_IMAGE, Pane, block, leaves_content, mark_as_favorite, sidebar},
+    ui::{COVER_IMAGE, HEART, Pane, block, leaves_content, sidebar},
     widgets::{
         grid::Grid,
         track_list::{TrackList, TrackListEvent},
@@ -87,7 +87,15 @@ impl ArtistOverlay {
         image_cache: &mut ImageManager,
     ) {
         let header_height = 6;
-        let outer_block = block(Some(&self.artist_name));
+        let is_favorite = favorites.artists().contains(&self.id);
+
+        let title = if is_favorite {
+            format!("{} {HEART}", self.artist_name)
+        } else {
+            self.artist_name.clone()
+        };
+
+        let outer_block = block(Some(&title));
 
         frame.render_widget(&outer_block, area);
 
@@ -96,8 +104,7 @@ impl ArtistOverlay {
         let [header_area, body_area] =
             Layout::vertical([Constraint::Length(header_height), Constraint::Min(1)]).areas(inner);
 
-        self.render_header(frame, header_area, favorites, image_cache);
-
+        self.render_header(frame, header_area, image_cache);
         self.render_body(frame, body_area, favorites, image_cache);
     }
 
@@ -126,13 +133,7 @@ impl ArtistOverlay {
         }
     }
 
-    fn render_header(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        favorites: &FavoriteIds,
-        image_cache: &mut ImageManager,
-    ) {
+    fn render_header(&mut self, frame: &mut Frame, area: Rect, image_cache: &mut ImageManager) {
         let image = self
             .image_url
             .as_ref()
@@ -156,19 +157,12 @@ impl ArtistOverlay {
             frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
-        let name = Line::from(Span::styled(self.artist_name.clone(), Style::new().bold()));
-
-        let name = mark_as_favorite(name, favorites.artists().contains(&self.id));
-
-        let [name_area, description_area, stats_area, _] = Layout::vertical([
-            Constraint::Length(1),
+        let [description_area, stats_area, _] = Layout::vertical([
             Constraint::Length(2),
             Constraint::Length(1),
             Constraint::Min(0),
         ])
         .areas(info_area);
-
-        frame.render_widget(Paragraph::new(name), name_area);
 
         if let Some(description) = self
             .description

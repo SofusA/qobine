@@ -30,6 +30,11 @@ pub const ALBUM_COVER_GAP: u16 = 2;
 pub const COVER_IMAGE: StatefulImage<StatefulProtocol> =
     StatefulImage::new().resize(Resize::Fit(Some(FilterType::Lanczos3)));
 
+pub const HEART: &str = "\u{f004}";
+pub const EXPLICIT: &str = "\u{f0b0c}";
+pub const HIFI: &str = "\u{f0435}";
+pub const USER: &str = "\u{f007}";
+
 pub const fn album_cover_area(area: Rect) -> Option<Rect> {
     if area.width < ALBUM_COVER_WIDTH || area.height < ALBUM_COVER_HEIGHT {
         return None;
@@ -471,7 +476,7 @@ pub fn mark_explicit_and_hifi(
     if is_favorite {
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            "\u{f004}",
+            HEART,
             Style::default().add_modifier(Modifier::DIM),
         ));
     }
@@ -479,7 +484,7 @@ pub fn mark_explicit_and_hifi(
     if explicit {
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            "\u{f0b0c}",
+            EXPLICIT,
             Style::default().add_modifier(Modifier::DIM),
         ));
     }
@@ -487,7 +492,7 @@ pub fn mark_explicit_and_hifi(
     if hires_available {
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            "\u{f0435}",
+            HIFI,
             Style::default().add_modifier(Modifier::DIM),
         ));
     }
@@ -503,7 +508,7 @@ pub fn mark_as_favorite(line: Line<'static>, is_favorite: bool) -> Line<'static>
     let mut spans = line.spans;
     spans.push(Span::raw(" "));
     spans.push(Span::styled(
-        "\u{f004}",
+        HEART,
         Style::default().add_modifier(Modifier::DIM),
     ));
     Line::from(spans)
@@ -517,7 +522,7 @@ pub fn mark_as_owned(line: Line<'static>, owned: bool) -> Line<'static> {
     let mut spans = line.spans;
     spans.push(Span::raw(" "));
     spans.push(Span::styled(
-        "\u{f007}",
+        USER,
         Style::default().add_modifier(Modifier::DIM),
     ));
 

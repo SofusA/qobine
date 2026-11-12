@@ -15,7 +15,7 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, Pane, block,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HEART, Pane, block,
         format_seconds, leaves_content, mark_as_favorite, sidebar,
     },
     widgets::{
@@ -96,7 +96,16 @@ impl AlbumOverlay {
         image_cache: &mut ImageManager,
     ) {
         let header_height = ALBUM_COVER_HEIGHT + 1;
-        let outer_block = block(Some(&self.title));
+
+        let is_favorite = favorites.albums().contains(&self.id);
+
+        let title = if is_favorite {
+            format!("{} {HEART}", self.title)
+        } else {
+            self.title.clone()
+        };
+
+        let outer_block = block(Some(&title));
 
         frame.render_widget(&outer_block, area);
 
@@ -169,10 +178,8 @@ impl AlbumOverlay {
             frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
-        let [title, artist, metadata] = self.album_detail_lines(
-            favorites.albums().contains(&self.id),
-            favorites.artists().contains(&self.artist.id),
-        );
+        let [artist, metadata] =
+            self.album_detail_lines(favorites.artists().contains(&self.artist.id));
 
         let has_description = self
             .description
@@ -180,8 +187,7 @@ impl AlbumOverlay {
             .is_some_and(|description| !description.is_empty());
 
         if has_description {
-            let [title_area, artist_area, description_area, metadata_area, _] = Layout::vertical([
-                Constraint::Length(1),
+            let [artist_area, description_area, metadata_area, _] = Layout::vertical([
                 Constraint::Length(1),
                 Constraint::Length(2),
                 Constraint::Length(1),
@@ -189,7 +195,6 @@ impl AlbumOverlay {
             ])
             .areas(info_area);
 
-            frame.render_widget(Paragraph::new(title), title_area);
             frame.render_widget(Paragraph::new(artist), artist_area);
             frame.render_widget(Paragraph::new(metadata), metadata_area);
 
@@ -205,15 +210,13 @@ impl AlbumOverlay {
                 );
             }
         } else {
-            let [title_area, artist_area, metadata_area, _] = Layout::vertical([
-                Constraint::Length(1),
+            let [artist_area, metadata_area, _] = Layout::vertical([
                 Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Min(0),
             ])
             .areas(info_area);
 
-            frame.render_widget(Paragraph::new(title), title_area);
             frame.render_widget(Paragraph::new(artist), artist_area);
             frame.render_widget(Paragraph::new(metadata), metadata_area);
         }
@@ -379,15 +382,7 @@ impl AlbumOverlay {
         Ok(Output::Overlay(Overlay::Artist(popup)))
     }
 
-    fn album_detail_lines(
-        &self,
-        is_favorite: bool,
-        is_artist_favorite: bool,
-    ) -> [Line<'static>; 3] {
-        let title = Line::from(Span::styled(self.title.clone(), Style::new().bold()));
-
-        let title = mark_as_favorite(title, is_favorite);
-
+    fn album_detail_lines(&self, is_artist_favorite: bool) -> [Line<'static>; 2] {
         let artist = Line::from(self.artist.name.clone());
         let artist = mark_as_favorite(artist, is_artist_favorite);
 
@@ -428,7 +423,7 @@ impl AlbumOverlay {
             metadata.push(Span::styled("󰬌", Style::new().dim()));
         }
 
-        [title, artist, Line::from(metadata)]
+        [artist, Line::from(metadata)]
     }
 
     fn selected_tab_kind(&self) -> Option<AlbumTabKind> {

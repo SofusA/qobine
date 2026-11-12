@@ -7,8 +7,8 @@ use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, block, format_seconds,
-        tab_bar,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HEART, USER, block,
+        format_seconds, tab_bar,
     },
     widgets::track_list::{TrackList, TrackListEvent},
 };
@@ -50,7 +50,17 @@ impl PlaylistOverlay {
         image_cache: &mut ImageManager,
     ) {
         let header_height = ALBUM_COVER_HEIGHT + 1;
-        let outer_block = block(Some(&self.title));
+        let is_favorite = favorites.playlists().contains(&self.id);
+
+        let title = if self.is_owned {
+            format!("{} {USER}", self.title)
+        } else if is_favorite {
+            format!("{} {HEART}", self.title)
+        } else {
+            self.title.clone()
+        };
+
+        let outer_block = block(Some(&title));
 
         frame.render_widget(&outer_block, area);
 
@@ -163,19 +173,18 @@ impl PlaylistOverlay {
                 .checked_div(2)
                 .unwrap_or_default();
 
-            let centered_image_area = Rect::new(
+            let centred_image_area = Rect::new(
                 image_area.x,
                 image_area.y.saturating_add(y_offset),
                 width.min(image_area.width),
                 ALBUM_COVER_HEIGHT.min(image_area.height),
             );
 
-            frame.render_stateful_widget(COVER_IMAGE, centered_image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, centred_image_area, protocol);
         }
 
         let information = vec![
-            Line::from(Span::styled(self.title.clone(), Style::new().bold())),
-            Line::from(self.owner.clone()),
+            Line::from(format!("By: {}", self.owner)),
             Line::default(),
             Line::from(Span::styled(
                 format!(
