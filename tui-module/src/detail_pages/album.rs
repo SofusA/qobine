@@ -9,15 +9,14 @@ use ratatui::{
     prelude::*,
     widgets::{ListState, Paragraph, ScrollbarState},
 };
-use ratatui_image::StatefulImage;
 
 use super::{ArtistOverlay, Overlay, about_scroll_delta, header_blurb, render_about, scroll_about};
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, Pane, block, format_seconds,
-        leaves_content, mark_as_favorite, sidebar,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, Pane, block,
+        format_seconds, leaves_content, mark_as_favorite, sidebar,
     },
     widgets::{
         grid::Grid,
@@ -167,7 +166,7 @@ impl AlbumOverlay {
         if can_render_cover
             && let Some(AppImage { protocol, .. }) = image_cache.get_mut(&self.image_url)
         {
-            frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
         let [title, artist, metadata] = self.album_detail_lines(

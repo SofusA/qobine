@@ -1,14 +1,13 @@
 use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, HIGHLIGHT_TEXT_STYLE,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HIGHLIGHT_TEXT_STYLE,
         album_cover_area, block, format_mseconds, format_seconds,
     },
 };
 use controls_module::{Status, models::Track};
 use num_traits::ToPrimitive;
 use ratatui::{prelude::*, widgets::Paragraph};
-use ratatui_image::StatefulImage;
 
 #[derive(Default)]
 pub struct NowPlayingState {
@@ -60,7 +59,7 @@ pub fn render(
         if let Some(image_area) = album_cover_area(image_area)
             && let Some(AppImage { protocol, .. }) = image
         {
-            frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
         content_area

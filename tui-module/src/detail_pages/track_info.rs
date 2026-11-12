@@ -5,13 +5,15 @@ use ratatui::{
     prelude::*,
     widgets::{ListState, Paragraph},
 };
-use ratatui_image::StatefulImage;
 
 use super::{AlbumOverlay, ArtistOverlay, Overlay};
 use crate::{
     app::Output,
     image_cache::{AppImage, ImageManager},
-    ui::{ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, block, format_seconds, sidebar},
+    ui::{
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, block, format_seconds,
+        sidebar,
+    },
 };
 
 pub struct TrackInfoOverlay {
@@ -114,7 +116,7 @@ impl TrackInfoOverlay {
         .areas(area);
 
         if can_render_cover && let Some(AppImage { protocol, .. }) = image {
-            frame.render_stateful_widget(StatefulImage::default(), image_area, protocol);
+            frame.render_stateful_widget(COVER_IMAGE, image_area, protocol);
         }
 
         let title = Line::from(Span::styled(self.track.title.clone(), Style::new().bold()));
