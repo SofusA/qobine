@@ -449,6 +449,7 @@ impl QobuzClient {
 
     /// Tells Qobuz a track started streaming, as the web player does once per track.
     pub async fn report_streaming_start(&self, track_id: u32, format_id: i32) -> Result<()> {
+        tracing::info!("Reporting streaming start: {track_id}");
         let event = StreamingStart {
             track_id,
             date: time::OffsetDateTime::now_utc().unix_timestamp(),
@@ -470,6 +471,8 @@ impl QobuzClient {
         events: &[StreamingEnd],
         software_version: &str,
     ) -> Result<()> {
+        tracing::info!("Reporting streaming end");
+
         let endpoint = format!("{}{}", self.base_url, Endpoint::ReportStreamingEnd);
         let report = StreamingEndReport {
             events,

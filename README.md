@@ -3,6 +3,9 @@
 ## High resolution audio player backed by Qobuz
 
 Powered by [Qobuz](https://www.qobuz.com). Requires a paid subscription. This does not allow you to listen for free.
+This application uses the Qobuz API but is not certified by Qobuz, and is not affiliated with Qobuz in any way.
+
+The core player, regardless of UI, implements streaming reporting using Qobuz API to ensure compliance and fair artist compensation. 
 
 This is a mono repo for multiple third party apps for Qobuz.
 

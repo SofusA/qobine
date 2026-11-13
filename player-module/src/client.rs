@@ -299,7 +299,7 @@ impl StreamClient {
 
     pub async fn report_streaming_end(&self, events: &[StreamingEnd]) -> AppResult<()> {
         let client = self.get_client().await?;
-        let version = concat!("qobine-", env!("CARGO_PKG_VERSION"));
+        let version = concat!("player-", env!("CARGO_PKG_VERSION"));
         Ok(client.report_streaming_end(events, version).await?)
     }
 

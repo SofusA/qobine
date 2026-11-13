@@ -1,294 +1,251 @@
-//! Streaming reports, sent the way the web player sends them: a start event when a track starts and an end event for every stretch played without interruption, posted in batches.
-
 use std::{sync::Arc, time::Duration};
 
-use controls_module::{PositionReceiver, Status, StatusReceiver, TracklistReceiver};
 use qobuz_client::client::StreamingEnd;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-use tokio::{select, sync::watch, task::JoinHandle, time::Instant};
+use time::{OffsetDateTime, macros::format_description};
+use tokio::sync::watch;
+use uuid::Uuid;
 
 use crate::client::StreamClient;
 
-const FLUSH: Duration = Duration::from_secs(10);
-/// Flushes skipped after each failed one in a row, the web player's schedule; the batch is dropped after the last.
-const RETRIES: [usize; 4] = [1, 3, 12, 180];
-const BATCH: usize = 50;
-/// How long a report may take, so that a stalled request never holds the client or the exit.
-const TIMEOUT: Duration = Duration::from_secs(3);
-/// A position behind the previous one, or further ahead than the time elapsed plus this, is a seek, which ends a stretch.
-const JUMP: Duration = Duration::from_secs(2);
+const QOBUZ_TIMESTAMP: &[time::format_description::FormatItem<'static>] =
+    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z");
 
-/// The reporting task of a player.
-pub(crate) struct Reports {
-    stop: watch::Sender<bool>,
-    task: JoinHandle<()>,
-}
-
-impl Reports {
-    /// Reports from what the watches say the player does; `finish` reports the stretch being played when the player stops.
-    pub(crate) fn spawn(
-        client: Arc<StreamClient>,
-        active: watch::Receiver<bool>,
-        status: StatusReceiver,
-        position: PositionReceiver,
-        tracklist: TracklistReceiver,
-    ) -> Self {
-        let (stop, stopped) = watch::channel(false);
-        let task = tokio::spawn(run(client, active, status, position, tracklist, stopped));
-        Self { stop, task }
-    }
-
-    pub(crate) async fn finish(self) {
-        let _ = self.stop.send(true);
-        let _ = tokio::time::timeout(TIMEOUT, self.task).await;
-    }
-}
-
-async fn run(
+/// Reports Qobuz streaming events directly from Player lifecycle hooks.
+///
+/// Call `track_finished`, `stopped`, or `paused` before replacing the current
+/// track with `track_started`.
+pub struct StreamReporter {
     client: Arc<StreamClient>,
-    mut active: watch::Receiver<bool>,
-    mut status: StatusReceiver,
-    mut position: PositionReceiver,
-    mut tracklist: TracklistReceiver,
-    mut stopped: watch::Receiver<bool>,
-) {
-    let current = |tracklist: &TracklistReceiver| {
-        tracklist
-            .borrow()
-            .current_track()
-            .map(|track| (track.id, track.duration_seconds))
-    };
-    let mut reporter = Reporter {
-        client,
-        active: *active.borrow(),
-        track: current(&tracklist),
-        stretch: None,
-        announced: None,
-        events: Vec::new(),
-        failures: 0,
-        skip: 0,
-    };
-    let mut flush = tokio::time::interval(FLUSH);
-    loop {
-        select! {
-            biased;
-            changed = active.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let on = *active.borrow();
-                reporter.activate(on);
-            }
-            changed = tracklist.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let playing = *status.borrow() == Status::Playing;
-                reporter.track(current(&tracklist), playing).await;
-            }
-            changed = status.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let playing = *status.borrow() == Status::Playing;
-                reporter.playing(playing).await;
-            }
-            changed = position.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let at = *position.borrow();
-                reporter.moved(at).await;
-            }
-            _ = flush.tick() => reporter.flush().await,
-            _ = stopped.changed() => break,
-        }
-    }
-    reporter.end();
-    reporter.skip = 0;
-    reporter.flush().await;
+    active: watch::Receiver<bool>,
+    session: Option<StreamSession>,
+    prepared: Option<PreparedStream>,
 }
 
-struct Reporter {
-    client: Arc<StreamClient>,
-    active: bool,
-    track: Option<(u32, u32)>,
-    stretch: Option<Stretch>,
-    announced: Option<String>,
-    events: Vec<StreamingEnd>,
-    failures: usize,
-    skip: usize,
-}
-
-/// A track playing since a start, resume or seek. `from` is the first position seen, `last` the latest, at `seen`.
-struct Stretch {
+struct PreparedStream {
     track_id: u32,
-    format_id: Option<i32>,
-    blob: Option<String>,
-    track_duration: u32,
-    since: OffsetDateTime,
-    from: Option<Duration>,
-    last: Duration,
-    seen: Instant,
+    track_duration: Duration,
+    local: bool,
 }
 
-impl Reporter {
-    /// While another device is the active one, what the watches carry is its playback, not ours.
-    fn activate(&mut self, active: bool) {
-        self.active = active;
-        if !active {
-            self.end();
+struct StreamSession {
+    track_id: u32,
+    blob: String,
+    track_context_uuid: String,
+    track_duration: Duration,
+    local: bool,
+    stretch: Option<Stretch>,
+}
+
+struct Stretch {
+    started_at: OffsetDateTime,
+    started_position: Duration,
+}
+
+impl StreamReporter {
+    pub fn new(client: Arc<StreamClient>, active: watch::Receiver<bool>) -> Self {
+        Self {
+            client,
+            active,
+            session: None,
+            prepared: None,
         }
     }
 
-    async fn track(&mut self, track: Option<(u32, u32)>, playing: bool) {
-        if self.track.map(|(id, _)| id) == track.map(|(id, _)| id) {
+    pub fn prepare_track(&mut self, track_id: u32, track_duration: Duration, local: bool) {
+        if !self.is_active() {
+            self.prepared = None;
             return;
         }
-        self.end();
-        self.track = track;
-        if self.active && playing {
-            self.begin().await;
-        }
-    }
 
-    async fn playing(&mut self, playing: bool) {
-        if !playing {
-            self.end();
-        } else if self.active && self.stretch.is_none() {
-            self.begin().await;
-        }
-    }
-
-    async fn moved(&mut self, position: Duration) {
-        if !self.active {
-            return;
-        }
-        let Some(stretch) = self.stretch.as_ref() else {
-            return;
-        };
-        let ahead = stretch
-            .last
-            .saturating_add(stretch.seen.elapsed())
-            .saturating_add(JUMP);
-        if stretch.from.is_some() && (position < stretch.last || position > ahead) {
-            tracing::trace!("Position jumped from {:?} to {position:?}", stretch.last);
-            self.end();
-            self.begin().await;
-        }
-        let Some(stretch) = self.stretch.as_mut() else {
-            return;
-        };
-        stretch.last = position;
-        stretch.seen = Instant::now();
-        if stretch.from.is_some() {
-            return;
-        }
-        stretch.from = Some(position);
-        let (track_id, format_id, blob) =
-            (stretch.track_id, stretch.format_id, stretch.blob.clone());
-        self.report_start(track_id, format_id, blob);
-    }
-
-    async fn begin(&mut self) {
-        let Some((track_id, track_duration)) = self.track else {
-            return;
-        };
-        let token = self.client.stream_token(track_id).await;
-        self.stretch = Some(Stretch {
+        self.prepared = Some(PreparedStream {
             track_id,
-            format_id: token.as_ref().and_then(|token| token.format_id),
-            blob: token.and_then(|token| token.blob),
             track_duration,
-            since: OffsetDateTime::now_utc(),
-            from: None,
-            last: Duration::ZERO,
-            seen: Instant::now(),
+            local,
         });
     }
 
-    /// The start event, once per stream `file/url` granted, off the loop so that a slow request delays nothing.
-    fn report_start(&mut self, track_id: u32, format_id: Option<i32>, blob: Option<String>) {
-        let (Some(format_id), Some(blob)) = (format_id, blob) else {
-            return;
-        };
-        if self.announced.as_ref() == Some(&blob) {
+    pub async fn prepared_track_started(&mut self, position: Duration) {
+        if !self.is_active() {
+            self.prepared = None;
+            self.session = None;
             return;
         }
-        self.announced = Some(blob);
+
+        let Some(prepared) = self.prepared.take() else {
+            return;
+        };
+
+        self.track_started(
+            prepared.track_id,
+            prepared.track_duration,
+            position,
+            prepared.local,
+        )
+        .await;
+    }
+
+    /// Starts reporting a newly acquired Qobuz stream.
+    ///
+    /// This sends the streaming-start event once and begins the first
+    /// uninterrupted playback stretch.
+    pub async fn track_started(
+        &mut self,
+        track_id: u32,
+        track_duration: Duration,
+        position: Duration,
+        local: bool,
+    ) {
+        if !self.is_active() {
+            self.session = None;
+            self.prepared = None;
+            return;
+        }
+
+        // A previous session should normally have been ended explicitly.
+        if self.session.is_some() {
+            tracing::warn!("Replacing an unfinished streaming session with track {track_id}");
+            self.session = None;
+        }
+
+        let Some(token) = self.client.stream_token(track_id).await else {
+            tracing::debug!("Cannot report track {track_id}: no Qobuz stream token");
+            return;
+        };
+
+        let (Some(format_id), Some(blob)) = (token.format_id, token.blob) else {
+            tracing::debug!(
+                "Cannot report track {track_id}: stream token has no format ID or blob"
+            );
+            return;
+        };
+
         let client = self.client.clone();
+
         tokio::spawn(async move {
-            let report = client.report_streaming_start(track_id, format_id);
-            let reported = tokio::time::timeout(TIMEOUT, report).await;
-            if !matches!(reported, Ok(Ok(()))) {
-                tracing::debug!("Reporting the start of track {track_id} failed: {reported:?}");
+            if let Err(error) = client.report_streaming_start(track_id, format_id).await {
+                tracing::warn!("Failed to report the start of track {track_id}: {error:?}");
             }
+        });
+
+        self.session = Some(StreamSession {
+            track_id,
+            blob,
+            track_context_uuid: Uuid::new_v4().to_string(),
+            track_duration,
+            local,
+            stretch: Some(Stretch {
+                started_at: OffsetDateTime::now_utc(),
+                started_position: position,
+            }),
         });
     }
 
-    fn end(&mut self) {
-        let Some(stretch) = self.stretch.take() else {
-            return;
-        };
-        let (Some(blob), Some(from)) = (stretch.blob, stretch.from) else {
-            return;
-        };
-        let duration = stretch
-            .last
-            .saturating_sub(from)
-            .as_secs()
-            .min(u64::from(stretch.track_duration));
-        let Ok(start_stream) = stretch.since.format(&Rfc3339) else {
-            return;
-        };
-        tracing::trace!(
-            "Track {} streamed from {from:?} to {:?}",
-            stretch.track_id,
-            stretch.last
-        );
-        if duration > 0 {
-            self.events.push(StreamingEnd {
-                blob,
-                track_context_uuid: String::new(),
-                start_stream,
-                online: true,
-                local: false,
-                duration,
-            });
-        }
+    /// Ends the current uninterrupted stretch.
+    pub fn paused(&mut self, position: Duration) {
+        self.report_stretch_end(position);
     }
 
-    async fn flush(&mut self) {
-        if self.events.is_empty() {
+    /// Begins another uninterrupted stretch without sending another
+    /// streaming-start event.
+    pub fn resumed(&mut self, position: Duration) {
+        if !self.is_active() {
+            self.session = None;
+            self.prepared = None;
             return;
         }
-        if self.skip > 0 {
-            self.skip = self.skip.saturating_sub(1);
-            return;
-        }
-        let batch = self.events.len().min(BATCH);
-        let Some(events) = self.events.get(..batch) else {
+
+        let Some(session) = self.session.as_mut() else {
             return;
         };
-        let report = self.client.report_streaming_end(events);
-        match tokio::time::timeout(TIMEOUT, report).await {
-            Ok(Ok(())) => {
-                let seconds: Vec<u64> = events.iter().map(|event| event.duration).collect();
-                tracing::debug!("Reported {batch} streamed stretches of {seconds:?} seconds");
-                self.events.drain(..batch);
-                self.failures = 0;
-            }
-            failed => {
-                self.failures = self.failures.saturating_add(1);
-                let Some(skip) = RETRIES.get(self.failures.saturating_sub(1)) else {
-                    tracing::debug!("Giving up on {batch} streamed stretches: {failed:?}");
-                    self.events.drain(..batch);
-                    self.failures = 0;
-                    return;
-                };
-                tracing::debug!("Reporting {batch} streamed stretches failed: {failed:?}");
-                self.skip = *skip;
-            }
+
+        if session.stretch.is_some() {
+            return;
         }
+
+        session.stretch = Some(Stretch {
+            started_at: OffsetDateTime::now_utc(),
+            started_position: position,
+        });
+    }
+
+    /// Ends the stretch before the seek and begins a new one at its destination.
+    pub fn seeked(&mut self, previous_position: Duration, new_position: Duration) {
+        self.report_stretch_end(previous_position);
+        self.resumed(new_position);
+    }
+
+    /// Ends the final stretch and closes the track session.
+    pub fn track_finished(&mut self) {
+        let Some(session) = self.session.as_ref() else {
+            return;
+        };
+
+        let end_position = session.track_duration;
+        self.report_stretch_end(end_position);
+        self.session = None;
+    }
+
+    /// Ends playback without the track finishing naturally.
+    pub fn stopped(&mut self, position: Duration) {
+        self.report_stretch_end(position);
+        self.session = None;
+        self.prepared = None;
+    }
+
+    /// Ends playback because this player is no longer the active device.
+    pub fn deactivated(&mut self, position: Duration) {
+        self.report_stretch_end(position);
+        self.session = None;
+        self.prepared = None;
+    }
+
+    fn is_active(&self) -> bool {
+        *self.active.borrow()
+    }
+
+    fn report_stretch_end(&mut self, end_position: Duration) {
+        let Some(session) = self.session.as_mut() else {
+            return;
+        };
+
+        let Some(stretch) = session.stretch.take() else {
+            return;
+        };
+
+        let duration = end_position
+            .saturating_sub(stretch.started_position)
+            .min(session.track_duration)
+            .as_secs();
+
+        if duration == 0 {
+            return;
+        }
+
+        let Ok(start_stream) = stretch.started_at.format(QOBUZ_TIMESTAMP) else {
+            tracing::warn!(
+                "Failed to format stream start time for track {}",
+                session.track_id
+            );
+            return;
+        };
+
+        let track_id = session.track_id;
+
+        let event = StreamingEnd {
+            blob: session.blob.clone(),
+            track_context_uuid: session.track_context_uuid.clone(),
+            start_stream,
+            online: true,
+            local: session.local,
+            duration,
+        };
+
+        let client = self.client.clone();
+
+        tokio::spawn(async move {
+            if let Err(error) = client.report_streaming_end(&[event]).await {
+                tracing::warn!("Failed to report the end of track {track_id}: {error:?}");
+            }
+        });
     }
 }
