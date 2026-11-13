@@ -58,8 +58,7 @@ impl Sink {
             .playback
             .as_ref()
             .map(|x| &x.player)
-            .map(rodio::Player::get_pos)
-            .unwrap_or_default();
+            .map_or_default(rodio::Player::get_pos);
 
         let duration_played = *self.duration_played.lock();
 

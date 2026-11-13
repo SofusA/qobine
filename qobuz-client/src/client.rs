@@ -509,10 +509,8 @@ impl QobuzClient {
         tag: Option<&str>,
     ) -> Result<GenreFeaturedPlaylists> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::GenrePlaylists);
-        let genre_id = genre_id.map(|x| x.to_string()).unwrap_or_default();
-        let tag = tag
-            .map(std::string::ToString::to_string)
-            .unwrap_or_default();
+        let genre_id = genre_id.map_or_default(|x| x.to_string());
+        let tag = tag.map_or_default(std::string::ToString::to_string);
 
         let params = vec![
             ("genre_ids", genre_id.as_str()),
@@ -526,7 +524,7 @@ impl QobuzClient {
 
     pub async fn discover_index(&self, genre_id: Option<u32>) -> Result<Discover> {
         let endpoint = format!("{}{}", self.base_url, Endpoint::DiscoverIndex);
-        let genre_id = genre_id.map(|x| x.to_string()).unwrap_or_default();
+        let genre_id = genre_id.map_or_default(|x| x.to_string());
 
         let params = vec![("genre_ids", genre_id.as_str())];
 

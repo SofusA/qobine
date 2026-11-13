@@ -45,8 +45,7 @@ impl AppState {
         let available_devices = {
             self.shared_devices_rx
                 .as_ref()
-                .map(|x| x.borrow().to_vec())
-                .unwrap_or_default()
+                .map_or_default(|x| x.borrow().to_vec())
         };
 
         let active_device = available_devices.iter().find(|x| x.active);

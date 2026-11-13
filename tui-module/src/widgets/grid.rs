@@ -422,12 +422,8 @@ impl GridItem for AlbumSimple {
         Paragraph::new(Text::from(vec![
             title.patch_style(style.add_modifier(Modifier::BOLD)),
             Line::from(artist),
-            Line::from(
-                self.release_year
-                    .map(|year| year.to_string())
-                    .unwrap_or_default(),
-            )
-            .style(Style::default().italic()),
+            Line::from(self.release_year.map_or_default(|year| year.to_string()))
+                .style(Style::default().italic()),
         ]))
         .render(text_area, buf);
     }

@@ -186,7 +186,7 @@ async fn set_volume(
 
     volume = volume.clamp(0, 100);
 
-    let formatted_volume = volume.to_f32().map(|x| x / 100.0).unwrap_or_default();
+    let formatted_volume = volume.to_f32().map_or_default(|x| x / 100.0);
 
     state.controls.set_volume(formatted_volume);
 }

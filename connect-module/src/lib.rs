@@ -270,9 +270,7 @@ async fn credentials(client: &StreamClient) -> Result<Credentials, Error> {
 }
 
 fn device(name: String, max_audio_quality: AudioQuality) -> Device {
-    let host = hostname::get()
-        .map(|host| host.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let host = hostname::get().map_or_default(|host| host.to_string_lossy().into_owned());
     let uuid = uuid::Uuid::new_v5(
         &uuid::Uuid::NAMESPACE_OID,
         format!("{host}/{name}").as_bytes(),

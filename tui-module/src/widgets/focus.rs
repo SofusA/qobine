@@ -75,11 +75,9 @@ pub fn render(frame: &mut Frame, state: &NowPlayingState, image_cache: &mut Imag
         None => center(area, Constraint::Percentage(60), Constraint::Percentage(80)),
     };
 
-    let entity_lines = state
-        .entity_title
-        .as_deref()
-        .map(|entity| fit_big_text(entity, info_area.width, info_area.height.saturating_div(4)))
-        .unwrap_or_default();
+    let entity_lines = state.entity_title.as_deref().map_or_default(|entity| {
+        fit_big_text(entity, info_area.width, info_area.height.saturating_div(4))
+    });
 
     let entity_height = entity_lines
         .len()

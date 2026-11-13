@@ -87,7 +87,7 @@ fn cache_path(
     );
     let extension = guess_extension(mime);
 
-    let sample_rate_suffix = sample_rate.map(|sr| format!("_{sr}")).unwrap_or_default();
+    let sample_rate_suffix = sample_rate.map_or_default(|sr| format!("_{sr}"));
 
     let track_file = format!(
         "{}_{}{}.{}",
