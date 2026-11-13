@@ -27,7 +27,7 @@ use crate::{
     error::PlayerError,
     expand_tilde,
     notification::{Notification, NotificationBroadcast},
-    report::Reports,
+    report::StreamReporter,
     sink::{QueryTrackResult, Sink},
 };
 
@@ -79,7 +79,7 @@ pub struct Player {
     active_rx: Receiver<bool>,
     auto_play: Sender<bool>,
     auto_play_rx: Receiver<bool>,
-    reports: Option<Reports>,
+    reports: StreamReporter,
 }
 
 impl Player {
@@ -113,13 +113,7 @@ impl Player {
 
         let (active, active_rx) = watch::channel(true);
 
-        let reports = Reports::spawn(
-            client.clone(),
-            active.subscribe(),
-            target_status.subscribe(),
-            position.subscribe(),
-            tracklist_tx.subscribe(),
-        );
+        let reports = StreamReporter::new(client.clone(), active_rx.clone());
 
         Ok(Self {
             broadcast,
@@ -144,7 +138,7 @@ impl Player {
             active_rx,
             auto_play,
             auto_play_rx,
-            reports: Some(reports),
+            reports,
         })
     }
 
@@ -230,24 +224,6 @@ impl Player {
         Ok(())
     }
 
-    async fn play(&mut self) -> AppResult<()> {
-        self.wait_for_state_change_delay().await;
-        let track = self.tracklist_rx.borrow().current_track().cloned();
-
-        if self.sink.is_empty()
-            && let Some(current_track) = track
-        {
-            tracing::info!("Sink is empty. Query track from play");
-            self.set_target_status(Status::Buffering);
-            self.query_track(&current_track, false).await?;
-        } else {
-            self.set_target_status(Status::Playing);
-            self.sink.play();
-        }
-
-        Ok(())
-    }
-
     async fn wait_for_state_change_delay(&self) {
         if let Some(delay) = self.state_change_delay
             && *self.target_status.borrow() == Status::Paused
@@ -258,7 +234,30 @@ impl Player {
         }
     }
 
-    fn pause(&self) {
+    async fn play(&mut self) -> AppResult<()> {
+        self.wait_for_state_change_delay().await;
+
+        let track = self.tracklist_rx.borrow().current_track().cloned();
+
+        if self.sink.is_empty()
+            && let Some(current_track) = track
+        {
+            tracing::info!("Sink is empty. Query track from play");
+            self.set_target_status(Status::Buffering);
+            self.query_track(&current_track, false).await?;
+        } else {
+            self.sink.play();
+            self.set_target_status(Status::Playing);
+            self.reports.resumed(self.sink.position());
+        }
+
+        Ok(())
+    }
+
+    fn pause(&mut self) {
+        let position = self.sink.position();
+
+        self.reports.paused(position);
         self.set_target_status(Status::Paused);
         self.sink.pause();
     }
@@ -282,9 +281,9 @@ impl Player {
 
         self.wait_for_state_change_delay().await;
 
-        let query_result = match download_result {
-            DownloadResult::Cached(track_path) => self.sink.query_track(&track_path)?,
-            DownloadResult::Streaming(reader) => self.sink.query_track_stream(reader)?,
+        let (query_result, local) = match download_result {
+            DownloadResult::Cached(track_path) => (self.sink.query_track(&track_path)?, true),
+            DownloadResult::Streaming(reader) => (self.sink.query_track_stream(reader)?, false),
         };
 
         if next_track {
@@ -299,13 +298,32 @@ impl Player {
                 }
             };
         }
+
         self.sink.play();
         self.set_target_status(Status::Playing);
+
         if !next_track
             && let Some((id, position)) = self.pending_seek.take()
             && id == track.id
         {
             self.seek_once_started(position).await?;
+        }
+
+        if next_track {
+            self.reports.prepare_track(
+                track.id,
+                Duration::from_secs(track.duration_seconds.into()),
+                local,
+            );
+        } else {
+            self.reports
+                .track_started(
+                    track.id,
+                    Duration::from_secs(track.duration_seconds.into()),
+                    self.sink.position(),
+                    local,
+                )
+                .await;
         }
 
         Ok(())
@@ -364,18 +382,27 @@ impl Player {
                 .borrow()
                 .current_track()
                 .map(|track| track.id);
+
             self.pending_seek = current.map(|id| (id, duration));
             self.position.send(duration)?;
             return Ok(());
         }
+
+        let previous_position = self.sink.position();
+
         match self.sink.seek(duration) {
             Ok(()) => {
-                self.position.send(self.sink.position())?;
+                let new_position = self.sink.position();
+
+                self.reports.seeked(previous_position, new_position);
+
+                self.position.send(new_position)?;
             }
-            Err(e) => {
-                tracing::warn!("Seek to {:?} failed: {e:?}", duration);
+            Err(error) => {
+                tracing::warn!("Seek to {:?} failed: {error:?}", duration);
             }
         }
+
         Ok(())
     }
 
@@ -466,6 +493,8 @@ impl Player {
             ),
             QueueStart::Paused => false,
         };
+
+        self.reports.stopped(self.sink.position());
 
         self.pending_seek = None;
         self.position.send_replace(Duration::default());
@@ -593,6 +622,9 @@ impl Player {
     }
 
     fn stop(&mut self) {
+        let position = self.sink.position();
+
+        self.reports.stopped(position);
         self.set_target_status(Status::Paused);
         self.sink.pause();
         self.clear_sink_state();
@@ -955,31 +987,45 @@ impl Player {
     }
 
     async fn track_finished(&mut self) -> AppResult<()> {
+        self.reports.track_finished();
+
         let mut tracklist = self.tracklist_rx.borrow().clone();
 
         let current_position = tracklist.current_position();
         let new_position = current_position.saturating_add(1);
 
-        let next_track = tracklist.skip_to_track(new_position);
+        let next_track = tracklist.skip_to_track(new_position).cloned();
 
         if let Some(next_track) = next_track {
-            if !self.next_track_in_sink_queue {
+            if self.next_track_in_sink_queue {
+                // The sink has transitioned to the previously prepared track.
+                self.reports
+                    .prepared_track_started(self.sink.position())
+                    .await;
+            } else {
                 tracing::info!(
-                    "Track finished and next track is not in queue. Resetting queue, and querying track."
+                    "Track finished and next track is not in queue. Resetting queue and querying track."
                 );
+
                 self.clear_sink_state();
+
                 if let Some(delay) = self.sample_rate_change_delay {
                     tracing::info!("Waiting for sample rate change delay");
                     sleep(delay).await;
                 }
-                self.query_track(next_track, false).await?;
+
+                self.query_track(&next_track, false).await?;
             }
         } else {
             tracklist.reset();
             self.stop();
         }
+
         self.next_track_is_queried = false;
+        self.next_track_in_sink_queue = false;
+
         self.broadcast_tracklist(tracklist).await?;
+
         Ok(())
     }
 
@@ -997,6 +1043,7 @@ impl Player {
                 self.query_track(track, false).await?;
             }
         } else {
+            self.reports.deactivated(self.sink.position());
             self.sink.clear();
         }
 
@@ -1039,14 +1086,13 @@ impl Player {
 
                 Ok(exit) = exit_receiver.recv() => {
                     if exit {
+                        self.reports.stopped(self.sink.position());
                         break;
                     }
                 }
             }
         }
-        if let Some(reports) = self.reports.take() {
-            reports.finish().await;
-        }
+
         Ok(())
     }
 }

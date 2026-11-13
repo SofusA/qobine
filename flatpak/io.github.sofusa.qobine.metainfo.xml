@@ -6,6 +6,11 @@
   <summary>Unofficial client for Qobuz</summary>
 
   <description>
+    <p>Powered by [Qobuz](https://www.qobuz.com). Requires a paid subscription. This does not allow you to listen for free.
+    This application uses the Qobuz API but is not certified by Qobuz, and is not affiliated with Qobuz in any way.</p>
+
+    <p>Qobine implements streaming reporting using Qobuz API to ensure compliance and fair artist compensation.</p>
+
     <p>Listening to your Qobuz music with Qobine: a Qobuz client designed for GNOME.</p>
     <p>Upon first launch, a browser spawns where you will need to login to Qobuz with your active streaming subscription.</p>
 
