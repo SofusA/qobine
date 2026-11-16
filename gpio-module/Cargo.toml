@@ -9,12 +9,13 @@ license-file.workspace = true
 repository.workspace = true
 
 [features]
-gpio = ["rppal"]
+default = []
+gpio = ["dep:rppal", "dep:tokio", "dep:tracing", "dep:player-module", "dep:controls-module"]
 
 [dependencies]
-controls-module = { version = "*", path = "../controls-module" }
-player-module = { version = "*", path = "../player-module" }
+controls-module = { version = "*", path = "../controls-module", optional = true }
+player-module = { version = "*", path = "../player-module", optional = true }
 
-tracing.workspace = true
+tracing = { workspace = true, optional = true }
 rppal = { workspace = true, optional = true }
-tokio.workspace = true
+tokio = { workspace = true, optional = true }

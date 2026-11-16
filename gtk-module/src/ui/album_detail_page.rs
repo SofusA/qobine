@@ -223,10 +223,7 @@ impl AlbumDetailPage {
 
                     artist_box.append(&button);
 
-                    let year_string = album
-                        .release_year
-                        .map(|year| year.to_string())
-                        .unwrap_or_default();
+                    let year_string = album.release_year.map_or_default(|year| year.to_string());
 
                     let duration_string = format_time(album.duration_seconds);
 
@@ -340,8 +337,7 @@ impl AlbumDetailPage {
                                 label_text,
                                 dialog_album
                                     .release_year
-                                    .map(|year| year.to_string())
-                                    .unwrap_or_default()
+                                    .map_or_default(|year| year.to_string())
                             ))
                             .xalign(0.0)
                             .wrap(true)

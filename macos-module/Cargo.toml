@@ -10,11 +10,11 @@ license-file.workspace = true
 repository.workspace = true
 
 [dependencies]
+
+[target.'cfg(target_os = "macos")'.dependencies]
 controls-module = { version = "*", path = "../controls-module" }
 player-module = { version = "*", path = "../player-module" }
 
-tokio.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
 macos-now-playing = "0.1"
+tokio.workspace = true
 reqwest.workspace = true
