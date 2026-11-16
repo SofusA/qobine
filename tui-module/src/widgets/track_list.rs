@@ -10,6 +10,7 @@ use ratatui::{
     text::Line,
     widgets::{Row, StatefulWidget, Table},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     app::{NotificationList, Output},
@@ -20,6 +21,9 @@ use crate::{
     },
     widgets::filtered_list::FilteredListState,
 };
+
+const MAX_ARTIST_LENGTH: u16 = 30;
+const MAX_ALBUM_LENGTH: u16 = 40;
 
 #[derive(Default)]
 pub struct TrackList {
@@ -236,7 +240,30 @@ impl TrackList {
     }
 }
 
+fn column_width<'a>(values: impl Iterator<Item = &'a str>, header: &str, maximum: u16) -> u16 {
+    values
+        .map(|value| u16::try_from(value.width()).unwrap_or(u16::MAX))
+        .chain(std::iter::once(
+            u16::try_from(header.width()).unwrap_or(u16::MAX),
+        ))
+        .max()
+        .unwrap_or_default()
+        .min(maximum)
+}
+
 fn track_table<'a>(rows: &[Track], focus: bool, favorites: &HashSet<u32>) -> Table<'a> {
+    let artist_width = column_width(
+        rows.iter().filter_map(|track| track.artist_name.as_deref()),
+        "Artist",
+        MAX_ARTIST_LENGTH,
+    );
+
+    let album_width = column_width(
+        rows.iter().filter_map(|track| track.album_title.as_deref()),
+        "Album",
+        MAX_ALBUM_LENGTH,
+    );
+
     let body_rows: Vec<Row<'a>> = rows
         .iter()
         .map(|track| {
@@ -256,10 +283,10 @@ fn track_table<'a>(rows: &[Track], focus: bool, favorites: &HashSet<u32>) -> Tab
 
     let is_empty = body_rows.is_empty();
 
-    let constraints: Vec<Constraint> = vec![
-        Constraint::Ratio(2, 6),
-        Constraint::Ratio(2, 6),
-        Constraint::Ratio(1, 6),
+    let constraints = [
+        Constraint::Min(1),
+        Constraint::Length(artist_width),
+        Constraint::Length(album_width),
         Constraint::Length(DURATION_LENGTH),
     ];
 
@@ -272,10 +299,9 @@ fn track_table<'a>(rows: &[Track], focus: bool, favorites: &HashSet<u32>) -> Tab
         .column_spacing(COLUMN_SPACING);
 
     if !is_empty {
-        let header =
-            Row::new(vec!["Title", "Artist", "Album", "Duration"]).add_modifier(Modifier::BOLD);
-
-        table = table.header(header);
+        table = table.header(
+            Row::new(vec!["Title", "Artist", "Album", "Duration"]).add_modifier(Modifier::BOLD),
+        );
     }
 
     table
