@@ -11,8 +11,8 @@ use crate::{
     app::Output,
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, block, format_seconds,
-        sidebar,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, block,
+        format_duration, sidebar,
     },
 };
 
@@ -237,7 +237,7 @@ impl TrackInfoOverlay {
 
     fn metadata_line(&self) -> Line<'static> {
         let mut metadata = vec![Span::styled(
-            format_seconds(self.track.duration_seconds),
+            format_duration(self.track.duration_seconds),
             Style::new().dim(),
         )];
 

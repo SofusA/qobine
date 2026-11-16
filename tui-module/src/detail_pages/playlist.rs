@@ -8,7 +8,7 @@ use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HEART, USER, block,
-        format_seconds, tab_bar,
+        format_duration, tab_bar,
     },
     widgets::track_list::{TrackList, TrackListEvent},
 };
@@ -185,7 +185,7 @@ impl PlaylistOverlay {
                 format!(
                     "{} tracks · {}",
                     self.tracks.filter().len(),
-                    format_seconds(self.duration_seconds),
+                    format_duration(self.duration_seconds),
                 ),
                 Style::new().dim(),
             )),

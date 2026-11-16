@@ -16,7 +16,7 @@ use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HEART, Pane, block,
-        format_seconds, leaves_content, mark_as_favorite, sidebar,
+        format_duration, leaves_content, mark_as_favorite, sidebar,
     },
     widgets::{
         grid::Grid,
@@ -392,7 +392,7 @@ impl AlbumOverlay {
         }
 
         parts.push(format!("{} tracks", self.total_tracks));
-        parts.push(format_seconds(self.duration_seconds));
+        parts.push(format_duration(self.duration_seconds));
 
         if !self.awards.is_empty() {
             let count = self.awards.len();

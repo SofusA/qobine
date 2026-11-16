@@ -2,7 +2,7 @@ use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
         ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, DURATION_LENGTH,
-        HIGHLIGHT_TEXT_STYLE, album_cover_area, block, format_mseconds, format_seconds,
+        HIGHLIGHT_TEXT_STYLE, album_cover_area, block, format_duration,
     },
 };
 use controls_module::{Status, models::Track};
@@ -107,10 +107,11 @@ pub fn render_progress(frame: &mut Frame, area: Rect, duration_ms: u32, track: &
         ])
         .areas(area);
 
-    let current_time = Paragraph::new(format_mseconds(duration_ms)).alignment(Alignment::Left);
+    let current_time =
+        Paragraph::new(format_duration(duration_ms / 1000)).alignment(Alignment::Left);
 
     let total_time =
-        Paragraph::new(format_seconds(track.duration_seconds)).alignment(Alignment::Right);
+        Paragraph::new(format_duration(track.duration_seconds)).alignment(Alignment::Right);
 
     let gauge_str = smooth_gauge(ratio, gauge_area.width);
 
