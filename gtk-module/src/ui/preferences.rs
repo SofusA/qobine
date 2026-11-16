@@ -30,6 +30,8 @@ pub fn build_preferences_menu(
 ) -> gtk::MenuButton {
     let menu = gio::Menu::new();
     menu.append(Some("Preferences"), Some("app.preferences"));
+    menu.append(Some("Keyboard Shortcuts"), Some("app.shortcuts"));
+    menu.append(Some("About Qobine"), Some("app.about"));
     menu.append(Some("Quit"), Some("app.exit"));
 
     let menu_model = gtk::PopoverMenu::from_model(Some(&menu));
@@ -70,6 +72,55 @@ pub fn build_preferences_menu(
             );
         }
     });
+
+    let shortcuts_action = gio::SimpleAction::new("shortcuts", None);
+    shortcuts_action.connect_activate({
+        let app = app.clone();
+
+        move |_, _| {
+            let Some(window) = app.active_window() else {
+                return;
+            };
+
+            let section = adw::ShortcutsSection::new(Some("General"));
+            section.add(adw::ShortcutsItem::from_action(
+                "Show Keyboard Shortcuts",
+                "app.shortcuts",
+            ));
+            section.add(adw::ShortcutsItem::from_action("Quit", "app.exit"));
+
+            let dialog = adw::ShortcutsDialog::new();
+            dialog.add(section);
+            dialog.present(Some(&window));
+        }
+    });
+
+    let about_action = gio::SimpleAction::new("about", None);
+    about_action.connect_activate({
+        let app = app.clone();
+
+        move |_, _| {
+            let Some(window) = app.active_window() else {
+                return;
+            };
+
+            let dialog = adw::AboutDialog::builder()
+                .application_name("Qobine")
+                .application_icon("io.github.sofusa.qobine")
+                .developers(["Sofus Addington"])
+                .website("https://github.com/sofusa/qobine")
+                .issue_url("https://github.com/sofusa/qobine/issues")
+                .build();
+
+            dialog.present(Some(&window));
+        }
+    });
+
+    app.add_action(&shortcuts_action);
+    app.add_action(&about_action);
+
+    app.set_accels_for_action("app.shortcuts", &["<Control>question"]);
+    app.set_accels_for_action("app.exit", &["<Control>q"]);
 
     app.add_action(&preferences_action);
     app.add_action(&quit_action);
