@@ -35,6 +35,8 @@ pub const EXPLICIT: &str = "\u{f0b0c}";
 pub const HIFI: &str = "\u{f0435}";
 pub const USER: &str = "\u{f007}";
 
+pub const DURATION_LENGTH: u16 = 8;
+
 pub const fn album_cover_area(area: Rect) -> Option<Rect> {
     if area.width < ALBUM_COVER_WIDTH || area.height < ALBUM_COVER_HEIGHT {
         return None;
@@ -398,16 +400,6 @@ pub fn block(title: Option<&str>) -> Block<'_> {
     }
 
     block
-}
-
-pub fn basic_list_table(rows: Vec<Row<'_>>, focus: bool) -> Table<'_> {
-    Table::new(rows, [Constraint::Min(1)])
-        .row_highlight_style(if focus {
-            HIGHLIGHT_STYLE
-        } else {
-            SELECTED_STYLE
-        })
-        .column_spacing(COLUMN_SPACING)
 }
 
 pub fn tab_bar(tabs: Vec<&str>, selected: usize) -> Tabs<'_> {

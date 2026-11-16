@@ -15,7 +15,8 @@ use crate::{
     app::{NotificationList, Output},
     detail_pages::{Overlay, TrackInfoOverlay},
     ui::{
-        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_explicit_and_hifi,
+        COLUMN_SPACING, DURATION_LENGTH, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration,
+        mark_explicit_and_hifi,
     },
     widgets::filtered_list::FilteredListState,
 };
@@ -266,7 +267,7 @@ fn track_table<'a>(
                 cols.push(Line::from(track.album_title.clone().unwrap_or_default()));
             }
 
-            cols.push(Line::from(format_duration(track.duration_seconds)));
+            cols.push(Line::from(format_duration(track.duration_seconds)).right_aligned());
 
             Row::new(cols)
         })
@@ -279,13 +280,13 @@ fn track_table<'a>(
             Constraint::Ratio(2, 6),
             Constraint::Ratio(2, 6),
             Constraint::Ratio(1, 6),
-            Constraint::Length(10),
+            Constraint::Length(DURATION_LENGTH),
         ]
     } else {
         vec![
             Constraint::Ratio(2, 5),
             Constraint::Ratio(2, 5),
-            Constraint::Length(10),
+            Constraint::Length(DURATION_LENGTH),
         ]
     };
 

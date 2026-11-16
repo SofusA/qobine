@@ -1,8 +1,8 @@
 use crate::{
     image_cache::{AppImage, ImageManager},
     ui::{
-        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, HIGHLIGHT_TEXT_STYLE,
-        album_cover_area, block, format_mseconds, format_seconds,
+        ALBUM_COVER_GAP, ALBUM_COVER_HEIGHT, ALBUM_COVER_WIDTH, COVER_IMAGE, DURATION_LENGTH,
+        HIGHLIGHT_TEXT_STYLE, album_cover_area, block, format_mseconds, format_seconds,
     },
 };
 use controls_module::{Status, models::Track};
@@ -101,9 +101,9 @@ pub fn render_progress(frame: &mut Frame, area: Rect, duration_ms: u32, track: &
     let [progress_area, gauge_area, duration_area] = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(7),
+            Constraint::Length(DURATION_LENGTH),
             Constraint::Min(1),
-            Constraint::Length(7),
+            Constraint::Length(DURATION_LENGTH),
         ])
         .areas(area);
 

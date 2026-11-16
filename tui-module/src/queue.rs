@@ -6,18 +6,34 @@ use player_module::{AppResult, client::StreamClient, notification::Notification}
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::{Row, TableState},
+    widgets::{Row, Table, TableState},
 };
 
 use crate::{
     app::{FavoriteIds, NotificationList, Output},
     detail_pages::{Overlay, TrackInfoOverlay},
-    ui::{basic_list_table, block, mark_explicit_and_hifi},
+    ui::{
+        COLUMN_SPACING, DURATION_LENGTH, HIGHLIGHT_STYLE, SELECTED_STYLE, block, format_duration,
+        mark_explicit_and_hifi,
+    },
 };
 
 pub struct QueueState {
     items: Vec<Track>,
     state: TableState,
+}
+
+fn queue_list(rows: Vec<Row<'_>>, focus: bool) -> Table<'_> {
+    Table::new(
+        rows,
+        [Constraint::Min(1), Constraint::Length(DURATION_LENGTH)],
+    )
+    .row_highlight_style(if focus {
+        HIGHLIGHT_STYLE
+    } else {
+        SELECTED_STYLE
+    })
+    .column_spacing(COLUMN_SPACING)
 }
 
 impl QueueState {
@@ -28,7 +44,7 @@ impl QueueState {
         }
     }
     pub fn render(&mut self, frame: &mut Frame, area: Rect, favorites: &FavoriteIds) {
-        let table = basic_list_table(
+        let table = queue_list(
             self.items
                 .iter()
                 .enumerate()
@@ -56,7 +72,10 @@ impl QueueState {
                         .map(|span| span.patch_style(style))
                         .collect();
 
-                    Row::new(vec![Line::from(spans)])
+                    Row::new(vec![
+                        Line::from(spans),
+                        Line::from(format_duration(track.duration_seconds)).right_aligned(),
+                    ])
                 })
                 .collect(),
             true,

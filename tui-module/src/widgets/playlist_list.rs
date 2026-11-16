@@ -11,8 +11,8 @@ use ratatui::{
 
 use crate::{
     ui::{
-        COLUMN_SPACING, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration, mark_as_favorite,
-        mark_as_owned,
+        COLUMN_SPACING, DURATION_LENGTH, HIGHLIGHT_STYLE, SELECTED_STYLE, format_duration,
+        mark_as_favorite, mark_as_owned,
     },
     widgets::filtered_list::FilteredListState,
 };
@@ -66,14 +66,14 @@ fn playlist_list<'a>(rows: &[PlaylistSimple], focus: bool, favorites: &HashSet<u
             let line = mark_as_owned(line, playlist.is_owned);
             Row::new(vec![
                 line,
-                Line::from(format_duration(playlist.duration_seconds)),
+                Line::from(format_duration(playlist.duration_seconds)).right_aligned(),
             ])
         })
         .collect();
 
     let is_empty = body_rows.is_empty();
 
-    let constraints = [Constraint::Ratio(2, 3), Constraint::Length(10)];
+    let constraints = [Constraint::Ratio(2, 3), Constraint::Length(DURATION_LENGTH)];
 
     let mut table = Table::new(body_rows, constraints)
         .row_highlight_style(if focus {
