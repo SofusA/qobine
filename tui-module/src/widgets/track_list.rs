@@ -46,15 +46,8 @@ impl TrackList {
         Self { items: tracks }
     }
 
-    pub fn render(
-        &mut self,
-        area: Rect,
-        buf: &mut Buffer,
-        show_album: bool,
-        focus: bool,
-        favorites: &HashSet<u32>,
-    ) {
-        let table = track_table(self.items.filter(), show_album, focus, favorites);
+    pub fn render(&mut self, area: Rect, buf: &mut Buffer, focus: bool, favorites: &HashSet<u32>) {
+        let table = track_table(self.items.filter(), focus, favorites);
         table.render(area, buf, &mut self.items.state);
     }
 
@@ -243,52 +236,32 @@ impl TrackList {
     }
 }
 
-fn track_table<'a>(
-    rows: &[Track],
-    show_album: bool,
-    focus: bool,
-    favorites: &HashSet<u32>,
-) -> Table<'a> {
+fn track_table<'a>(rows: &[Track], focus: bool, favorites: &HashSet<u32>) -> Table<'a> {
     let body_rows: Vec<Row<'a>> = rows
         .iter()
         .map(|track| {
-            let mut cols: Vec<Line<'a>> = Vec::with_capacity(if show_album { 4 } else { 3 });
-
-            cols.push(mark_explicit_and_hifi(
-                track.title.clone(),
-                track.explicit,
-                track.hires_available,
-                favorites.contains(&track.id),
-            ));
-
-            cols.push(Line::from(track.artist_name.clone().unwrap_or_default()));
-
-            if show_album {
-                cols.push(Line::from(track.album_title.clone().unwrap_or_default()));
-            }
-
-            cols.push(Line::from(format_duration(track.duration_seconds)).right_aligned());
-
-            Row::new(cols)
+            Row::new(vec![
+                mark_explicit_and_hifi(
+                    track.title.clone(),
+                    track.explicit,
+                    track.hires_available,
+                    favorites.contains(&track.id),
+                ),
+                Line::from(track.artist_name.clone().unwrap_or_default()),
+                Line::from(track.album_title.clone().unwrap_or_default()),
+                Line::from(format_duration(track.duration_seconds)).right_aligned(),
+            ])
         })
         .collect();
 
     let is_empty = body_rows.is_empty();
 
-    let constraints: Vec<Constraint> = if show_album {
-        vec![
-            Constraint::Ratio(2, 6),
-            Constraint::Ratio(2, 6),
-            Constraint::Ratio(1, 6),
-            Constraint::Length(DURATION_LENGTH),
-        ]
-    } else {
-        vec![
-            Constraint::Ratio(2, 5),
-            Constraint::Ratio(2, 5),
-            Constraint::Length(DURATION_LENGTH),
-        ]
-    };
+    let constraints: Vec<Constraint> = vec![
+        Constraint::Ratio(2, 6),
+        Constraint::Ratio(2, 6),
+        Constraint::Ratio(1, 6),
+        Constraint::Length(DURATION_LENGTH),
+    ];
 
     let mut table = Table::new(body_rows, constraints)
         .row_highlight_style(if focus {
@@ -299,12 +272,8 @@ fn track_table<'a>(
         .column_spacing(COLUMN_SPACING);
 
     if !is_empty {
-        let header = if show_album {
-            Row::new(vec!["Title", "Artist", "Album", "Duration"])
-        } else {
-            Row::new(vec!["Title", "Artist", "Duration"])
-        }
-        .add_modifier(Modifier::BOLD);
+        let header =
+            Row::new(vec!["Title", "Artist", "Album", "Duration"]).add_modifier(Modifier::BOLD);
 
         table = table.header(header);
     }

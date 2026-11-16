@@ -264,7 +264,6 @@ impl AlbumOverlay {
                                 content_area,
                                 frame.buffer_mut(),
                                 true,
-                                true,
                                 favorites.tracks(),
                             );
                         }

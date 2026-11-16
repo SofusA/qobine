@@ -75,13 +75,8 @@ impl PlaylistOverlay {
 
         self.render_header(frame, header_area, image_cache);
 
-        self.tracks.render(
-            tracks_area,
-            frame.buffer_mut(),
-            true,
-            true,
-            favorites.tracks(),
-        );
+        self.tracks
+            .render(tracks_area, frame.buffer_mut(), true, favorites.tracks());
 
         let selected_control = usize::from(self.shuffle);
 

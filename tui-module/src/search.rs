@@ -99,7 +99,6 @@ impl SearchState {
             SubTab::Tracks => self.tracks.render(
                 content_area,
                 frame.buffer_mut(),
-                true,
                 content_focused,
                 favorites.tracks(),
             ),
