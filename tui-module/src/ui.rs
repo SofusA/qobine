@@ -108,10 +108,8 @@ impl App {
     }
 
     fn render_inner(&mut self, frame: &mut Frame, area: Rect) {
-        let [tabs_area, tab_content_area] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .areas(area);
+        let [tabs_area, tab_content_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(area);
 
         let labels: Vec<String> = Tab::VALUES
             .iter()
@@ -222,10 +220,8 @@ fn render_now_playing_bar(
 ) -> Rect {
     let area = frame.area();
 
-    let [content_area, now_playing_area] = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(11)])
-        .areas(area);
+    let [content_area, now_playing_area] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(11)]).areas(area);
 
     if now_playing.playing_track.is_some() {
         now_playing::render(frame, now_playing_area, now_playing, image_cache);

@@ -75,9 +75,8 @@ impl FavoritesState {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, image_cache: &mut ImageManager) {
-        let [input_area, content_area] = Layout::default()
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .areas(area);
+        let [input_area, content_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(area);
 
         let sort_title = match self.sort {
             FavoritesSort::FavoritedDate => "󰒺 Newest",
@@ -101,10 +100,9 @@ impl FavoritesState {
 
         let content_area = content_area.inner(Margin::new(1, 1));
 
-        let [sidebar_area, content_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .areas(content_area);
+        let [sidebar_area, content_area] =
+            Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)])
+                .areas(content_area);
 
         let mut sidebar_state = ListState::default();
         sidebar_state.select(Some(self.sub_tab.selected()));

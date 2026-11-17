@@ -136,10 +136,8 @@ impl GenresState {
     }
 
     fn render_genre_list(&self, frame: &mut Frame, area: Rect) {
-        let [title_area, content_area] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .areas(area);
+        let [title_area, content_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(area);
 
         let title = Paragraph::new("Select a Genre")
             .style(SELECTED_STYLE)

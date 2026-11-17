@@ -47,14 +47,12 @@ pub fn render(
                 .saturating_add(1);
 
     let info_area = if can_render_cover {
-        let [image_area, _gap, content_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(ALBUM_COVER_WIDTH),
-                Constraint::Length(ALBUM_COVER_GAP),
-                Constraint::Min(1),
-            ])
-            .areas(inner);
+        let [image_area, _gap, content_area] = Layout::horizontal([
+            Constraint::Length(ALBUM_COVER_WIDTH),
+            Constraint::Length(ALBUM_COVER_GAP),
+            Constraint::Min(1),
+        ])
+        .areas(inner);
 
         if let Some(image_area) = album_cover_area(image_area)
             && let Some(AppImage { protocol, .. }) = image
@@ -67,10 +65,8 @@ pub fn render(
         inner
     };
 
-    let [content_area, progress_area] = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .areas(info_area);
+    let [content_area, progress_area] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(info_area);
 
     let mut lines = vec![Line::from(track.title.as_str()).bold()];
 
@@ -98,14 +94,12 @@ pub fn render_progress(frame: &mut Frame, area: Rect, duration_ms: u32, track: &
 
     let ratio = f64::from(duration) / f64::from(track.duration_seconds.saturating_mul(1000));
 
-    let [progress_area, gauge_area, duration_area] = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(DURATION_LENGTH),
-            Constraint::Min(1),
-            Constraint::Length(DURATION_LENGTH),
-        ])
-        .areas(area);
+    let [progress_area, gauge_area, duration_area] = Layout::horizontal([
+        Constraint::Length(DURATION_LENGTH),
+        Constraint::Min(1),
+        Constraint::Length(DURATION_LENGTH),
+    ])
+    .areas(area);
 
     let current_time =
         Paragraph::new(format_duration(duration_ms / 1000)).alignment(Alignment::Left);

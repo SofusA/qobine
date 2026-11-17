@@ -41,9 +41,8 @@ impl SearchState {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
-        let [input_area, content_area] = Layout::default()
-            .constraints([Constraint::Length(3), Constraint::Min(1)])
-            .areas(area);
+        let [input_area, content_area] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(area);
 
         render_input(
             &self.filter,
@@ -62,10 +61,9 @@ impl SearchState {
         let (sidebar, sidebar_width) =
             sidebar(SubTab::labels().to_vec(), self.focus == Pane::Sidebar);
 
-        let [sidebar_area, content_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .areas(tab_content_area);
+        let [sidebar_area, content_area] =
+            Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)])
+                .areas(tab_content_area);
 
         let mut sidebar_state = ListState::default();
         sidebar_state.select(Some(self.sub_tab.selected()));

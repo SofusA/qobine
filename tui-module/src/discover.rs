@@ -97,10 +97,9 @@ impl DiscoverState {
 
         let (sidebar, sidebar_width) = sidebar(labels, self.focus == Pane::Sidebar);
 
-        let [sidebar_area, content_area] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(sidebar_width), Constraint::Min(1)])
-            .areas(tab_content_area);
+        let [sidebar_area, content_area] =
+            Layout::horizontal([Constraint::Length(sidebar_width), Constraint::Min(1)])
+                .areas(tab_content_area);
 
         let mut sidebar_state = ListState::default();
         sidebar_state.select(Some(self.selected_sub_tab));
