@@ -193,7 +193,8 @@ where
 
             let scrollbar_area = Rect::new(area.right().saturating_sub(1), area.y, 1, area.height);
 
-            let mut scrollbar_state = ScrollbarState::new(max_scroll_row).position(self.scroll_row);
+            let mut scrollbar_state =
+                ScrollbarState::new(max_scroll_row.saturating_add(1)).position(self.scroll_row);
 
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
