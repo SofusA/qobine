@@ -95,8 +95,6 @@ impl AlbumOverlay {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
-        let header_height = ALBUM_COVER_HEIGHT + 1;
-
         let is_favorite = favorites.albums().contains(&self.id);
 
         let title = if is_favorite {
@@ -110,8 +108,11 @@ impl AlbumOverlay {
         frame.render_widget(&outer_block, area);
 
         let inner = outer_block.inner(area);
-        let [header_area, body_area] =
-            Layout::vertical([Constraint::Length(header_height), Constraint::Min(1)]).areas(inner);
+        let [header_area, body_area] = Layout::vertical([
+            Constraint::Length(ALBUM_COVER_HEIGHT + 1),
+            Constraint::Min(1),
+        ])
+        .areas(inner);
 
         self.render_header(frame, header_area, favorites, image_cache);
         self.render_body(frame, body_area, favorites, image_cache);
@@ -153,6 +154,8 @@ impl AlbumOverlay {
         favorites: &FavoriteIds,
         image_cache: &mut ImageManager,
     ) {
+        let [area, _] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(area);
+
         let can_render_cover = image_cache.get_mut(&self.image_url).is_some()
             && area.width >= ALBUM_COVER_WIDTH.saturating_add(2)
             && area.height >= ALBUM_COVER_HEIGHT;
