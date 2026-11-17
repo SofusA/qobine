@@ -486,11 +486,7 @@ impl AlbumOverlay {
             tabs.push(AlbumTabKind::Similar);
         }
 
-        if self
-            .description
-            .as_ref()
-            .is_some_and(|description| !description.is_empty())
-        {
+        if !self.awards.is_empty() || self.description.as_deref().is_some_and(|d| !d.is_empty()) {
             tabs.push(AlbumTabKind::About);
         }
 
