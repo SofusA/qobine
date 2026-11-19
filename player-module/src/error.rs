@@ -32,8 +32,10 @@ pub enum PlayerError {
     SendError {
         message: String,
     },
-    #[snafu(display("Unable to init mpris. Is address already taken?"))]
-    MprisInitError,
+    #[snafu(display("Unable to init mpris. Is address already taken? Zbus error:: {message}"))]
+    MprisInitError {
+        message: String,
+    },
     #[snafu(display("Unable to set mpris property: {property}"))]
     MprisPropertyError {
         property: String,

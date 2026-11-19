@@ -316,7 +316,7 @@ async fn init(
 ) -> AppResult<()> {
     let mut exit_receiver = exit_sender.subscribe();
 
-    let Ok(server) = Server::new(
+    let server = Server::new(
         &mpris_suffix.clone(),
         MprisPlayer {
             controls,
@@ -329,9 +329,9 @@ async fn init(
         },
     )
     .await
-    else {
-        return Err(PlayerError::MprisInitError);
-    };
+    .map_err(|error| PlayerError::MprisInitError {
+        message: error.to_string(),
+    })?;
 
     loop {
         tokio::select! {
