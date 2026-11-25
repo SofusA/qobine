@@ -2,80 +2,115 @@
 
 ## High resolution audio player backed by Qobuz
 
-Powered by [Qobuz](https://www.qobuz.com). Requires a paid subscription. This does not allow you to listen for free.
-This application uses the Qobuz API but is not certified by Qobuz, and is not affiliated with Qobuz in any way.
+Powered by [Qobuz](https://www.qobuz.com). Requires a paid subscription. This
+does not allow you to listen for free.
 
-The core player, regardless of UI, implements streaming reporting using Qobuz API to ensure compliance and fair artist compensation. 
+This application uses the Qobuz API but
+is not certified by Qobuz, and is not affiliated with Qobuz in any way.
+
+The core player, regardless of UI, implements streaming reporting using Qobuz
+API to ensure compliance and fair artist compensation.
 
 This is a mono repo for multiple third party apps for Qobuz.
 
-This includes a terminal app, a web server and web-ui, a RFID player, and a minimal Qobuz Connect player. 
+This includes a terminal app, a web server and web-ui, a RFID player, and a
+minimal Qobuz Connect player.
 
-The web interface is ideal for a setup with a single board computer, e.g. Raspberry Pi, connected to the speaker system and controlled with a smartphone or tablet.
+The web interface is ideal for a setup with a single board computer,
+e.g. Raspberry Pi, connected to the speaker system and controlled with a
+smartphone or tablet.
 
 ### Terminal UI
+
 ![TUI screenshot](/assets/qobine-tui.png)
 
 [More info](/tui-module)
 
 ### GNOME player
+
 ![GTK screenshot](/assets/qobine-gtk.png)
 
-[More info](/tui-module)
+[More info](/gtk-module)
 
 ### Web UI
+
 [More info](/web-module)
 
 ### RFID player
+
 ![RFID player](/assets/rfid-player.gif?raw=true)
 
 [More info](/rfid-module)
 
 ## Connect
+
 ### Qobuz Connect
-Qobuz Connect is supported in the web, tui and rfid players, and in a standalone minimal connect player: qobine shows up as a playback device in the Qobuz apps, and the tui can switch playback between devices.
-This can be enabled with the `--connect` flag and the `connect` cargo feature. It is still experimental; the module README lists what works and the limitations.
+
+Qobuz Connect is supported in the web, tui and rfid players, and in a standalone
+minimal connect player: qobine shows up as a playback device in the Qobuz apps,
+and the tui can switch playback between devices.
+
+This can be enabled with the `--connect` flag and the `connect` cargo
+feature. It is still experimental; the module README lists what works and the
+limitations.
 
 [More info on Connect player](/connect-module)
 
 ### Qobine Disconnect
-The web player and the rfid player has support for custom self-hostable connect service, `Disconnect`, which allows activating and deactivating multiple running players.
-This does **not** work with the official qobuz smartphone app or web player.
 
-This can be used if you are running multiple players in your home, but would like to control all players centrally on your smartphone through one web player instance.
+The web player and the rfid player has support for custom self-hostable connect
+service, `Disconnect`, which allows activating and deactivating multiple running
+players.
+
+This does **not** work with the official qobuz smartphone app or web
+player.
+
+This can be used if you are running multiple players in your home, but would
+like to control all players centrally on your smartphone through one web player
+instance.
 
 [More info on Disconnect](/disconnect-module)
 
 ### Raspberry pi
-Web, rfid and connect connect players, support setting `GPIO 23` high when music is playing.
-This is hidden behind a feature `GPIO`. Prebuild binaries for aarm64 linux has this enable.
+
+Web, rfid and connect connect players, support setting `GPIO 23` high when music
+is playing.
+
+This is hidden behind a feature `GPIO`. Prebuild binaries for
+aarm64 linux has this enable.
 
 Enable with `--gpio`.
 
 This can be used to control power to amplifier when music is playing.
 
-
 ### Build from source
+
 Linux dependencies: `alsa-sys-devel`.
-```
+
+```sh
 cargo build
 ```
 
 ## Development
+
 Linux dependencies: `alsa-sys-devel`, `just`, `sqlx-cli`, `npm`.
-1. Setup sqlx: `just create-env-file`. Only needed once. 
+
+1. Setup sqlx: `just create-env-file`. Only needed once.
 2. Init sqlite database: `init-database`.
 3. Additional for webui development: In `web-module`:
-  - `npm i`. Install npm dependencies. 
-  - `npm run watch`. Watch for style changes. 
+   - `npm i`. Install npm dependencies.
+   - `npm run watch`. Watch for style changes.
 
 ## Get started
+
 Install your favorites app.
 
 Run `--help` or `<subcommand> --help` to see all available options.
 
 ## Contribution
+
 Feature requests, issues and contributions are very welcome.
 
 ## Credits
-Qobine started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged. 
+
+Qobine started as a fork of [hifi.rs](https://github.com/iamdb/hifi.rs) but has since diverged.
