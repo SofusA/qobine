@@ -1,24 +1,29 @@
 # Qobine
+
 An Adwaita-based Qobuz client.
 
-<img src="../assets/gtk-module.png?raw=true">
+![GTK screenshot](/assets/qobine-gtk.png)
 
-Listening to your Qobuz music with Qobine: an Adwaita Qobuz client designed for GNOME.
+Listening to your Qobuz music with Qobine: an Adwaita Qobuz client designed for
+GNOME.
 
 ## Installation
-<div align="center">
-    <a href='https://flathub.org/en/apps/io.github.sofusa.qobine'><img width='130' alt='Download on Flathub' src='https://flathub.org/assets/badges/flathub-badge-en.png'/></a>
-</div>
+
+[![Download on Flathub](https://flathub.org/assets/badges/flathub-badge-en.png)](https://flathub.org/en/apps/io.github.sofusa.qobine)
 
 Qobine is available on Flathub. Install with flatpak:
+
 ```sh
 flatpak install flathub io.github.sofusa.qobine
 ```
 
 ## Usage
-Upon first launch, a browser spawns where you will need to login to Qobuz with your active streaming subscription.
+
+Upon first launch, a browser spawns where you will need to login to Qobuz with
+your active streaming subscription.
 
 ## Features
+
 Qobine is currently very bare bone, but more will follow.
 
 - View and stream your favorite albums, artists and playlists
@@ -26,4 +31,5 @@ Qobine is currently very bare bone, but more will follow.
 - Add / remove favorites
 
 ## Contributions
+
 Feature requests, issues and contributions are very welcome.
